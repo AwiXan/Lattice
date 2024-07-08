@@ -18,7 +18,7 @@
 		<method name="get_mesh_arrays" qualifiers="const">
 			<return type="Array" />
 			<description>
-				Returns the mesh arrays used to make up the surface of this primitive mesh.
+				Returns the mesh arrays used to make up the surface of this primitive mesh. This takes [member add_uv2] into account, but not [member generate_lods] or [member generate_shadow_mesh].
 				[b]Example:[/b] Pass the result to [method ArrayMesh.add_surface_from_arrays] to create a new surface:
 				[codeblocks]
 				[gdscript]
@@ -51,6 +51,14 @@
 		<member name="flip_faces" type="bool" setter="set_flip_faces" getter="get_flip_faces" default="false">
 			If [code]true[/code], the order of the vertices in each triangle is reversed, resulting in the backside of the mesh being drawn.
 			This gives the same result as using [constant BaseMaterial3D.CULL_FRONT] in [member BaseMaterial3D.cull_mode].
+		</member>
+		<member name="generate_lods" type="bool" setter="set_generate_lods" getter="is_generating_lods" default="false">
+			If [code]true[/code], generates automatic mesh LOD based on the mesh's contents using [url=https://github.com/zeux/meshoptimizer]meshoptimizer[/url]. This works best on primitive meshes with smooth curved geometry such as [CapsuleMesh], [SphereMesh], and [TorusMesh].
+			[b]Note:[/b] Generating LODs slows down the mesh [i]generation[/i] process, so avoid enabling this property if the mesh's properties change during gameplay.
+		</member>
+		<member name="generate_shadow_mesh" type="bool" setter="set_generate_shadow_mesh" getter="is_generating_shadow_mesh" default="false">
+			If [code]true[/code], generates a shadow mesh with vertices welded together to improve rendering efficiency.
+			[b]Note:[/b] Generating a shadow mesh slows down the mesh [i]generation[/i] process, so avoid enabling this property if the mesh's properties change during gameplay.
 		</member>
 		<member name="material" type="Material" setter="set_material" getter="get_material">
 			The current [Material] of the primitive mesh.

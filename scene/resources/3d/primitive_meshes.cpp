@@ -36,6 +36,7 @@
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "core/os/main_loop.h"
+#include "scene/resources/3d/importer_mesh.h"
 #include "scene/resources/theme.h"
 #include "scene/theme/theme_db.h"
 #include "servers/rendering/rendering_server.h"
@@ -125,8 +126,31 @@ void PrimitiveMesh::_update() const {
 	array_len = pc;
 	index_array_len = indices.size();
 	// in with the new
+
+	Ref<ImporterMesh> importer_mesh = memnew(ImporterMesh);
+	if (generate_lods || generate_shadow_mesh) {
+		importer_mesh->add_surface(primitive_type, arr);
+	}
+
+	Dictionary lods;
+	if (generate_lods) {
+		// Use normal merge/split angles that match the defaults used for 3D scene importing.
+		importer_mesh->generate_lods(60.0f, 25.0f, {});
+
+		for (int i = 0; i < importer_mesh->get_surface_lod_count(0); i++) {
+			lods[importer_mesh->get_surface_lod_size(0, i)] = importer_mesh->get_surface_lod_indices(0, i);
+		}
+	}
+
 	RenderingServer::get_singleton()->mesh_clear(mesh);
-	RenderingServer::get_singleton()->mesh_add_surface_from_arrays(mesh, (RSE::PrimitiveType)primitive_type, arr);
+	if (generate_shadow_mesh) {
+		importer_mesh->create_shadow_mesh();
+		const Ref<ImporterMesh> importer_shadow_mesh = importer_mesh->get_shadow_mesh();
+		if (importer_shadow_mesh.is_valid()) {
+			RenderingServer::get_singleton()->mesh_set_shadow_mesh(mesh, importer_shadow_mesh->get_mesh()->get_rid());
+		}
+	}
+	RenderingServer::get_singleton()->mesh_add_surface_from_arrays(mesh, (RSE::PrimitiveType)primitive_type, arr, {}, lods);
 	RenderingServer::get_singleton()->mesh_surface_set_material(mesh, 0, material.is_null() ? RID() : material->get_rid());
 
 	pending_request = false;
@@ -256,6 +280,12 @@ void PrimitiveMesh::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_uv2_padding", "uv2_padding"), &PrimitiveMesh::set_uv2_padding);
 	ClassDB::bind_method(D_METHOD("get_uv2_padding"), &PrimitiveMesh::get_uv2_padding);
 
+	ClassDB::bind_method(D_METHOD("set_generate_lods", "enable"), &PrimitiveMesh::set_generate_lods);
+	ClassDB::bind_method(D_METHOD("is_generating_lods"), &PrimitiveMesh::is_generating_lods);
+
+	ClassDB::bind_method(D_METHOD("set_generate_shadow_mesh", "enable"), &PrimitiveMesh::set_generate_shadow_mesh);
+	ClassDB::bind_method(D_METHOD("is_generating_shadow_mesh"), &PrimitiveMesh::is_generating_shadow_mesh);
+
 	ClassDB::bind_method(D_METHOD("request_update"), &PrimitiveMesh::request_update);
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "material", PROPERTY_HINT_RESOURCE_TYPE, "BaseMaterial3D,ShaderMaterial"), "set_material", "get_material");
@@ -263,6 +293,8 @@ void PrimitiveMesh::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "flip_faces"), "set_flip_faces", "get_flip_faces");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "add_uv2"), "set_add_uv2", "get_add_uv2");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "uv2_padding", PROPERTY_HINT_RANGE, "0,10,0.01,or_greater"), "set_uv2_padding", "get_uv2_padding");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "generate_lods"), "set_generate_lods", "is_generating_lods");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "generate_shadow_mesh"), "set_generate_shadow_mesh", "is_generating_shadow_mesh");
 
 	GDVIRTUAL_BIND(_create_mesh_array);
 }
@@ -328,6 +360,22 @@ void PrimitiveMesh::set_uv2_padding(float p_padding) {
 	}
 	uv2_padding = p_padding;
 	_update_lightmap_size();
+	request_update();
+}
+
+void PrimitiveMesh::set_generate_lods(bool p_enable) {
+	if (p_enable == generate_lods) {
+		return;
+	}
+	generate_lods = p_enable;
+	request_update();
+}
+
+void PrimitiveMesh::set_generate_shadow_mesh(bool p_enable) {
+	if (p_enable == generate_shadow_mesh) {
+		return;
+	}
+	generate_shadow_mesh = p_enable;
 	request_update();
 }
 
