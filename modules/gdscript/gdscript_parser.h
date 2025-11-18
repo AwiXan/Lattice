@@ -783,7 +783,7 @@ public:
 
 		// Used Traits.
 		Vector<UsesNode *> traits;
-		Vector<String> traits_fqtn; // Fully-qualified trait names. Identifies uniquely any trait used by this class.
+		Vector<StringName> traits_fqtn; // Fully-qualified trait names. Identifies uniquely any trait used by this class.
 #ifdef TOOLS_ENABLED
 		ClassDocData doc_data;
 
@@ -1288,7 +1288,7 @@ public:
 		String path;
 		Vector<IdentifierNode *> name; // List for indexing Trait: uses A.B.C
 		String fqtn; // Fully-qualified trait names.
-		Vector<String> traits_fqtn; // From traits used by this trait.
+		Vector<StringName> traits_fqtn; // From traits used by this trait.
 
 		UsesNode() {
 			type = USES;
