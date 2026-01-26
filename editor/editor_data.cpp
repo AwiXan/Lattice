@@ -933,10 +933,12 @@ bool EditorData::reload_scene_from_memory(int p_idx, bool p_mark_unsaved) {
 	// because the nodes themselves are about to be replaced.
 	EditorSelection *editor_selection = EditorNode::get_singleton()->get_editor_selection();
 	Vector<NodePath> selected_paths;
+	Vector<bool> selected_exposed;
 	for (const KeyValue<ObjectID, Object *> &E : editor_selection->get_selection_for(edited_scene[p_idx].root)) {
 		Node *node = ObjectDB::get_instance<Node>(E.key);
 		if (node) {
 			selected_paths.push_back(edited_scene[p_idx].root->get_path_to(node));
+			selected_exposed.push_back(node->has_meta(META_EXPOSED_IN_OWNER));
 		}
 	}
 
@@ -945,11 +947,19 @@ bool EditorData::reload_scene_from_memory(int p_idx, bool p_mark_unsaved) {
 	editor_selection->clear_document(old_root);
 	EditorNode::get_singleton()->set_edited_scene(new_scene);
 	memdelete(old_root);
-	for (const NodePath &path : selected_paths) {
-		Node *new_node = new_scene->get_node_or_null(path);
-		if (new_node) {
-			editor_selection->add_node(new_node);
+	for (int i = 0; i < selected_paths.size(); i++) {
+		Node *new_node = new_scene->get_node_or_null(selected_paths[i]);
+		// Node can't be found, skip it.
+		if (!new_node) {
+			continue;
 		}
+
+		// Node is no longer exposed, skip it.
+		if (selected_exposed[i] && !new_node->has_meta(META_EXPOSED_IN_OWNER)) {
+			continue;
+		}
+
+		editor_selection->add_node(new_node);
 	}
 
 	if (p_mark_unsaved) {
