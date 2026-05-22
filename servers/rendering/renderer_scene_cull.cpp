@@ -2204,6 +2204,9 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 		Frustum camera_frustum = p_cam_frustum;
 		camera_frustum.planes[Projection::PLANE_NEAR].d = -distances[(i == 0 || !overlap) ? i : i - 1];
 		camera_frustum.planes[Projection::PLANE_FAR].d = distances[i + 1];
+		// At least the light's minimum field of view (or size, orthogonal):
+		// shadows then keep still while the camera's FOV is animated.
+		camera_frustum = camera_frustum.widened_to(RSG::light_storage->light_directional_get_min_shadow_fov(p_instance->base), RSG::light_storage->light_directional_get_min_shadow_size(p_instance->base), p_cam_orthogonal);
 
 		Vector<Plane> receiver_frustum_planes = camera_frustum.get_projection_planes(p_cam_transform);
 

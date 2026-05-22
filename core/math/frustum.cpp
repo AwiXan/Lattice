@@ -171,6 +171,29 @@ Vector<Plane> Frustum::get_projection_planes(const Transform3D &p_transform) con
 	return result;
 }
 
+Frustum Frustum::widened_to(real_t p_min_fovy_degrees, real_t p_min_height, bool p_orthogonal) const {
+	const Vector2 half_extents = get_viewport_half_extents(); // At the near plane.
+	if (half_extents.y <= 0) {
+		return *this;
+	}
+	const real_t aspect = half_extents.x / half_extents.y;
+	const real_t z_near = get_z_near();
+	const real_t z_far = get_z_far();
+	Frustum widened;
+	if (p_orthogonal) {
+		if (p_min_height <= 0 || half_extents.y * 2.0 >= p_min_height) {
+			return *this;
+		}
+		widened.set_orthogonal(p_min_height, aspect, z_near, z_far, false);
+	} else {
+		if (p_min_fovy_degrees <= 0 || z_near <= 0 || Math::rad_to_deg(2.0 * Math::atan(half_extents.y / z_near)) >= p_min_fovy_degrees) {
+			return *this;
+		}
+		widened.set_perspective(p_min_fovy_degrees, aspect, z_near, z_far, false);
+	}
+	return widened;
+}
+
 Vector2 Frustum::get_viewport_half_extents() const {
 	// NOTE: This assumes a symmetrical frustum, i.e. that :
 	// - the frustum is a projection across z-axis

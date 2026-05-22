@@ -77,6 +77,10 @@ struct Frustum {
 
 	bool get_endpoints(const Transform3D &p_transform, Vector3 *p_8points) const;
 	Vector2 get_viewport_half_extents() const;
+	// This frustum made symmetric with at least the given vertical field of view
+	// (perspective) or height (orthogonal), keeping its aspect and its near and
+	// far planes; itself if it already has as much.
+	Frustum widened_to(real_t p_min_fovy_degrees, real_t p_min_height, bool p_orthogonal) const;
 	Rect2 get_viewport_rect() const;
 	Vector2 get_far_plane_half_extents() const;
 	Rect2 get_far_plane_rect() const;

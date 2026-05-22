@@ -239,6 +239,7 @@ void DebugEffects::draw_shadow_frustum(RID p_light, const Frustum &p_cam_frustum
 		Frustum camera_frustum = p_cam_frustum;
 		camera_frustum.planes[Projection::PLANE_NEAR].d = -distances[(split == 0 || !overlap) ? split : split - 1];
 		camera_frustum.planes[Projection::PLANE_FAR].d = distances[split + 1];
+		camera_frustum = camera_frustum.widened_to(RSG::light_storage->light_directional_get_min_shadow_fov(base), RSG::light_storage->light_directional_get_min_shadow_size(base), is_orthogonal);
 
 		bool res = camera_frustum.get_endpoints(p_cam_transform, vw);
 		ERR_CONTINUE(!res);
