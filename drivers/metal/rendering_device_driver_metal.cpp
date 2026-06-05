@@ -113,6 +113,9 @@ RDD::BufferID RenderingDeviceDriverMetal::buffer_create(uint64_t p_size, BitFiel
 				options = base_hazard_tracking | MTL::ResourceStorageModePrivate;
 			}
 			break;
+		case MEMORY_ALLOCATION_TYPE_GPU_MAPPABLE:
+			options = base_hazard_tracking | MTL::ResourceStorageModeShared;
+			break;
 	}
 
 	MTL::Buffer *obj = device->newBuffer(p_size, options);
@@ -2690,6 +2693,8 @@ bool RenderingDeviceDriverMetal::has_feature(Features p_feature) {
 		case SUPPORTS_VULKAN_MEMORY_MODEL:
 			return true;
 		case SUPPORTS_POINT_SIZE:
+			return true;
+		case SUPPORTS_GPU_MAPPABLE_BUFFER:
 			return true;
 		default:
 			return false;
