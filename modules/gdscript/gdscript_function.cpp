@@ -55,6 +55,8 @@ Vector<ContainerTypeValidate> GDScriptDataType::get_nested_validators() const {
 
 bool GDScriptDataType::is_type(const Variant &p_variant, bool p_allow_implicit_conversion) const {
 	switch (kind) {
+		case GDTRAIT:
+			break;
 		case VARIANT: {
 			return true;
 		} break;
