@@ -849,6 +849,8 @@ private:
 	// nothing, for a view that was never active. Queries scope the hits to the
 	// document the asking view edits.
 	static inline DynamicBVH gizmo_bvh;
+	// Shared as the tree is: optimized once a frame, by whichever view goes first.
+	static inline bool gizmo_bvh_needs_optimization = true;
 
 	real_t snap_translate_value = 0;
 	real_t snap_rotate_value = 0;
