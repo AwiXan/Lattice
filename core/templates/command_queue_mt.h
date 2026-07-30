@@ -116,6 +116,7 @@ class CommandQueueMT {
 	uint32_t sync_tail = 0;
 	uint32_t sync_awaiters = 0;
 	WorkerThreadPool::TaskID pump_task_id = WorkerThreadPool::INVALID_TASK_ID;
+	ConditionVariable command_cond_var;
 	uint64_t flush_read_ptr = 0;
 	std::atomic<bool> pending{ false };
 
@@ -138,6 +139,7 @@ class CommandQueueMT {
 		MutexLock mlock(mutex);
 		create_command<T>(std::forward<Args>(args)...);
 
+		command_cond_var.notify_one();
 		if (pump_task_id != WorkerThreadPool::INVALID_TASK_ID) {
 			WorkerThreadPool::get_singleton()->notify_yield_over(pump_task_id);
 		}
@@ -271,8 +273,11 @@ public:
 	}
 
 	void wait_and_flush() {
-		ERR_FAIL_COND(pump_task_id == WorkerThreadPool::INVALID_TASK_ID);
-		WorkerThreadPool::get_singleton()->wait_for_task_completion(pump_task_id);
+		MutexLock lock(mutex);
+		while (!pending.load()) {
+			command_cond_var.wait(lock);
+		}
+		lock.temp_unlock();
 		_flush();
 	}
 
