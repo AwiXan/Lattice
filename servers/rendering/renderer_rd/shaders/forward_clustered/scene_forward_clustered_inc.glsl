@@ -146,9 +146,13 @@ bool sc_cluster_has_area_light() {
 	return ((sc_packed_1() >> 5) & 1U) != 0;
 }
 
-// Bit 6 here: 4.7 has no use_lightmap_specular before it, as 4.8 does.
-bool sc_material_feedback() {
+bool sc_use_lightmap_specular() {
 	return ((sc_packed_1() >> 6) & 1U) != 0;
+}
+
+// Bit 7, as in 4.8.
+bool sc_material_feedback() {
+	return ((sc_packed_1() >> 7) & 1U) != 0;
 }
 
 float sc_luminance_multiplier() {
@@ -236,7 +240,11 @@ struct Lightmap {
 	mat3 normal_xform;
 	vec2 light_texture_size;
 	float exposure_normalization;
+	float specular_intensity;
 	uint flags;
+	uint pad1;
+	uint pad2;
+	uint pad3;
 };
 
 layout(set = 0, binding = 8, std140) restrict readonly buffer Lightmaps {
