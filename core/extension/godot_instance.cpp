@@ -78,12 +78,17 @@ bool GodotInstance::start() {
 		return false;
 	}
 	CALL_CB(before_start);
-	started = Main::start() == EXIT_SUCCESS;
-	if (started) {
-		OS::get_singleton()->get_main_loop()->initialize();
+	if (Main::start() != EXIT_SUCCESS) {
+		return false;
+	}
+
+	MainLoop *main_loop = OS::get_singleton()->get_main_loop();
+	if (main_loop) {
+		started = true;
+		main_loop->initialize();
 		CALL_CB(after_start);
 	}
-	return started;
+	return true;
 }
 
 bool GodotInstance::is_started() {
