@@ -127,8 +127,6 @@ protected:
 	bool _separate_thread_render = false;
 	bool _silent_crash_handler = false;
 
-	// Functions used by Main to initialize/deinitialize the OS.
-
 	virtual void initialize() = 0;
 	virtual void initialize_joypads() = 0;
 

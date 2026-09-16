@@ -40,6 +40,12 @@
 static JavaClassWrapper *java_class_wrapper = nullptr;
 #endif
 
+void register_core_android_api() {
+}
+
+void unregister_core_android_api() {
+}
+
 void register_android_api() {
 #if !defined(ANDROID_ENABLED)
 	// On Android platforms, the `java_class_wrapper` instantiation occurs in
@@ -55,7 +61,10 @@ void register_android_api() {
 
 void unregister_android_api() {
 #if !defined(ANDROID_ENABLED)
-	memdelete(java_class_wrapper);
+	if (java_class_wrapper) {
+		memdelete(java_class_wrapper);
+		java_class_wrapper = nullptr;
+	}
 #endif
 }
 
@@ -149,6 +158,11 @@ Ref<JavaObject> JavaClassWrapper::create_proxy(const Object *p_object, const Pac
 
 JavaClassWrapper::JavaClassWrapper() {
 	singleton = this;
+}
+
+JavaClassWrapper::~JavaClassWrapper() {
+	ERR_FAIL_COND(singleton != this);
+	singleton = nullptr;
 }
 
 #endif
