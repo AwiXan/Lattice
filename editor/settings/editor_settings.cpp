@@ -344,10 +344,6 @@ void EditorSettings::_add_property_info_bind(const Dictionary &p_info) {
 	ERR_FAIL_COND_MSG(!p_info.has("name"), "Property info is missing \"name\" field.");
 	ERR_FAIL_COND_MSG(!p_info.has("type"), "Property info is missing \"type\" field.");
 
-	if (p_info.has("usage")) {
-		WARN_PRINT("\"usage\" is not supported in add_property_info().");
-	}
-
 	PropertyInfo pinfo;
 	pinfo.name = p_info["name"];
 	ERR_FAIL_COND(!props.has(pinfo.name));
@@ -359,6 +355,12 @@ void EditorSettings::_add_property_info_bind(const Dictionary &p_info) {
 	}
 	if (p_info.has("hint_string")) {
 		pinfo.hint_string = p_info["hint_string"];
+	}
+	// The stored hint replaces the computed PropertyInfo wholesale in
+	// _get_property_list(), so honor a caller-supplied usage instead of
+	// silently falling back to PROPERTY_USAGE_DEFAULT.
+	if (p_info.has("usage")) {
+		pinfo.usage = p_info["usage"].operator int();
 	}
 
 	add_property_hint(pinfo);
