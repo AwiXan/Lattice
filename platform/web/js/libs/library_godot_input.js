@@ -314,75 +314,83 @@ mergeInto(LibraryManager.library, GodotInputGamepads);
 const GodotInputDragDrop = {
 	$GodotInputDragDrop__deps: ['$FS', '$GodotFS'],
 	$GodotInputDragDrop: {
-		promises: [],
-		pending_files: [],
-
-		add_entry: function (entry) {
-			if (entry.isDirectory) {
-				GodotInputDragDrop.add_dir(entry);
-			} else if (entry.isFile) {
-				GodotInputDragDrop.add_file(entry);
-			} else {
-				GodotRuntime.error('Unrecognized entry...', entry);
-			}
-		},
-
-		add_dir: function (entry) {
-			GodotInputDragDrop.promises.push(new Promise(function (resolve, reject) {
-				const reader = entry.createReader();
-				reader.readEntries(function (entries) {
-					for (let i = 0; i < entries.length; i++) {
-						GodotInputDragDrop.add_entry(entries[i]);
-					}
-					resolve();
-				});
-			}));
-		},
-
-		add_file: function (entry) {
-			GodotInputDragDrop.promises.push(new Promise(function (resolve, reject) {
-				entry.file(function (file) {
-					const reader = new FileReader();
-					reader.onload = function () {
-						const f = {
-							'path': file.relativePath || file.webkitRelativePath,
-							'name': file.name,
-							'type': file.type,
-							'size': file.size,
-							'data': reader.result,
-						};
-						if (!f['path']) {
-							f['path'] = f['name'];
+		MAX_DROP_SIZE: 200 * 1024 * 1024,
+		create_drop: function () {
+			const drop = {};
+			drop.pending = [];
+			drop.files = [];
+			drop.size = 0;
+			drop.add_entry = function (entry, path) {
+				if (entry.isDirectory) {
+					drop.add_dir(entry, path);
+				} else if (entry.isFile) {
+					drop.add_file(entry, path);
+				} else {
+					GodotRuntime.error('Unrecognized entry...', entry);
+				}
+			};
+			drop.add_dir = function (entry, path) {
+				const next = `${path}/${entry.name}`;
+				drop.pending.push(new Promise(function (resolve, reject) {
+					const reader = entry.createReader();
+					reader.readEntries(function (entries) {
+						for (let i = 0; i < entries.length; i++) {
+							drop.add_entry(entries[i], next);
 						}
-						GodotInputDragDrop.pending_files.push(f);
 						resolve();
-					};
-					reader.onerror = function () {
-						GodotRuntime.print('Error reading file');
-						reject();
-					};
-					reader.readAsArrayBuffer(file);
-				}, function (err) {
-					GodotRuntime.print('Error!');
-					reject();
-				});
-			}));
+					});
+				}));
+			};
+			drop.add_file = function (entry, path) {
+				drop.pending.push(new Promise(function (resolve, reject) {
+					entry.file(function (file) {
+						drop.size += file.size ?? 0;
+						if (drop.size > GodotInputDragDrop.MAX_DROP_SIZE) {
+							reject(new Error('Drop size limit reached.'));
+							return;
+						}
+						const reader = new FileReader();
+						reader.onload = function () {
+							const f = {
+								'path': `${path}/${file.name}`,
+								'name': file.name,
+								'type': file.type,
+								'size': file.size,
+								'data': reader.result,
+							};
+							drop.files.push(f);
+							resolve();
+						};
+						reader.onerror = function (err) {
+							reject(err);
+						};
+						reader.readAsArrayBuffer(file);
+					}, function (err) {
+						reject(err);
+					});
+				}));
+			};
+			return drop;
 		},
 
-		process: function (resolve, reject) {
-			if (GodotInputDragDrop.promises.length === 0) {
+		process: function (drop, resolve, reject) {
+			if (drop.pending.length === 0) {
 				resolve();
 				return;
 			}
-			GodotInputDragDrop.promises.pop().then(function () {
+			drop.pending.pop().then(function () {
 				setTimeout(function () {
-					GodotInputDragDrop.process(resolve, reject);
+					GodotInputDragDrop.process(drop, resolve, reject);
 				}, 0);
+			}).catch(function (err) {
+				reject(err);
 			});
 		},
 
 		_process_event: function (ev, callback) {
 			ev.preventDefault();
+			const ROOT = `/tmp/drop-${parseInt(Math.random() * (1 << 30), 10)}`;
+			const drop = GodotInputDragDrop.create_drop();
 			if (ev.dataTransfer.items) {
 				// Use DataTransferItemList interface to access the file(s)
 				for (let i = 0; i < ev.dataTransfer.items.length; i++) {
@@ -394,76 +402,34 @@ const GodotInputDragDrop = {
 						entry = item.webkitGetAsEntry();
 					}
 					if (entry) {
-						GodotInputDragDrop.add_entry(entry);
+						drop.add_entry(entry, ROOT);
 					}
 				}
 			} else {
 				GodotRuntime.error('File upload not supported');
 			}
-			new Promise(GodotInputDragDrop.process).then(function () {
-				const DROP = `/tmp/drop-${parseInt(Math.random() * (1 << 30), 10)}/`;
-				const drops = [];
-				const files = [];
-				FS.mkdir(DROP.slice(0, -1)); // Without trailing slash
-				GodotInputDragDrop.pending_files.forEach((elem) => {
+			new Promise(function (resolve, reject) {
+				GodotInputDragDrop.process(drop, resolve, reject);
+			}).then(function () {
+				const out = [ROOT];
+				FS.mkdir(ROOT.slice(0, -1)); // Without trailing slash
+				drop.files.forEach((elem) => {
 					const path = elem['path'];
-					GodotFS.copy_to_fs(DROP + path, elem['data']);
-					let idx = path.indexOf('/');
+					GodotFS.copy_to_fs(path, elem['data']);
+					// Add file to the string array if in the drop root.
+					const idx = path.indexOf('/', ROOT.length + 1);
 					if (idx === -1) {
-						// Root file
-						drops.push(DROP + path);
+						out.push(path);
 					} else {
-						// Subdir
-						const sub = path.substr(0, idx);
-						idx = sub.indexOf('/');
-						if (idx < 0 && drops.indexOf(DROP + sub) === -1) {
-							drops.push(DROP + sub);
+						const dir = path.slice(0, idx);
+						if (!out.includes(dir)) {
+							out.push(dir);
 						}
 					}
-					files.push(DROP + path);
 				});
-				GodotInputDragDrop.promises = [];
-				GodotInputDragDrop.pending_files = [];
-				callback(drops);
-				if (GodotConfig.persistent_drops) {
-					// Delay removal at exit.
-					GodotOS.atexit(function (resolve, reject) {
-						GodotInputDragDrop.remove_drop(files, DROP);
-						resolve();
-					});
-				} else {
-					GodotInputDragDrop.remove_drop(files, DROP);
-				}
-			});
-		},
-
-		remove_drop: function (files, drop_path) {
-			const dirs = [drop_path.substr(0, drop_path.length - 1)];
-			// Remove temporary files
-			files.forEach(function (file) {
-				FS.unlink(file);
-				let dir = file.replace(drop_path, '');
-				let idx = dir.lastIndexOf('/');
-				while (idx > 0) {
-					dir = dir.substr(0, idx);
-					if (dirs.indexOf(drop_path + dir) === -1) {
-						dirs.push(drop_path + dir);
-					}
-					idx = dir.lastIndexOf('/');
-				}
-			});
-			// Remove dirs.
-			dirs.sort(function (a, b) {
-				const al = (a.match(/\//g) || []).length;
-				const bl = (b.match(/\//g) || []).length;
-				if (al > bl) {
-					return -1;
-				} else if (al < bl) {
-					return 1;
-				}
-				return 0;
-			}).forEach(function (dir) {
-				FS.rmdir(dir);
+				callback(out);
+			}).catch(function (err) {
+				GodotRuntime.error(err);
 			});
 		},
 
