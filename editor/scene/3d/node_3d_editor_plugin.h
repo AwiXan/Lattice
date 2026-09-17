@@ -808,6 +808,7 @@ private:
 	void _init_indicators();
 	void _update_gizmos_menu();
 	void _update_gizmos_menu_theme();
+	static void _update_all_gizmos_menus();
 	void _init_grid();
 	void _finish_indicators();
 	void _finish_grid();
@@ -839,8 +840,16 @@ private:
 
 	void _node_added(Node *p_node);
 	void _node_removed(Node *p_node);
-	Vector<Ref<EditorNode3DGizmoPlugin>> gizmo_plugins_by_priority;
-	Vector<Ref<EditorNode3DGizmoPlugin>> gizmo_plugins_by_name;
+
+	// Gizmos attach to the scene nodes themselves, so the plugin set is
+	// editor-wide rather than per view. That is what makes two views of one
+	// scene share its gizmos while views of different scenes each get their own.
+	static Vector<Ref<EditorNode3DGizmoPlugin>> gizmo_plugins_by_priority;
+	static Vector<Ref<EditorNode3DGizmoPlugin>> gizmo_plugins_by_name;
+
+	// Only this instance answers the _spatial_editor_group broadcast, so a node
+	// never has the same gizmo added to it twice.
+	static Node3DEditor *gizmo_registrar;
 
 	void _register_all_gizmos();
 

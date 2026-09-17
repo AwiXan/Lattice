@@ -7361,6 +7361,10 @@ Node3DEditorViewportContainer::Node3DEditorViewportContainer() {
 Node3DEditor *Node3DEditor::active_instance = nullptr;
 Vector<Node3DEditor *> Node3DEditor::instances;
 
+Node3DEditor *Node3DEditor::gizmo_registrar = nullptr;
+Vector<Ref<EditorNode3DGizmoPlugin>> Node3DEditor::gizmo_plugins_by_priority;
+Vector<Ref<EditorNode3DGizmoPlugin>> Node3DEditor::gizmo_plugins_by_name;
+
 Node3DEditorSelectedItem::~Node3DEditorSelectedItem() {
 	ERR_FAIL_NULL(RenderingServer::get_singleton());
 	if (sbox_instance.is_valid()) {
@@ -9749,7 +9753,11 @@ void Node3DEditor::_notification(int p_what) {
 
 		case NOTIFICATION_ENTER_TREE: {
 			_update_theme();
-			_register_all_gizmos();
+			if (gizmo_registrar == this) {
+				// The built-in plugins go into the shared set once; later views
+				// pick them up from there.
+				_register_all_gizmos();
+			}
 			_init_indicators();
 			update_all_gizmos();
 		} break;
@@ -10995,7 +11003,10 @@ Node3DEditor::Node3DEditor() {
 	selected = nullptr;
 
 	set_process_shortcut_input(true);
-	add_to_group(SceneStringName(_spatial_editor_group));
+	if (gizmo_registrar == nullptr) {
+		gizmo_registrar = this;
+		add_to_group(SceneStringName(_spatial_editor_group));
+	}
 
 	current_hover_gizmo_handle = -1;
 	current_hover_gizmo_handle_secondary = false;
@@ -11222,6 +11233,14 @@ Node3DEditor::~Node3DEditor() {
 		// Hand the context to another open space rather than leaving it dangling.
 		active_instance = instances.is_empty() ? nullptr : instances[0];
 	}
+	if (gizmo_registrar == this) {
+		// Another open view has to answer the gizmo broadcast from now on, or
+		// nodes entering the tree would stop getting gizmos entirely.
+		gizmo_registrar = instances.is_empty() ? nullptr : instances[0];
+		if (gizmo_registrar) {
+			gizmo_registrar->add_to_group(SceneStringName(_spatial_editor_group));
+		}
+	}
 	memdelete(preview_node);
 	if (preview_sun_dangling && preview_sun) {
 		memdelete(preview_sun);
@@ -11345,13 +11364,22 @@ void Node3DEditor::add_gizmo_plugin(Ref<EditorNode3DGizmoPlugin> p_plugin) {
 	gizmo_plugins_by_name.push_back(p_plugin);
 	gizmo_plugins_by_name.sort_custom<_GizmoPluginNameComparator>();
 
-	_update_gizmos_menu();
+	_update_all_gizmos_menus();
 }
 
 void Node3DEditor::remove_gizmo_plugin(Ref<EditorNode3DGizmoPlugin> p_plugin) {
 	gizmo_plugins_by_priority.erase(p_plugin);
 	gizmo_plugins_by_name.erase(p_plugin);
-	_update_gizmos_menu();
+	_update_all_gizmos_menus();
+}
+
+void Node3DEditor::_update_all_gizmos_menus() {
+	// The plugin set is shared, so every open view's Gizmos menu follows it.
+	for (int i = 0; i < instances.size(); i++) {
+		if (instances[i]->is_inside_tree()) {
+			instances[i]->_update_gizmos_menu();
+		}
+	}
 }
 
 DynamicBVH::ID Node3DEditor::insert_gizmo_bvh_node(Node3D *p_node, const AABB &p_aabb) {
