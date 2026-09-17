@@ -36,6 +36,7 @@ class Button;
 class ConfigFile;
 class EditorPlugin;
 class HBoxContainer;
+class HSplitContainer;
 class VBoxContainer;
 
 class EditorMainScreen : public PanelContainer {
@@ -51,7 +52,13 @@ public:
 	};
 
 private:
+	// Main screen views live in panes side by side. Only the first one is
+	// populated until split view is turned on, and the split container then
+	// reveals the second, so a single-pane layout is unaffected.
+	HSplitContainer *pane_split = nullptr;
 	VBoxContainer *main_screen_vbox = nullptr;
+	VBoxContainer *secondary_screen_vbox = nullptr;
+
 	EditorPlugin *selected_plugin = nullptr;
 
 	HBoxContainer *button_hb = nullptr;
@@ -83,7 +90,10 @@ public:
 	EditorPlugin *get_plugin_by_name(const String &p_plugin_name) const;
 	bool can_auto_switch_screens() const;
 
+	// The container main screen plugins parent their view into. This is the
+	// first pane; addons keep reaching it through EditorInterface unchanged.
 	VBoxContainer *get_control() const;
+	VBoxContainer *get_secondary_control() const;
 
 	void add_main_plugin(EditorPlugin *p_editor);
 	void remove_main_plugin(EditorPlugin *p_editor);

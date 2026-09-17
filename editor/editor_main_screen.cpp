@@ -38,6 +38,7 @@
 #include "editor/settings/editor_settings.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
+#include "scene/gui/split_container.h"
 
 void EditorMainScreen::_notification(int p_what) {
 	switch (p_what) {
@@ -259,6 +260,10 @@ VBoxContainer *EditorMainScreen::get_control() const {
 	return main_screen_vbox;
 }
 
+VBoxContainer *EditorMainScreen::get_secondary_control() const {
+	return secondary_screen_vbox;
+}
+
 void EditorMainScreen::add_main_plugin(EditorPlugin *p_editor) {
 	Button *tb = memnew(Button);
 	tb->set_toggle_mode(true);
@@ -317,9 +322,23 @@ void EditorMainScreen::remove_main_plugin(EditorPlugin *p_editor) {
 }
 
 EditorMainScreen::EditorMainScreen() {
+	pane_split = memnew(HSplitContainer);
+	pane_split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	add_child(pane_split);
+
 	main_screen_vbox = memnew(VBoxContainer);
 	main_screen_vbox->set_name("MainScreen");
 	main_screen_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	main_screen_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	main_screen_vbox->add_theme_constant_override("separation", 0);
-	add_child(main_screen_vbox);
+	pane_split->add_child(main_screen_vbox);
+
+	// Stays hidden, and with it the split dragger, until split view is enabled.
+	secondary_screen_vbox = memnew(VBoxContainer);
+	secondary_screen_vbox->set_name("SecondaryMainScreen");
+	secondary_screen_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	secondary_screen_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	secondary_screen_vbox->add_theme_constant_override("separation", 0);
+	secondary_screen_vbox->hide();
+	pane_split->add_child(secondary_screen_vbox);
 }
