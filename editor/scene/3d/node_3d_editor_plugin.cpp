@@ -7361,7 +7361,7 @@ Node3DEditorViewportContainer::Node3DEditorViewportContainer() {
 Node3DEditor *Node3DEditor::active_instance = nullptr;
 Vector<Node3DEditor *> Node3DEditor::instances;
 
-Node3DEditor *Node3DEditor::gizmo_registrar = nullptr;
+Node3DEditor *Node3DEditor::scene_visuals_owner = nullptr;
 Vector<Ref<EditorNode3DGizmoPlugin>> Node3DEditor::gizmo_plugins_by_priority;
 Vector<Ref<EditorNode3DGizmoPlugin>> Node3DEditor::gizmo_plugins_by_name;
 
@@ -8383,7 +8383,11 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 }
 
 void Node3DEditor::_init_indicators() {
-	{
+	// The grid and origin lines are instanced into the world every view shares,
+	// so only their owner builds them. The manipulator meshes further down are
+	// this view's own and are always built - a view without them crashes the
+	// moment one of its viewports tries to instance them.
+	if (scene_visuals_owner == this) {
 		origin_enabled = true;
 		grid_enabled = true;
 
@@ -9763,17 +9767,24 @@ void Node3DEditor::_notification(int p_what) {
 
 		case NOTIFICATION_ENTER_TREE: {
 			_update_theme();
-			if (gizmo_registrar == this) {
+			if (scene_visuals_owner == this) {
 				// The built-in plugins go into the shared set once; later views
 				// pick them up from there.
 				_register_all_gizmos();
 			}
+			// A view opened after registration has an empty Gizmos menu until it
+			// is built from the set that is already there.
+			_update_gizmos_menu();
 			_init_indicators();
 			update_all_gizmos();
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
-			_finish_indicators();
+			if (scene_visuals_owner == this && instances.size() == 1) {
+				// The last view is closing, so nothing is left that would show
+				// the shared grid and origin lines.
+				_finish_indicators();
+			}
 		} break;
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
@@ -10837,6 +10848,7 @@ Node3DEditor::Node3DEditor() {
 	p->add_radio_check_shortcut(ED_SHORTCUT("spatial_editor/3_viewports", TTRC("3 Viewports"), KeyModifierMask::CMD_OR_CTRL + Key::KEY_3, true), MENU_VIEW_USE_3_VIEWPORTS);
 	p->add_radio_check_shortcut(ED_SHORTCUT("spatial_editor/3_viewports_alt", TTRC("3 Viewports (Alt)"), KeyModifierMask::ALT + KeyModifierMask::CMD_OR_CTRL + Key::KEY_3, true), MENU_VIEW_USE_3_VIEWPORTS_ALT);
 	p->add_radio_check_shortcut(ED_SHORTCUT("spatial_editor/4_viewports", TTRC("4 Viewports"), KeyModifierMask::CMD_OR_CTRL + Key::KEY_4, true), MENU_VIEW_USE_4_VIEWPORTS);
+
 	p->add_separator();
 
 	gizmos_menu = memnew(PopupMenu);
@@ -11013,8 +11025,8 @@ Node3DEditor::Node3DEditor() {
 	selected = nullptr;
 
 	set_process_shortcut_input(true);
-	if (gizmo_registrar == nullptr) {
-		gizmo_registrar = this;
+	if (scene_visuals_owner == nullptr) {
+		scene_visuals_owner = this;
 		add_to_group(SceneStringName(_spatial_editor_group));
 	}
 
@@ -11243,12 +11255,15 @@ Node3DEditor::~Node3DEditor() {
 		// Hand the context to another open space rather than leaving it dangling.
 		active_instance = instances.is_empty() ? nullptr : instances[0];
 	}
-	if (gizmo_registrar == this) {
-		// Another open view has to answer the gizmo broadcast from now on, or
-		// nodes entering the tree would stop getting gizmos entirely.
-		gizmo_registrar = instances.is_empty() ? nullptr : instances[0];
-		if (gizmo_registrar) {
-			gizmo_registrar->add_to_group(SceneStringName(_spatial_editor_group));
+	if (scene_visuals_owner == this) {
+		// Another open view takes over, or nodes entering the tree would stop
+		// getting gizmos and the grid would stay gone: this view's EXIT_TREE has
+		// already freed it.
+		// The grid and origin lines outlive this view - EXIT_TREE only frees them
+		// when the last one closes - so the new owner simply inherits them.
+		scene_visuals_owner = instances.is_empty() ? nullptr : instances[0];
+		if (scene_visuals_owner) {
+			scene_visuals_owner->add_to_group(SceneStringName(_spatial_editor_group));
 		}
 	}
 	memdelete(preview_node);

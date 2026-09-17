@@ -656,18 +656,21 @@ private:
 
 	ToolMode tool_mode = TOOL_MODE_TRANSFORM;
 
-	RID origin_mesh;
-	RID origin_multimesh;
-	RID origin_instance;
-	bool origin_enabled = false;
-	RID grid[3];
-	RID grid_instance[3];
-	bool grid_visible[3] = { false, false, false }; //currently visible
-	bool grid_enable[3] = { false, false, false }; //should be always visible if true
-	bool grid_enabled = false;
-	bool grid_init_draw = false;
-	Camera3D::ProjectionType grid_camera_last_update_perspective = Camera3D::PROJECTION_PERSPECTIVE;
-	Vector3 grid_camera_last_update_position;
+	// The grid and origin lines are instanced into the world the scene lives in,
+	// so there is one set of them however many views are open - the same way the
+	// four viewports of one view have always shared a single grid.
+	static inline RID origin_mesh;
+	static inline RID origin_multimesh;
+	static inline RID origin_instance;
+	static inline bool origin_enabled = false;
+	static inline RID grid[3];
+	static inline RID grid_instance[3];
+	static inline bool grid_visible[3] = { false, false, false }; //currently visible
+	static inline bool grid_enable[3] = { false, false, false }; //should be always visible if true
+	static inline bool grid_enabled = false;
+	static inline bool grid_init_draw = false;
+	static inline Camera3D::ProjectionType grid_camera_last_update_perspective = Camera3D::PROJECTION_PERSPECTIVE;
+	static inline Vector3 grid_camera_last_update_position;
 
 	Ref<ArrayMesh> move_gizmo[3], move_plane_gizmo[3], rotate_gizmo[4], scale_gizmo[3], scale_plane_gizmo[3], axis_gizmo[3];
 	Ref<ArrayMesh> trackball_sphere_gizmo;
@@ -704,8 +707,11 @@ private:
 	RID indicators_instance;
 	RID cursor_mesh;
 	RID cursor_instance;
-	Ref<ShaderMaterial> origin_mat;
-	Ref<ShaderMaterial> grid_mat[3];
+	// Built by _init_indicators() along with the grid and origin RIDs, so they
+	// belong to the same shared set: a view that does not build them must not
+	// be left holding null references to them either.
+	static inline Ref<ShaderMaterial> origin_mat;
+	static inline Ref<ShaderMaterial> grid_mat[3];
 	Ref<StandardMaterial3D> cursor_material;
 
 	// Scene drag and drop support
@@ -851,9 +857,10 @@ private:
 	static Vector<Ref<EditorNode3DGizmoPlugin>> gizmo_plugins_by_priority;
 	static Vector<Ref<EditorNode3DGizmoPlugin>> gizmo_plugins_by_name;
 
-	// Only this instance answers the _spatial_editor_group broadcast, so a node
-	// never has the same gizmo added to it twice.
-	static Node3DEditor *gizmo_registrar;
+	// Owns everything the views instance into the shared world: it alone answers
+	// the _spatial_editor_group broadcast, so a node never has the same gizmo
+	// added twice, and it alone creates and frees the grid and origin lines.
+	static Node3DEditor *scene_visuals_owner;
 
 	void _register_all_gizmos();
 
