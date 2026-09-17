@@ -47,6 +47,8 @@ class MenuButton;
 class PanelContainer;
 class RichTextLabel;
 class StyleBoxTexture;
+class SubViewport;
+class SubViewportContainer;
 class Timer;
 class ViewPanner;
 class VScrollBar;
@@ -570,6 +572,11 @@ protected:
 	static CanvasItemEditor *active_instance;
 	static Vector<CanvasItemEditor *> instances;
 
+	// Displays the scene being edited. The view does not own the scene root: it
+	// is handed one, so that a second view is not fighting the first over who
+	// gets to parent it.
+	SubViewportContainer *scene_viewport_container = nullptr;
+
 public:
 	enum SnapMode {
 		SNAP_GRID = 1 << 0,
@@ -598,6 +605,10 @@ public:
 
 	void make_active() { active_instance = this; }
 	bool is_active() const { return active_instance == this; }
+
+	// Hands this view the scene root it should display. Call once, before the
+	// view is shown.
+	void set_scene_root(SubViewport *p_scene_root);
 
 	Dictionary get_state() const;
 	void set_state(const Dictionary &p_state);

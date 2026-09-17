@@ -5669,11 +5669,10 @@ CanvasItemEditor::CanvasItemEditor() {
 	viewport_scrollable->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	viewport_scrollable->connect(SceneStringName(draw), callable_mp(this, &CanvasItemEditor::_update_scrollbars));
 
-	SubViewportContainer *scene_tree = memnew(SubViewportContainer);
-	viewport_scrollable->add_child(scene_tree);
-	scene_tree->set_stretch(true);
-	scene_tree->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	scene_tree->add_child(EditorNode::get_singleton()->get_scene_root());
+	scene_viewport_container = memnew(SubViewportContainer);
+	viewport_scrollable->add_child(scene_viewport_container);
+	scene_viewport_container->set_stretch(true);
+	scene_viewport_container->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 
 	controls_vb = memnew(VBoxContainer);
 	controls_vb->set_begin(Point2(5, 5));
@@ -6146,6 +6145,13 @@ CanvasItemEditor::CanvasItemEditor() {
 	callable_mp(this, &CanvasItemEditor::set_state).call_deferred(get_state());
 }
 
+void CanvasItemEditor::set_scene_root(SubViewport *p_scene_root) {
+	ERR_FAIL_NULL(p_scene_root);
+	ERR_FAIL_NULL(scene_viewport_container);
+	ERR_FAIL_COND_MSG(p_scene_root->get_parent() != nullptr, "The scene root is already displayed by another 2D view.");
+	scene_viewport_container->add_child(p_scene_root);
+}
+
 CanvasItemEditor::~CanvasItemEditor() {
 	instances.erase(this);
 	if (active_instance == this) {
@@ -6204,6 +6210,7 @@ void CanvasItemEditorPlugin::_notification(int p_what) {
 CanvasItemEditorPlugin::CanvasItemEditorPlugin() {
 	canvas_item_editor = memnew(CanvasItemEditor);
 	canvas_item_editor->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	canvas_item_editor->set_scene_root(EditorNode::get_singleton()->get_scene_root());
 	EditorNode::get_singleton()->get_editor_main_screen()->get_control()->add_child(canvas_item_editor);
 	canvas_item_editor->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	canvas_item_editor->hide();
