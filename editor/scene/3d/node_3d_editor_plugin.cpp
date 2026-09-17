@@ -7358,7 +7358,8 @@ Node3DEditorViewportContainer::Node3DEditorViewportContainer() {
 
 ///////////////////////////////////////////////////////////////////
 
-Node3DEditor *Node3DEditor::singleton = nullptr;
+Node3DEditor *Node3DEditor::active_instance = nullptr;
+Vector<Node3DEditor *> Node3DEditor::instances;
 
 Node3DEditorSelectedItem::~Node3DEditorSelectedItem() {
 	ERR_FAIL_NULL(RenderingServer::get_singleton());
@@ -10520,8 +10521,10 @@ Node3DEditor::Node3DEditor() {
 	viewport_environment.instantiate();
 	VBoxContainer *vbc = this;
 
-	ERR_FAIL_COND_MSG(singleton != nullptr, "A Node3DEditor singleton already exists.");
-	singleton = this;
+	instances.push_back(this);
+	if (active_instance == nullptr) {
+		active_instance = this;
+	}
 	editor_selection = EditorNode::get_singleton()->get_editor_selection();
 	editor_selection->add_editor_plugin(this);
 
@@ -11206,7 +11209,11 @@ void fragment() {
 	clear(); // Make sure values are initialized. Will call _snap_update() for us.
 }
 Node3DEditor::~Node3DEditor() {
-	singleton = nullptr;
+	instances.erase(this);
+	if (active_instance == this) {
+		// Hand the context to another open space rather than leaving it dangling.
+		active_instance = instances.is_empty() ? nullptr : instances[0];
+	}
 	memdelete(preview_node);
 	if (preview_sun_dangling && preview_sun) {
 		memdelete(preview_sun);

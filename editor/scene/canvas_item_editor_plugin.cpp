@@ -6126,8 +6126,10 @@ CanvasItemEditor::CanvasItemEditor() {
 
 	skeleton_menu->get_popup()->set_item_checked(skeleton_menu->get_popup()->get_item_index(SKELETON_SHOW_BONES), true);
 
-	// Store the singleton instance.
-	singleton = this;
+	instances.push_back(this);
+	if (active_instance == nullptr) {
+		active_instance = this;
+	}
 
 	set_process_shortcut_input(true);
 	clear(); // Make sure values are initialized.
@@ -6136,7 +6138,16 @@ CanvasItemEditor::CanvasItemEditor() {
 	callable_mp(this, &CanvasItemEditor::set_state).call_deferred(get_state());
 }
 
-CanvasItemEditor *CanvasItemEditor::singleton = nullptr;
+CanvasItemEditor::~CanvasItemEditor() {
+	instances.erase(this);
+	if (active_instance == this) {
+		// Hand the context to another open space rather than leaving it dangling.
+		active_instance = instances.is_empty() ? nullptr : instances[0];
+	}
+}
+
+CanvasItemEditor *CanvasItemEditor::active_instance = nullptr;
+Vector<CanvasItemEditor *> CanvasItemEditor::instances;
 
 void CanvasItemEditorPlugin::edit(Object *p_object) {
 	canvas_item_editor->edit(Object::cast_to<CanvasItem>(p_object));

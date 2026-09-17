@@ -832,7 +832,10 @@ private:
 
 	bool gizmos_dirty = false;
 
-	static Node3DEditor *singleton;
+	// The instance that currently owns the 3D editing context, and every live
+	// instance. More than one exists once several editor spaces are open.
+	static Node3DEditor *active_instance;
+	static Vector<Node3DEditor *> instances;
 
 	void _node_added(Node *p_node);
 	void _node_removed(Node *p_node);
@@ -939,7 +942,13 @@ protected:
 	static void _bind_methods();
 
 public:
-	static Node3DEditor *get_singleton() { return singleton; }
+	// The active instance. With a single editor space open this is the only
+	// instance, so callers keep the behavior they had when it was a singleton.
+	static Node3DEditor *get_singleton() { return active_instance; }
+	static const Vector<Node3DEditor *> &get_instances() { return instances; }
+
+	void make_active() { active_instance = this; }
+	bool is_active() const { return active_instance == this; }
 
 	static Size2i get_camera_viewport_size(Camera3D *p_camera);
 

@@ -565,7 +565,10 @@ protected:
 
 	static void _bind_methods();
 
-	static CanvasItemEditor *singleton;
+	// The instance that currently owns the 2D editing context, and every live
+	// instance. More than one exists once several editor spaces are open.
+	static CanvasItemEditor *active_instance;
+	static Vector<CanvasItemEditor *> instances;
 
 public:
 	enum SnapMode {
@@ -588,7 +591,14 @@ public:
 
 	Transform2D get_canvas_transform() const { return transform; }
 
-	static CanvasItemEditor *get_singleton() { return singleton; }
+	// The active instance. With a single editor space open this is the only
+	// instance, so callers keep the behavior they had when it was a singleton.
+	static CanvasItemEditor *get_singleton() { return active_instance; }
+	static const Vector<CanvasItemEditor *> &get_instances() { return instances; }
+
+	void make_active() { active_instance = this; }
+	bool is_active() const { return active_instance == this; }
+
 	Dictionary get_state() const;
 	void set_state(const Dictionary &p_state);
 	void clear();
@@ -631,6 +641,7 @@ public:
 	EditorSelection *editor_selection = nullptr;
 
 	CanvasItemEditor();
+	~CanvasItemEditor();
 };
 
 class CanvasItemEditorPlugin : public EditorPlugin {
