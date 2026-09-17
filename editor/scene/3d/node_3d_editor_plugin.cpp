@@ -3890,6 +3890,10 @@ void Node3DEditorViewport::_notification(int p_what) {
 			surface->connect(SceneStringName(focus_entered), callable_mp(this, &Node3DEditorViewport::_surface_focus_enter));
 			surface->connect(SceneStringName(focus_exited), callable_mp(this, &Node3DEditorViewport::_surface_focus_exit));
 
+			// Render the world the edited scene lives in. Without this the camera
+			// looks into the editor window's world, which the scene is not in.
+			viewport->set_world_3d(get_editing_world());
+
 			_init_gizmo_instance(index);
 		} break;
 
@@ -7490,9 +7494,12 @@ Ref<World3D> Node3DEditorViewport::get_editing_world() const {
 }
 
 Ref<World3D> Node3DEditor::get_editing_world() const {
-	// Scenes are hosted in a SubViewport that inherits the root window's world,
-	// so today every view edits in that one world.
-	return get_tree()->get_root()->get_world_3d();
+	// The world belongs to the scene root the edited scene is hosted in, so the
+	// gizmos, indicators and picks that go through here follow the scene rather
+	// than the editor window.
+	SubViewport *scene_root = EditorNode::get_singleton()->get_scene_root();
+	ERR_FAIL_NULL_V(scene_root, Ref<World3D>());
+	return scene_root->find_world_3d();
 }
 
 Object *Node3DEditor::_get_editor_data(Object *p_what) {
@@ -10127,32 +10134,43 @@ void Node3DEditor::_viewport_clicked(int p_viewport_idx) {
 }
 
 void Node3DEditor::_node_added(Node *p_node) {
+	if (p_node == preview_sun || p_node == preview_environment) {
+		// The preview's own nodes live in the scene root so they light and shade
+		// the scene's world, but they are not part of the scene and must not
+		// count towards what disables the preview.
+		return;
+	}
 	if (EditorNode::get_singleton()->get_scene_root()->is_ancestor_of(p_node)) {
+		// Deferred because this fires while the scene root is still adding the
+		// scene's children, and the update parents the preview nodes into it.
 		if (Object::cast_to<WorldEnvironment>(p_node)) {
 			world_env_count++;
 			if (world_env_count == 1) {
-				_update_preview_environment();
+				callable_mp(this, &Node3DEditor::_update_preview_environment).call_deferred();
 			}
 		} else if (Object::cast_to<DirectionalLight3D>(p_node)) {
 			directional_light_count++;
 			if (directional_light_count == 1) {
-				_update_preview_environment();
+				callable_mp(this, &Node3DEditor::_update_preview_environment).call_deferred();
 			}
 		}
 	}
 }
 
 void Node3DEditor::_node_removed(Node *p_node) {
+	if (p_node == preview_sun || p_node == preview_environment) {
+		return;
+	}
 	if (EditorNode::get_singleton()->get_scene_root()->is_ancestor_of(p_node)) {
 		if (Object::cast_to<WorldEnvironment>(p_node)) {
 			world_env_count--;
 			if (world_env_count == 0) {
-				_update_preview_environment();
+				callable_mp(this, &Node3DEditor::_update_preview_environment).call_deferred();
 			}
 		} else if (Object::cast_to<DirectionalLight3D>(p_node)) {
 			directional_light_count--;
 			if (directional_light_count == 0) {
-				_update_preview_environment();
+				callable_mp(this, &Node3DEditor::_update_preview_environment).call_deferred();
 			}
 		}
 	}
@@ -10353,7 +10371,9 @@ void Node3DEditor::_update_preview_environment() {
 
 	} else {
 		if (!preview_sun->get_parent()) {
-			add_child(preview_sun, true);
+			// Into the scene root, so the preview lights the world the scene is
+			// actually in rather than the editor window's.
+			EditorNode::get_singleton()->get_scene_root()->add_child(preview_sun, true);
 			sun_state->hide();
 			sun_vb->show();
 			preview_sun_dangling = false;
@@ -10382,7 +10402,7 @@ void Node3DEditor::_update_preview_environment() {
 
 	} else {
 		if (!preview_environment->get_parent()) {
-			add_child(preview_environment);
+			EditorNode::get_singleton()->get_scene_root()->add_child(preview_environment);
 			environ_state->hide();
 			environ_vb->show();
 			preview_env_dangling = false;
@@ -11267,10 +11287,18 @@ Node3DEditor::~Node3DEditor() {
 		}
 	}
 	memdelete(preview_node);
-	if (preview_sun_dangling && preview_sun) {
+	// The preview nodes sit in the scene root, which outlives this view, so they
+	// have to be taken along rather than left lighting the scene for nobody.
+	if (preview_sun) {
+		if (preview_sun->get_parent()) {
+			preview_sun->get_parent()->remove_child(preview_sun);
+		}
 		memdelete(preview_sun);
 	}
-	if (preview_env_dangling && preview_environment) {
+	if (preview_environment) {
+		if (preview_environment->get_parent()) {
+			preview_environment->get_parent()->remove_child(preview_environment);
+		}
 		memdelete(preview_environment);
 	}
 }

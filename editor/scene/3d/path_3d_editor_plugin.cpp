@@ -961,7 +961,9 @@ void Path3DEditorPlugin::_notification(int p_what) {
 				const Transform3D it = gt.affine_inverse();
 				Ref<Curve3D> c = path->get_curve();
 				EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
-				PhysicsDirectSpaceState3D *ss = get_tree()->get_root()->get_world_3d()->get_direct_space_state();
+				// The path's own world, so the ray is cast in the scene being
+				// edited rather than in the editor window's world.
+				PhysicsDirectSpaceState3D *ss = path->get_world_3d()->get_direct_space_state();
 				if (ss) {
 					PhysicsDirectSpaceState3D::RayParameters ray_params;
 					PhysicsDirectSpaceState3D::RayResult result;

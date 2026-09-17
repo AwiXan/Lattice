@@ -169,7 +169,9 @@
 #include "scene/main/window.h"
 #include "scene/property_utils.h"
 #include "scene/resources/3d/mesh_library.h"
+#include "scene/resources/3d/world_3d.h"
 #include "scene/resources/dpi_texture.h"
+#include "scene/resources/environment.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/portable_compressed_texture.h"
@@ -884,6 +886,18 @@ void EditorNode::_notification(int p_what) {
 		case NOTIFICATION_PROCESS: {
 			if (editor_data.is_scene_changed(-1)) {
 				scene_tabs->update_scene_tabs();
+			}
+
+			// SceneTree keeps the project's default environment on the root
+			// window's world, and only refreshes it when the setting changes.
+			// The edited scene has a world of its own, so mirror it there or a
+			// scene without a WorldEnvironment renders against nothing.
+			{
+				Ref<World3D> scene_world = scene_root->find_world_3d();
+				const Ref<Environment> &fallback = get_tree()->get_root()->get_world_3d()->get_fallback_environment();
+				if (scene_world.is_valid() && scene_world->get_fallback_environment() != fallback) {
+					scene_world->set_fallback_environment(fallback);
+				}
 			}
 
 			if (update_spinner->is_visible()) {
@@ -8868,6 +8882,11 @@ EditorNode::EditorNode() {
 	scene_root->set_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);
 	scene_root->set_translation_domain(StringName());
 	scene_root->set_embedding_subwindows(true);
+	// The edited scene gets a world of its own rather than sharing the root
+	// window's. Nothing changes while there is one scene root, but it is what
+	// lets a second one hold a different scene without the two rendering into
+	// each other.
+	scene_root->set_use_own_world_3d(true);
 	scene_root->set_disable_3d(true);
 	scene_root->set_disable_input(true);
 	scene_root->set_as_audio_listener_2d(true);

@@ -645,7 +645,7 @@ void GridMapEditor::_set_clipboard_data() {
 
 	Ref<MeshLibrary> meshLibrary = node->get_mesh_library();
 
-	const RID scenario = get_tree()->get_root()->get_world_3d()->get_scenario();
+	const RID scenario = node->get_world_3d()->get_scenario();
 
 	for (int i = selection.begin.x; i <= selection.end.x; i++) {
 		for (int j = selection.begin.y; j <= selection.end.y; j++) {
@@ -1333,7 +1333,9 @@ void GridMapEditor::_update_theme() {
 void GridMapEditor::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_READY: {
-			const RID scenario = get_tree()->get_root()->get_world_3d()->get_scenario();
+			// Asked of the 3D editor rather than of the edited GridMap, which
+			// may not be assigned yet this early.
+			const RID scenario = Node3DEditor::get_singleton()->get_editing_world()->get_scenario();
 
 			for (int i = 0; i < 3; i++) {
 				grid[i] = RS::get_singleton()->mesh_create();
@@ -1412,7 +1414,7 @@ void GridMapEditor::_update_cursor_instance() {
 	}
 	cursor_instance = RID();
 
-	const RID scenario = get_tree()->get_root()->get_world_3d()->get_scenario();
+	const RID scenario = node->get_world_3d()->get_scenario();
 
 	if (mesh_library.is_valid()) {
 		if (mode_buttons_group->get_pressed_button() == paint_mode_button) {
