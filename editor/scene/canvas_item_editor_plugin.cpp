@@ -4404,6 +4404,14 @@ void CanvasItemEditor::_notification(int p_what) {
 			ProjectSettings::get_singleton()->connect("settings_changed", callable_mp(this, &CanvasItemEditor::_project_settings_changed));
 		} break;
 
+		case NOTIFICATION_VISIBILITY_CHANGED: {
+			// Whichever 2D view the user is looking at owns the editing context.
+			// With a single editor space open this is a no-op: there is only one.
+			if (is_visible_in_tree()) {
+				make_active();
+			}
+		} break;
+
 		case NOTIFICATION_PROCESS: {
 			// Update the viewport if the canvas_item changes
 			List<CanvasItem *> selection = _get_edited_canvas_items(true);

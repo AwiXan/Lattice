@@ -9758,6 +9758,14 @@ void Node3DEditor::_notification(int p_what) {
 			_finish_indicators();
 		} break;
 
+		case NOTIFICATION_VISIBILITY_CHANGED: {
+			// Whichever 3D view the user is looking at owns the editing context.
+			// With a single editor space open this is a no-op: there is only one.
+			if (is_visible_in_tree()) {
+				make_active();
+			}
+		} break;
+
 		case NOTIFICATION_THEME_CHANGED: {
 			_update_theme();
 			_update_gizmos_menu_theme();
