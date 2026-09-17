@@ -512,6 +512,10 @@ protected:
 	static void _bind_methods();
 
 public:
+	// Follows the world of the view this viewport belongs to, so its gizmo
+	// instances and picks land in the scene it is actually showing.
+	Ref<World3D> get_editing_world() const;
+
 	void update_surface() { surface->queue_redraw(); }
 	void update_transform_gizmo_view();
 	void update_transform_gizmo_highlight();
@@ -958,6 +962,11 @@ public:
 
 	void make_active() { active_instance = this; }
 	bool is_active() const { return active_instance == this; }
+
+	// The world the scene this view edits lives in. Every gizmo, indicator and
+	// viewport pick goes through here, so once panes own their own scenes this
+	// is the single place that has to start answering per pane.
+	Ref<World3D> get_editing_world() const;
 
 	static Size2i get_camera_viewport_size(Camera3D *p_camera);
 
