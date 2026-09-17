@@ -570,6 +570,14 @@ void EditorNode::_update_from_settings() {
 	float mesh_lod_threshold = GLOBAL_GET("rendering/mesh_lod/lod_change/threshold_pixels");
 	scene_root->set_mesh_lod_threshold(mesh_lod_threshold);
 
+	// Nothing displays the scene root any more - the views render its worlds
+	// through viewports of their own - so its size has to be stated rather than
+	// inherited from a container, or full-rect Controls would have no rect.
+	const Size2i viewport_size = Size2i(GLOBAL_GET("display/window/size/viewport_width"), GLOBAL_GET("display/window/size/viewport_height"));
+	if (viewport_size.x > 0 && viewport_size.y > 0 && scene_root->get_size() != viewport_size) {
+		scene_root->set_size(viewport_size);
+	}
+
 	RS::get_singleton()->decals_set_filter(RSE::DecalFilter(int(GLOBAL_GET("rendering/textures/decals/filter"))));
 	RS::get_singleton()->light_projectors_set_filter(RSE::LightProjectorFilter(int(GLOBAL_GET("rendering/textures/light_projectors/filter"))));
 	RS::get_singleton()->lightmaps_set_bicubic_filter(GLOBAL_GET("rendering/lightmapping/lightmap_gi/use_bicubic_filter"));
@@ -4597,6 +4605,17 @@ void EditorNode::_remove_scene(int p_idx, bool p_change_tab) {
 		// Scene to remove is not active scene.
 		editor_data.remove_scene(p_idx);
 	}
+}
+
+bool EditorNode::is_viewport_editable(const Viewport *p_viewport) {
+	if (!p_viewport) {
+		return true;
+	}
+	if (singleton && p_viewport == singleton->scene_root) {
+		return true;
+	}
+	// Anything nested deeper still has to be on screen to be worth editing.
+	return p_viewport->is_visible_subviewport();
 }
 
 void EditorNode::set_edited_scene(Node *p_scene) {
@@ -8890,6 +8909,12 @@ EditorNode::EditorNode() {
 	scene_root->set_disable_3d(true);
 	scene_root->set_disable_input(true);
 	scene_root->set_as_audio_listener_2d(true);
+	// It hosts the scene and owns its worlds; the views render those worlds
+	// themselves, so nothing ever displays this viewport and drawing it would
+	// be drawing the scene a second time for nobody.
+	scene_root->set_update_mode(SubViewport::UPDATE_DISABLED);
+	scene_root->set_size(Size2i(GLOBAL_GET("display/window/size/viewport_width"), GLOBAL_GET("display/window/size/viewport_height")));
+	add_child(scene_root);
 
 	accept = memnew(AcceptDialog);
 	accept->set_autowrap(true);

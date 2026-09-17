@@ -858,6 +858,12 @@ public:
 
 	SubViewport *get_scene_root() { return scene_root; } // Root of the scene being edited.
 
+	// Whether editing handles belong on content living in this viewport. The
+	// edited scene's own root is never parented to a SubViewportContainer - the
+	// views render its world themselves - so Viewport::is_visible_subviewport()
+	// would call it hidden and every handle in the 2D tooling would vanish.
+	static bool is_viewport_editable(const Viewport *p_viewport);
+
 	void set_edited_scene(Node *p_scene);
 	void set_edited_scene_root(Node *p_scene, bool p_auto_add);
 	Node *get_edited_scene() { return editor_data.get_edited_scene_root(); }

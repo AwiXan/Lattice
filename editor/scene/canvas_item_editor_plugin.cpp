@@ -580,11 +580,11 @@ Rect2 CanvasItemEditor::_get_encompassing_rect_from_list(const List<CanvasItem *
 
 	// Handles the first element
 	CanvasItem *ci = p_list.front()->get();
-	Rect2 rect = Rect2(ci->get_global_transform_with_canvas().xform(ci->_edit_get_rect().get_center()), Size2());
+	Rect2 rect = Rect2(get_item_view_transform(ci).xform(ci->_edit_get_rect().get_center()), Size2());
 
 	// Expand with the other ones
 	for (CanvasItem *ci2 : p_list) {
-		Transform2D xform = ci2->get_global_transform_with_canvas();
+		Transform2D xform = get_item_view_transform(ci2);
 
 		Rect2 current_rect = ci2->_edit_get_rect();
 		rect.expand_to(xform.xform(current_rect.position));
@@ -652,7 +652,7 @@ void CanvasItemEditor::find_canvas_items_at_pos(const Point2 &p_pos, Node *p_nod
 	if (CanvasLayer *cl = Object::cast_to<CanvasLayer>(p_node)) {
 		xform = cl->get_transform();
 	} else if (Viewport *vp = Object::cast_to<Viewport>(p_node)) {
-		if (!vp->is_visible_subviewport()) {
+		if (!EditorNode::is_viewport_editable(vp)) {
 			return;
 		}
 		xform = vp->get_popup_base_transform();
@@ -755,7 +755,7 @@ void CanvasItemEditor::_find_canvas_items_in_rect(const Rect2 &p_rect, Node *p_n
 	if (CanvasLayer *cl = Object::cast_to<CanvasLayer>(p_node)) {
 		xform = cl->get_transform();
 	} else if (Viewport *vp = Object::cast_to<Viewport>(p_node)) {
-		if (!vp->is_visible_subviewport()) {
+		if (!EditorNode::is_viewport_editable(vp)) {
 			return;
 		}
 		xform = vp->get_popup_base_transform();
@@ -839,7 +839,7 @@ List<CanvasItem *> CanvasItemEditor::_get_edited_canvas_items(bool p_retrieve_lo
 		if (ci) {
 			if (ci->is_visible_in_tree() && (p_retrieve_locked || !_is_node_locked(ci))) {
 				Viewport *vp = ci->get_viewport();
-				if (vp && !vp->is_visible_subviewport()) {
+				if (vp && !EditorNode::is_viewport_editable(vp)) {
 					continue;
 				}
 				CanvasItemEditorSelectedItem *se = editor_selection->get_node_editor_data<CanvasItemEditorSelectedItem>(ci);
@@ -1023,7 +1023,7 @@ void CanvasItemEditor::_add_node_pressed(int p_result) {
 			for (Node *node : nodes_to_move) {
 				CanvasItem *ci = Object::cast_to<CanvasItem>(node);
 				if (ci) {
-					Transform2D xform = ci->get_global_transform_with_canvas().affine_inverse() * ci->get_transform();
+					Transform2D xform = get_item_view_transform(ci).affine_inverse() * ci->get_transform();
 					undo_redo->add_do_method(ci, "_edit_set_position", xform.xform(node_create_position));
 					undo_redo->add_undo_method(ci, "_edit_set_position", ci->_edit_get_position());
 				}
@@ -1054,7 +1054,7 @@ void CanvasItemEditor::_adjust_new_node_position(Node *p_node) {
 
 	CanvasItem *c = Object::cast_to<CanvasItem>(p_node);
 	if (c) {
-		Transform2D xform = c->get_global_transform_with_canvas().affine_inverse() * c->get_transform();
+		Transform2D xform = get_item_view_transform(c).affine_inverse() * c->get_transform();
 		c->_edit_set_position(xform.xform(node_create_position));
 	}
 
@@ -2377,7 +2377,7 @@ bool CanvasItemEditor::_gui_input_move(const Ref<InputEvent> &p_event) {
 
 			Point2 previous_pos;
 			if (drag_selection.size() == 1) {
-				Transform2D xform = drag_selection.front()->get()->get_global_transform_with_canvas() * drag_selection.front()->get()->get_transform().affine_inverse();
+				Transform2D xform = get_item_view_transform(drag_selection.front()->get()) * drag_selection.front()->get()->get_transform().affine_inverse();
 				previous_pos = xform.xform(drag_selection.front()->get()->_edit_get_position());
 			} else {
 				previous_pos = _get_encompassing_rect_from_list(drag_selection).position;
@@ -2400,7 +2400,7 @@ bool CanvasItemEditor::_gui_input_move(const Ref<InputEvent> &p_event) {
 			}
 
 			for (CanvasItem *ci : drag_selection) {
-				Transform2D xform = ci->get_global_transform_with_canvas().affine_inverse() * ci->get_transform();
+				Transform2D xform = get_item_view_transform(ci).affine_inverse() * ci->get_transform();
 				ci->_edit_set_position(ci->_edit_get_position() + xform.xform(new_pos) - xform.xform(previous_pos));
 			}
 		}
@@ -3074,7 +3074,7 @@ Control::CursorShape CanvasItemEditor::get_cursor_shape(const Point2 &p_pos) con
 
 	List<CanvasItem *> selection = _get_edited_canvas_items();
 	if (selection.size() == 1) {
-		const double angle = Math::fposmod((double)selection.front()->get()->get_global_transform_with_canvas().get_rotation(), Math::PI);
+		const double angle = Math::fposmod((double)get_item_view_transform(selection.front()->get()).get_rotation(), Math::PI);
 		if (angle > Math::PI * 7.0 / 8.0) {
 			rotation_array_index = 0;
 		} else if (angle > Math::PI * 5.0 / 8.0) {
@@ -4107,7 +4107,7 @@ void CanvasItemEditor::_draw_invisible_nodes_positions(Node *p_node, const Trans
 		parent_xform = Transform2D();
 		canvas_xform = cl->get_transform();
 	} else if (Viewport *vp = Object::cast_to<Viewport>(p_node)) {
-		if (!vp->is_visible_subviewport()) {
+		if (!EditorNode::is_viewport_editable(vp)) {
 			return;
 		}
 		parent_xform = Transform2D();
@@ -4250,7 +4250,7 @@ void CanvasItemEditor::_draw_locks_and_groups(Node *p_node, const Transform2D &p
 		parent_xform = Transform2D();
 		canvas_xform = cl->get_transform();
 	} else if (Viewport *vp = Object::cast_to<Viewport>(p_node)) {
-		if (!vp->is_visible_subviewport()) {
+		if (!EditorNode::is_viewport_editable(vp)) {
 			return;
 		}
 		parent_xform = Transform2D();
@@ -4284,7 +4284,7 @@ void CanvasItemEditor::_draw_viewport() {
 	transform = Transform2D();
 	transform.scale_basis(Size2(zoom, zoom));
 	transform.columns[2] = -view_offset * zoom;
-	EditorNode::get_singleton()->get_scene_root()->set_global_canvas_transform(transform);
+	view_viewport->set_global_canvas_transform(transform);
 
 	_draw_grid();
 	_draw_ruler_tool();
@@ -4381,7 +4381,7 @@ void CanvasItemEditor::_update_editor_settings() {
 }
 
 void CanvasItemEditor::_project_settings_changed() {
-	EditorNode::get_singleton()->get_scene_root()->set_snap_controls_to_pixels(GLOBAL_GET("gui/common/snap_controls_to_pixels"));
+	view_viewport->set_snap_controls_to_pixels(GLOBAL_GET("gui/common/snap_controls_to_pixels"));
 }
 
 void CanvasItemEditor::_notification(int p_what) {
@@ -4540,7 +4540,7 @@ void CanvasItemEditor::_selection_changed() {
 		}
 
 		Viewport *vp = ci->get_viewport();
-		if (vp && !vp->is_visible_subviewport()) {
+		if (vp && !EditorNode::is_viewport_editable(vp)) {
 			continue;
 		}
 
@@ -4682,7 +4682,7 @@ void CanvasItemEditor::_update_zoom(real_t p_zoom) {
 }
 
 void CanvasItemEditor::_update_oversampling() {
-	EditorNode::get_singleton()->get_scene_root()->set_oversampling_override(auto_resampling_enabled ? zoom : 0.0);
+	view_viewport->set_oversampling_override(auto_resampling_enabled ? zoom : 0.0);
 }
 
 void CanvasItemEditor::_shortcut_zoom_set(real_t p_zoom) {
@@ -5619,7 +5619,7 @@ void CanvasItemEditor::focus_selection() {
 }
 
 void CanvasItemEditor::center_at(const Point2 &p_pos) {
-	Vector2 offset = viewport->get_size() / 2 - EditorNode::get_singleton()->get_scene_root()->get_global_canvas_transform().xform(p_pos);
+	Vector2 offset = viewport->get_size() / 2 - view_viewport->get_global_canvas_transform().xform(p_pos);
 	view_offset = (view_offset - offset / zoom).round();
 	update_viewport();
 }
@@ -5673,6 +5673,12 @@ CanvasItemEditor::CanvasItemEditor() {
 	viewport_scrollable->add_child(scene_viewport_container);
 	scene_viewport_container->set_stretch(true);
 	scene_viewport_container->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+
+	view_viewport = memnew(SubViewport);
+	view_viewport->set_disable_input(true);
+	view_viewport->set_disable_3d(true);
+	view_viewport->set_embedding_subwindows(true);
+	scene_viewport_container->add_child(view_viewport);
 
 	controls_vb = memnew(VBoxContainer);
 	controls_vb->set_begin(Point2(5, 5));
@@ -6145,11 +6151,24 @@ CanvasItemEditor::CanvasItemEditor() {
 	callable_mp(this, &CanvasItemEditor::set_state).call_deferred(get_state());
 }
 
+Transform2D CanvasItemEditor::get_item_view_transform(const CanvasItem *p_item) const {
+	ERR_FAIL_NULL_V(p_item, Transform2D());
+	// Mirrors CanvasItem::get_global_transform_with_canvas(), with this view's own
+	// transform standing in for the one it would read off the item's viewport.
+	// Items under a CanvasLayer keep following the layer, exactly as before.
+	CanvasLayer *layer = p_item->get_canvas_layer_node();
+	if (layer) {
+		return layer->get_final_transform() * p_item->get_global_transform();
+	}
+	return transform * p_item->get_global_transform();
+}
+
 void CanvasItemEditor::set_scene_root(SubViewport *p_scene_root) {
 	ERR_FAIL_NULL(p_scene_root);
-	ERR_FAIL_NULL(scene_viewport_container);
-	ERR_FAIL_COND_MSG(p_scene_root->get_parent() != nullptr, "The scene root is already displayed by another 2D view.");
-	scene_viewport_container->add_child(p_scene_root);
+	ERR_FAIL_NULL(view_viewport);
+	// Share the document's world instead of taking its viewport, so any number
+	// of views can show the same document and each keeps its own pan and zoom.
+	view_viewport->set_world_2d(p_scene_root->find_world_2d());
 }
 
 CanvasItemEditor::~CanvasItemEditor() {
@@ -6175,14 +6194,14 @@ void CanvasItemEditorPlugin::make_visible(bool p_visible) {
 	if (p_visible) {
 		canvas_item_editor->show();
 		canvas_item_editor->set_process(true);
-		RenderingServer::get_singleton()->viewport_set_disable_2d(EditorNode::get_singleton()->get_scene_root()->get_viewport_rid(), false);
-		RenderingServer::get_singleton()->viewport_set_environment_mode(EditorNode::get_singleton()->get_scene_root()->get_viewport_rid(), RSE::VIEWPORT_ENVIRONMENT_ENABLED);
+		RenderingServer::get_singleton()->viewport_set_disable_2d(canvas_item_editor->get_view_viewport()->get_viewport_rid(), false);
+		RenderingServer::get_singleton()->viewport_set_environment_mode(canvas_item_editor->get_view_viewport()->get_viewport_rid(), RSE::VIEWPORT_ENVIRONMENT_ENABLED);
 
 	} else {
 		canvas_item_editor->hide();
 		canvas_item_editor->set_process(false);
-		RenderingServer::get_singleton()->viewport_set_disable_2d(EditorNode::get_singleton()->get_scene_root()->get_viewport_rid(), true);
-		RenderingServer::get_singleton()->viewport_set_environment_mode(EditorNode::get_singleton()->get_scene_root()->get_viewport_rid(), RSE::VIEWPORT_ENVIRONMENT_DISABLED);
+		RenderingServer::get_singleton()->viewport_set_disable_2d(canvas_item_editor->get_view_viewport()->get_viewport_rid(), true);
+		RenderingServer::get_singleton()->viewport_set_environment_mode(canvas_item_editor->get_view_viewport()->get_viewport_rid(), RSE::VIEWPORT_ENVIRONMENT_DISABLED);
 	}
 }
 
@@ -6445,7 +6464,7 @@ bool CanvasItemEditorViewport::_create_instance(Node *p_parent, const String &p_
 
 		CanvasItem *parent_ci = Object::cast_to<CanvasItem>(p_parent);
 		if (parent_ci) {
-			target_pos = parent_ci->get_global_transform_with_canvas().affine_inverse().xform(target_pos);
+			target_pos = canvas_item_editor->get_item_view_transform(parent_ci).affine_inverse().xform(target_pos);
 		}
 		// Preserve instance position of the original scene.
 		target_pos += instance_ci->_edit_get_position();

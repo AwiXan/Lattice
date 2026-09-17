@@ -572,10 +572,12 @@ protected:
 	static CanvasItemEditor *active_instance;
 	static Vector<CanvasItemEditor *> instances;
 
-	// Displays the scene being edited. The view does not own the scene root: it
-	// is handed one, so that a second view is not fighting the first over who
-	// gets to parent it.
+	// The view renders the document's 2D world through a viewport of its own
+	// rather than displaying the document's viewport directly. A SubViewport has
+	// one parent, so adopting it would let only one view ever show a document,
+	// and the pan and zoom transform would be shared between any that did.
 	SubViewportContainer *scene_viewport_container = nullptr;
+	SubViewport *view_viewport = nullptr;
 
 public:
 	enum SnapMode {
@@ -598,6 +600,12 @@ public:
 
 	Transform2D get_canvas_transform() const { return transform; }
 
+	// Where an item sits on this view, composed from the view's own transform.
+	// CanvasItem::get_global_transform_with_canvas() cannot answer this any
+	// more: it reads the canvas transform of the viewport the item lives in,
+	// which is the document's, and this view no longer drives that one.
+	Transform2D get_item_view_transform(const CanvasItem *p_item) const;
+
 	// The active instance. With a single editor space open this is the only
 	// instance, so callers keep the behavior they had when it was a singleton.
 	static CanvasItemEditor *get_singleton() { return active_instance; }
@@ -606,9 +614,10 @@ public:
 	void make_active() { active_instance = this; }
 	bool is_active() const { return active_instance == this; }
 
-	// Hands this view the scene root it should display. Call once, before the
-	// view is shown.
+	// Points this view at the document whose 2D world it should render. Call
+	// once, before the view is shown.
 	void set_scene_root(SubViewport *p_scene_root);
+	SubViewport *get_view_viewport() const { return view_viewport; }
 
 	Dictionary get_state() const;
 	void set_state(const Dictionary &p_state);

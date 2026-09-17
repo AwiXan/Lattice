@@ -63,7 +63,7 @@ bool Cast2DEditor::forward_canvas_gui_input(const Ref<InputEvent> &p_event) {
 	}
 
 	Viewport *vp = node->get_viewport();
-	if (vp && !vp->is_visible_subviewport()) {
+	if (vp && !EditorNode::is_viewport_editable(vp)) {
 		return false;
 	}
 
@@ -123,7 +123,7 @@ void Cast2DEditor::forward_canvas_draw_over_viewport(Control *p_overlay) {
 	}
 
 	Viewport *vp = node->get_viewport();
-	if (vp && !vp->is_visible_subviewport()) {
+	if (vp && !EditorNode::is_viewport_editable(vp)) {
 		return;
 	}
 
