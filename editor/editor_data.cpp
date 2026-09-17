@@ -43,6 +43,7 @@
 #include "editor/inspector/multi_node_edit.h"
 #include "editor/plugins/editor_plugin.h"
 #include "scene/main/scene_tree.h"
+#include "scene/main/viewport.h"
 #include "scene/property_utils.h"
 #include "scene/resources/packed_scene.h"
 
@@ -658,6 +659,24 @@ int EditorData::add_edited_scene(int p_at_pos) {
 	es.live_edit_root = NodePath(String("/root"));
 	es.history_id = last_created_scene++;
 	es.time_opened = Time::get_singleton()->get_unix_time_from_system();
+	es.root_viewport = memnew(SubViewport);
+	es.root_viewport->set_name(vformat("SceneRoot%d", es.history_id));
+	es.root_viewport->set_auto_translate_mode(Node::AUTO_TRANSLATE_MODE_ALWAYS);
+	es.root_viewport->set_translation_domain(StringName());
+	es.root_viewport->set_embedding_subwindows(true);
+	// A world of its own is what keeps two open documents from rendering into
+	// each other, and nothing ever displays this viewport - the panels showing
+	// the document render its worlds - so it does not draw.
+	es.root_viewport->set_use_own_world_3d(true);
+	es.root_viewport->set_disable_3d(true);
+	es.root_viewport->set_disable_input(true);
+	es.root_viewport->set_update_mode(SubViewport::UPDATE_DISABLED);
+	// No container sizes it, so the project resolution is what full-rect
+	// Controls lay out against.
+	es.root_viewport->set_size(Size2i(GLOBAL_GET("display/window/size/viewport_width"), GLOBAL_GET("display/window/size/viewport_height")));
+	if (scene_root_host) {
+		scene_root_host->add_child(es.root_viewport, false, Node::INTERNAL_MODE_BACK);
+	}
 
 	if (p_at_pos == edited_scene.size()) {
 		edited_scene.push_back(es);
@@ -683,6 +702,11 @@ void EditorData::remove_scene(int p_idx) {
 		}
 		memdelete(edited_scene[p_idx].root);
 		edited_scene.write[p_idx].root = nullptr;
+	}
+
+	if (edited_scene[p_idx].root_viewport) {
+		memdelete(edited_scene[p_idx].root_viewport);
+		edited_scene.write[p_idx].root_viewport = nullptr;
 	}
 
 	if (current_edited_scene > p_idx) {
@@ -836,6 +860,15 @@ int EditorData::get_edited_scene_from_path(const String &p_path) const {
 void EditorData::set_edited_scene(int p_idx) {
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
 	current_edited_scene = p_idx;
+
+	// Only the current document listens, or every open scene would be feeding
+	// the same 2D audio bus at once.
+	for (int i = 0; i < edited_scene.size(); i++) {
+		SubViewport *vp = edited_scene[i].root_viewport;
+		if (vp) {
+			vp->set_as_audio_listener_2d(i == current_edited_scene);
+		}
+	}
 }
 
 Node *EditorData::get_edited_scene_root(int p_idx) {
@@ -850,6 +883,29 @@ Node *EditorData::get_edited_scene_root(int p_idx) {
 
 void EditorData::set_edited_scene_root(Node *p_root) {
 	set_scene_root(current_edited_scene, p_root);
+}
+
+void EditorData::set_scene_root_host(Node *p_host) {
+	scene_root_host = p_host;
+	// Scenes opened before the host existed still need a home.
+	for (int i = 0; i < edited_scene.size(); i++) {
+		SubViewport *vp = edited_scene[i].root_viewport;
+		if (scene_root_host && vp && !vp->get_parent()) {
+			scene_root_host->add_child(vp, false, Node::INTERNAL_MODE_BACK);
+		}
+	}
+}
+
+SubViewport *EditorData::get_scene_root_viewport(int p_idx) const {
+	if (p_idx < 0) {
+		p_idx = current_edited_scene;
+	}
+	// Quietly null before the first document exists: the editor is still being
+	// built at that point and plugins do ask.
+	if (p_idx < 0 || p_idx >= edited_scene.size()) {
+		return nullptr;
+	}
+	return edited_scene[p_idx].root_viewport;
 }
 
 int EditorData::get_edited_scene_count() const {

@@ -3137,6 +3137,10 @@ void Node3DEditorViewport::set_message(const String &p_message, float p_time) {
 }
 
 void Node3DEditorPlugin::edited_scene_changed() {
+	// The document changed, so its world did too: follow it before anything
+	// tries to draw into the world of the scene that was open before.
+	spatial_editor->update_editing_world();
+
 	for (uint32_t i = 0; i < Node3DEditor::VIEWPORTS_COUNT; i++) {
 		Node3DEditorViewport *viewport = Node3DEditor::get_singleton()->get_editor_viewport(i);
 		if (viewport->is_visible()) {
@@ -7489,8 +7493,91 @@ void Node3DEditor::update_all_gizmos(Node *p_node) {
 	_update_all_gizmos(p_node);
 }
 
+void Node3DEditorViewport::update_editing_world() {
+	const Ref<World3D> world = get_editing_world();
+	if (world.is_null()) {
+		return;
+	}
+	viewport->set_world_3d(world);
+
+	// The manipulator instances were created in whatever world was current when
+	// this viewport entered the tree, so carry them over rather than leaving
+	// them drawing into a scene nobody is looking at.
+	const RID scenario = world->get_scenario();
+	for (int i = 0; i < 3; i++) {
+		RS::get_singleton()->instance_set_scenario(move_gizmo_instance[i], scenario);
+		RS::get_singleton()->instance_set_scenario(move_plane_gizmo_instance[i], scenario);
+		RS::get_singleton()->instance_set_scenario(scale_gizmo_instance[i], scenario);
+		RS::get_singleton()->instance_set_scenario(scale_plane_gizmo_instance[i], scenario);
+		RS::get_singleton()->instance_set_scenario(axis_gizmo_instance[i], scenario);
+	}
+	for (int i = 0; i < 4; i++) {
+		RS::get_singleton()->instance_set_scenario(rotate_gizmo_instance[i], scenario);
+	}
+	RS::get_singleton()->instance_set_scenario(trackball_sphere_instance, scenario);
+}
+
 Ref<World3D> Node3DEditorViewport::get_editing_world() const {
 	return spatial_editor->get_editing_world();
+}
+
+static void _count_preview_blockers(Node *p_node, uint32_t &r_world_env_count, uint32_t &r_directional_light_count) {
+	if (Object::cast_to<WorldEnvironment>(p_node)) {
+		r_world_env_count++;
+	} else if (Object::cast_to<DirectionalLight3D>(p_node)) {
+		r_directional_light_count++;
+	}
+	for (int i = 0; i < p_node->get_child_count(); i++) {
+		_count_preview_blockers(p_node->get_child(i), r_world_env_count, r_directional_light_count);
+	}
+}
+
+void Node3DEditor::update_editing_world() {
+	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+		if (viewports[i]) {
+			viewports[i]->update_editing_world();
+		}
+	}
+
+	// The grid and origin lines are shared, so only their owner moves them.
+	if (scene_visuals_owner != this) {
+		return;
+	}
+	const Ref<World3D> world = get_editing_world();
+	if (world.is_null()) {
+		return;
+	}
+	const RID scenario = world->get_scenario();
+	if (origin_instance.is_valid()) {
+		RS::get_singleton()->instance_set_scenario(origin_instance, scenario);
+	}
+	for (int i = 0; i < 3; i++) {
+		if (grid_instance[i].is_valid()) {
+			RS::get_singleton()->instance_set_scenario(grid_instance[i], scenario);
+		}
+	}
+
+	// Documents stay live in roots of their own, so switching between them
+	// fires no node-removed notifications and these counts would keep counting
+	// the lights and environments of a scene that is no longer in front of us.
+	world_env_count = 0;
+	directional_light_count = 0;
+	Node *edited_scene = EditorNode::get_singleton()->get_edited_scene();
+	if (edited_scene) {
+		_count_preview_blockers(edited_scene, world_env_count, directional_light_count);
+	}
+
+	// The preview nodes are sitting in the previous document's root; take them
+	// out and let the update below place them in the current one.
+	if (preview_sun && preview_sun->get_parent()) {
+		preview_sun->get_parent()->remove_child(preview_sun);
+		preview_sun_dangling = true;
+	}
+	if (preview_environment && preview_environment->get_parent()) {
+		preview_environment->get_parent()->remove_child(preview_environment);
+		preview_env_dangling = true;
+	}
+	callable_mp(this, &Node3DEditor::_update_preview_environment).call_deferred();
 }
 
 Ref<World3D> Node3DEditor::get_editing_world() const {
@@ -7498,7 +7585,11 @@ Ref<World3D> Node3DEditor::get_editing_world() const {
 	// gizmos, indicators and picks that go through here follow the scene rather
 	// than the editor window.
 	SubViewport *scene_root = EditorNode::get_singleton()->get_scene_root();
-	ERR_FAIL_NULL_V(scene_root, Ref<World3D>());
+	if (!scene_root) {
+		// Asked before the first document exists, while the editor is still
+		// being built. Fall back so nothing instances into a null world.
+		return get_tree() ? get_tree()->get_root()->get_world_3d() : Ref<World3D>();
+	}
 	return scene_root->find_world_3d();
 }
 

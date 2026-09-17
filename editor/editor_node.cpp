@@ -478,14 +478,14 @@ void EditorNode::_update_from_settings() {
 	_update_title();
 
 	int current_filter = GLOBAL_GET("rendering/textures/canvas_textures/default_texture_filter");
-	if (current_filter != scene_root->get_default_canvas_item_texture_filter()) {
+	if (current_filter != get_scene_root()->get_default_canvas_item_texture_filter()) {
 		Viewport::DefaultCanvasItemTextureFilter tf = (Viewport::DefaultCanvasItemTextureFilter)current_filter;
-		scene_root->set_default_canvas_item_texture_filter(tf);
+		get_scene_root()->set_default_canvas_item_texture_filter(tf);
 	}
 	int current_repeat = GLOBAL_GET("rendering/textures/canvas_textures/default_texture_repeat");
-	if (current_repeat != scene_root->get_default_canvas_item_texture_repeat()) {
+	if (current_repeat != get_scene_root()->get_default_canvas_item_texture_repeat()) {
 		Viewport::DefaultCanvasItemTextureRepeat tr = (Viewport::DefaultCanvasItemTextureRepeat)current_repeat;
-		scene_root->set_default_canvas_item_texture_repeat(tr);
+		get_scene_root()->set_default_canvas_item_texture_repeat(tr);
 	}
 	String current_fallback_locale = GLOBAL_GET("internationalization/locale/fallback");
 	if (current_fallback_locale != TranslationServer::get_singleton()->get_fallback_locale()) {
@@ -494,7 +494,7 @@ void EditorNode::_update_from_settings() {
 		if (!domain->is_enabled()) {
 			domain->set_locale_override(current_fallback_locale);
 		}
-		scene_root->propagate_notification(Control::NOTIFICATION_LAYOUT_DIRECTION_CHANGED);
+		get_scene_root()->propagate_notification(Control::NOTIFICATION_LAYOUT_DIRECTION_CHANGED);
 	}
 
 	RSE::DOFBokehShape dof_shape = RSE::DOFBokehShape(int(GLOBAL_GET("rendering/camera/depth_of_field/depth_of_field_bokeh_shape")));
@@ -538,21 +538,21 @@ void EditorNode::_update_from_settings() {
 	RS::get_singleton()->gi_set_use_half_resolution(use_half_res_gi);
 
 	bool snap_2d_transforms = GLOBAL_GET("rendering/2d/snap/snap_2d_transforms_to_pixel");
-	scene_root->set_snap_2d_transforms_to_pixel(snap_2d_transforms);
+	get_scene_root()->set_snap_2d_transforms_to_pixel(snap_2d_transforms);
 	bool snap_2d_vertices = GLOBAL_GET("rendering/2d/snap/snap_2d_vertices_to_pixel");
-	scene_root->set_snap_2d_vertices_to_pixel(snap_2d_vertices);
+	get_scene_root()->set_snap_2d_vertices_to_pixel(snap_2d_vertices);
 
 	Viewport::SDFOversize sdf_oversize = Viewport::SDFOversize(int(GLOBAL_GET("rendering/2d/sdf/oversize")));
-	scene_root->set_sdf_oversize(sdf_oversize);
+	get_scene_root()->set_sdf_oversize(sdf_oversize);
 	Viewport::SDFScale sdf_scale = Viewport::SDFScale(int(GLOBAL_GET("rendering/2d/sdf/scale")));
-	scene_root->set_sdf_scale(sdf_scale);
+	get_scene_root()->set_sdf_scale(sdf_scale);
 
 	Viewport::MSAA msaa = Viewport::MSAA(int(GLOBAL_GET("rendering/anti_aliasing/quality/msaa_2d")));
-	scene_root->set_msaa_2d(msaa);
+	get_scene_root()->set_msaa_2d(msaa);
 
 	// 2D doesn't use a dedicated SubViewport like 3D does, so we apply it on the root viewport instead.
 	bool use_debanding = GLOBAL_GET("rendering/anti_aliasing/quality/use_debanding");
-	scene_root->set_use_debanding(use_debanding);
+	get_scene_root()->set_use_debanding(use_debanding);
 	get_viewport()->set_use_debanding(use_debanding);
 
 	// Enable HDR if requested.
@@ -560,7 +560,7 @@ void EditorNode::_update_from_settings() {
 	DisplayServer::get_singleton()->window_request_hdr_output(hdr_requested);
 
 	const bool use_hdr_2d = GLOBAL_GET("rendering/viewport/hdr_2d");
-	scene_root->set_use_hdr_2d(use_hdr_2d || hdr_requested);
+	get_scene_root()->set_use_hdr_2d(use_hdr_2d || hdr_requested);
 	get_viewport()->set_use_hdr_2d(use_hdr_2d || hdr_requested);
 
 	if (hdr_requested && !use_hdr_2d) {
@@ -568,14 +568,14 @@ void EditorNode::_update_from_settings() {
 	}
 
 	float mesh_lod_threshold = GLOBAL_GET("rendering/mesh_lod/lod_change/threshold_pixels");
-	scene_root->set_mesh_lod_threshold(mesh_lod_threshold);
+	get_scene_root()->set_mesh_lod_threshold(mesh_lod_threshold);
 
 	// Nothing displays the scene root any more - the views render its worlds
 	// through viewports of their own - so its size has to be stated rather than
 	// inherited from a container, or full-rect Controls would have no rect.
 	const Size2i viewport_size = Size2i(GLOBAL_GET("display/window/size/viewport_width"), GLOBAL_GET("display/window/size/viewport_height"));
-	if (viewport_size.x > 0 && viewport_size.y > 0 && scene_root->get_size() != viewport_size) {
-		scene_root->set_size(viewport_size);
+	if (viewport_size.x > 0 && viewport_size.y > 0 && get_scene_root()->get_size() != viewport_size) {
+		get_scene_root()->set_size(viewport_size);
 	}
 
 	RS::get_singleton()->decals_set_filter(RSE::DecalFilter(int(GLOBAL_GET("rendering/textures/decals/filter"))));
@@ -696,7 +696,7 @@ void EditorNode::_queue_translation_notification() {
 
 void EditorNode::_propagate_translation_notification() {
 	pending_translation_notification = false;
-	scene_root->propagate_notification(NOTIFICATION_TRANSLATION_CHANGED);
+	get_scene_root()->propagate_notification(NOTIFICATION_TRANSLATION_CHANGED);
 }
 
 void EditorNode::_update_theme(bool p_skip_creation) {
@@ -799,7 +799,7 @@ Ref<Texture2D> EditorNode::get_editor_theme_native_menu_icon(const StringName &p
 }
 
 void EditorNode::update_preview_themes(int p_mode) {
-	if (!scene_root->is_inside_tree()) {
+	if (!get_scene_root()->is_inside_tree()) {
 		return; // Too early.
 	}
 
@@ -820,11 +820,11 @@ void EditorNode::update_preview_themes(int p_mode) {
 
 	preview_themes.push_back(ThemeDB::get_singleton()->get_default_theme());
 
-	ThemeContext *preview_context = ThemeDB::get_singleton()->get_theme_context(scene_root);
+	ThemeContext *preview_context = ThemeDB::get_singleton()->get_theme_context(get_scene_root());
 	if (preview_context) {
 		preview_context->set_themes(preview_themes);
 	} else {
-		ThemeDB::get_singleton()->create_theme_context(scene_root, preview_themes);
+		ThemeDB::get_singleton()->create_theme_context(get_scene_root(), preview_themes);
 	}
 }
 
@@ -901,7 +901,7 @@ void EditorNode::_notification(int p_what) {
 			// The edited scene has a world of its own, so mirror it there or a
 			// scene without a WorldEnvironment renders against nothing.
 			{
-				Ref<World3D> scene_world = scene_root->find_world_3d();
+				Ref<World3D> scene_world = get_scene_root()->find_world_3d();
 				const Ref<Environment> &fallback = get_tree()->get_root()->get_world_3d()->get_fallback_environment();
 				if (scene_world.is_valid() && scene_world->get_fallback_environment() != fallback) {
 					scene_world->set_fallback_environment(fallback);
@@ -2296,7 +2296,7 @@ void EditorNode::_save_scene_with_preview(String p_file, int p_idx) {
 			img.instantiate();
 			img->initialize_data(1, 1, false, Image::FORMAT_RGB8);
 		} else if (c3d < c2d) {
-			Ref<ViewportTexture> viewport_texture = scene_root->get_texture();
+			Ref<ViewportTexture> viewport_texture = get_scene_root()->get_texture();
 			if (viewport_texture->get_width() > 0 && viewport_texture->get_height() > 0) {
 				img = viewport_texture->get_image();
 			}
@@ -4611,7 +4611,7 @@ bool EditorNode::is_viewport_editable(const Viewport *p_viewport) {
 	if (!p_viewport) {
 		return true;
 	}
-	if (singleton && p_viewport == singleton->scene_root) {
+	if (singleton && p_viewport == singleton->get_scene_root()) {
 		return true;
 	}
 	// Anything nested deeper still has to be on screen to be worth editing.
@@ -4626,8 +4626,8 @@ void EditorNode::set_edited_scene_root(Node *p_scene, bool p_auto_add) {
 	Node *old_edited_scene_root = get_editor_data().get_edited_scene_root();
 	ERR_FAIL_COND_MSG(p_scene && p_scene != old_edited_scene_root && p_scene->get_parent(), "Non-null nodes that are set as edited scene should not have a parent node.");
 
-	if (p_auto_add && old_edited_scene_root && old_edited_scene_root->get_parent() == scene_root) {
-		scene_root->remove_child(old_edited_scene_root);
+	if (p_auto_add && old_edited_scene_root && old_edited_scene_root->get_parent() == get_scene_root()) {
+		get_scene_root()->remove_child(old_edited_scene_root);
 	}
 	get_editor_data().set_edited_scene_root(p_scene);
 
@@ -4640,7 +4640,7 @@ void EditorNode::set_edited_scene_root(Node *p_scene, bool p_auto_add) {
 	}
 
 	if (p_auto_add && p_scene) {
-		scene_root->add_child(p_scene, true);
+		get_scene_root()->add_child(p_scene, true);
 	}
 }
 
@@ -4760,8 +4760,8 @@ void EditorNode::_set_current_scene_nocheck(int p_idx, bool p_ignore_state) {
 	Node *new_scene = editor_data.get_edited_scene_root();
 
 	// Remove the scene only if it's a new scene, preventing performance issues when adding and removing scenes.
-	if (old_scene && new_scene != old_scene && old_scene->get_parent() == scene_root) {
-		scene_root->remove_child(old_scene);
+	if (old_scene && new_scene != old_scene && old_scene->get_parent() == get_scene_root()) {
+		get_scene_root()->remove_child(old_scene);
 	}
 
 	if (Popup *p = Object::cast_to<Popup>(new_scene)) {
@@ -4773,8 +4773,8 @@ void EditorNode::_set_current_scene_nocheck(int p_idx, bool p_ignore_state) {
 		get_tree()->set_edited_scene_root(new_scene);
 	}
 
-	if (new_scene && new_scene->get_parent() != scene_root) {
-		scene_root->add_child(new_scene, true);
+	if (new_scene && new_scene->get_parent() != get_scene_root()) {
+		get_scene_root()->add_child(new_scene, true);
 	}
 
 	if (editor_data.check_and_update_scene(p_idx)) {
@@ -7334,9 +7334,9 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 			// Prevent scene roots with the same name from being in the tree at the same time.
 			Node *original_edited_scene_root = editor_data.get_edited_scene_root(original_edited_scene_idx);
 			if (original_edited_scene_root && original_edited_scene_root->get_name() == current_edited_scene->get_name()) {
-				scene_root->remove_child(original_edited_scene_root);
+				get_scene_root()->remove_child(original_edited_scene_root);
 			}
-			scene_root->add_child(current_edited_scene);
+			get_scene_root()->add_child(current_edited_scene);
 		}
 
 		// Restore the state so that the selection can be updated.
@@ -7638,14 +7638,14 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 		editor_history.cleanup_history();
 
 		if (original_edited_scene_idx != current_scene_idx) {
-			scene_root->remove_child(current_edited_scene);
+			get_scene_root()->remove_child(current_edited_scene);
 
 			// Ensure the current edited scene is re-added if removed earlier because it has the same name
 			// as the reimported scene. The editor could crash when reloading SceneTreeDock if the current
 			// edited scene is not in the scene tree.
 			Node *original_edited_scene_root = editor_data.get_edited_scene_root(original_edited_scene_idx);
 			if (original_edited_scene_root && !original_edited_scene_root->get_parent()) {
-				scene_root->add_child(original_edited_scene_root);
+				get_scene_root()->add_child(original_edited_scene_root);
 			}
 		}
 	}
@@ -8897,24 +8897,13 @@ EditorNode::EditorNode() {
 	srt->add_child(editor_main_screen);
 	editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 
-	scene_root = memnew(SubViewport);
-	scene_root->set_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);
-	scene_root->set_translation_domain(StringName());
-	scene_root->set_embedding_subwindows(true);
-	// The edited scene gets a world of its own rather than sharing the root
-	// window's. Nothing changes while there is one scene root, but it is what
-	// lets a second one hold a different scene without the two rendering into
-	// each other.
-	scene_root->set_use_own_world_3d(true);
-	scene_root->set_disable_3d(true);
-	scene_root->set_disable_input(true);
-	scene_root->set_as_audio_listener_2d(true);
-	// It hosts the scene and owns its worlds; the views render those worlds
-	// themselves, so nothing ever displays this viewport and drawing it would
-	// be drawing the scene a second time for nobody.
-	scene_root->set_update_mode(SubViewport::UPDATE_DISABLED);
-	scene_root->set_size(Size2i(GLOBAL_GET("display/window/size/viewport_width"), GLOBAL_GET("display/window/size/viewport_height")));
-	add_child(scene_root);
+	// Every document gets a viewport of its own from here on; EditorData builds
+	// them and parents them under the editor. The first one is opened right
+	// away: plugins are built below and they ask for the scene root, which only
+	// exists once a document does.
+	editor_data.set_scene_root_host(this);
+	editor_data.add_edited_scene(-1);
+	editor_data.set_edited_scene(0);
 
 	accept = memnew(AcceptDialog);
 	accept->set_autowrap(true);
@@ -9209,7 +9198,7 @@ EditorNode::EditorNode() {
 
 	// Instantiate and place editor docks.
 
-	memnew(SceneTreeDock(scene_root, editor_selection, editor_data));
+	memnew(SceneTreeDock(get_scene_root(), editor_selection, editor_data));
 	editor_dock_manager->add_dock(SceneTreeDock::get_singleton());
 
 	memnew(ImportDock);
@@ -9629,8 +9618,7 @@ EditorNode::EditorNode() {
 		_init_callbacks[i]();
 	}
 
-	editor_data.add_edited_scene(-1);
-	editor_data.set_edited_scene(0);
+	// The first document was opened before the plugins were built.
 	scene_tabs->update_scene_tabs();
 
 	ImportDock::get_singleton()->initialize_import_options();

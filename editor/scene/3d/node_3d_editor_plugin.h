@@ -515,6 +515,9 @@ public:
 	// Follows the world of the view this viewport belongs to, so its gizmo
 	// instances and picks land in the scene it is actually showing.
 	Ref<World3D> get_editing_world() const;
+	// Re-points this viewport at the world of the document now being edited,
+	// and carries its manipulator instances over to that world's scenario.
+	void update_editing_world();
 
 	void update_surface() { surface->queue_redraw(); }
 	void update_transform_gizmo_view();
@@ -974,6 +977,9 @@ public:
 	// viewport pick goes through here, so once panes own their own scenes this
 	// is the single place that has to start answering per pane.
 	Ref<World3D> get_editing_world() const;
+	// Called when the edited document changes: every viewport follows the new
+	// world, and the shared grid and origin lines move into it.
+	void update_editing_world();
 
 	static Size2i get_camera_viewport_size(Camera3D *p_camera);
 

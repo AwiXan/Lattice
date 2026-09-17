@@ -677,6 +677,7 @@ public:
 	bool has_main_screen() const override { return true; }
 	virtual void edit(Object *p_object) override;
 	virtual bool handles(Object *p_object) const override;
+	virtual void edited_scene_changed() override;
 	virtual void make_visible(bool p_visible) override;
 	virtual Dictionary get_state() const override;
 	virtual void set_state(const Dictionary &p_state) override;

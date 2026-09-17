@@ -36,6 +36,7 @@
 
 class ConfigFile;
 class EditorPlugin;
+class SubViewport;
 class EditorUndoRedoManager;
 class PopupMenu;
 
@@ -112,6 +113,10 @@ public:
 
 	struct EditedScene {
 		Node *root = nullptr;
+		// The viewport this scene lives in. It owns the scene's worlds and is
+		// never displayed: the panels showing this document render those worlds
+		// themselves, which is what lets several documents be live at once.
+		SubViewport *root_viewport = nullptr;
 		String path;
 		uint64_t file_modified_time = 0;
 		Dictionary editor_states;
@@ -142,6 +147,8 @@ private:
 
 	Vector<EditedScene> edited_scene;
 	int current_edited_scene = -1;
+	// Where the per-scene viewports are parented, since EditorData is not a Node.
+	Node *scene_root_host = nullptr;
 	int last_created_scene = 1;
 
 	bool _find_updated_instances(Node *p_root, Node *p_node, HashSet<String> &checked_paths);
@@ -208,6 +215,9 @@ public:
 	Node *get_edited_scene_root(int p_idx = -1);
 	int get_edited_scene_count() const;
 	Vector<EditedScene> get_edited_scenes() const;
+
+	void set_scene_root_host(Node *p_host);
+	SubViewport *get_scene_root_viewport(int p_idx = -1) const;
 
 	String get_scene_title(int p_idx, bool p_always_strip_extension = false) const;
 	String get_scene_path(int p_idx) const;

@@ -457,7 +457,6 @@ private:
 
 	int current_menu_option = 0;
 
-	SubViewport *scene_root = nullptr; // Root of the scene being edited.
 
 	Ref<Resource> saving_resource;
 	HashSet<Ref<Resource>> saving_resources_in_path;
@@ -856,7 +855,9 @@ public:
 
 	bool is_changing_scene() const;
 
-	SubViewport *get_scene_root() { return scene_root; } // Root of the scene being edited.
+	// Root of the scene being edited. Each open document has one of its own;
+	// this answers for whichever is current.
+	SubViewport *get_scene_root() { return editor_data.get_scene_root_viewport(); }
 
 	// Whether editing handles belong on content living in this viewport. The
 	// edited scene's own root is never parented to a SubViewportContainer - the

@@ -4381,7 +4381,7 @@ void CanvasItemEditor::_update_editor_settings() {
 }
 
 void CanvasItemEditor::_project_settings_changed() {
-	view_viewport->set_snap_controls_to_pixels(GLOBAL_GET("gui/common/snap_controls_to_pixels"));
+	EditorNode::get_singleton()->get_scene_root()->set_snap_controls_to_pixels(GLOBAL_GET("gui/common/snap_controls_to_pixels"));
 }
 
 void CanvasItemEditor::_notification(int p_what) {
@@ -4682,7 +4682,7 @@ void CanvasItemEditor::_update_zoom(real_t p_zoom) {
 }
 
 void CanvasItemEditor::_update_oversampling() {
-	view_viewport->set_oversampling_override(auto_resampling_enabled ? zoom : 0.0);
+	EditorNode::get_singleton()->get_scene_root()->set_oversampling_override(auto_resampling_enabled ? zoom : 0.0);
 }
 
 void CanvasItemEditor::_shortcut_zoom_set(real_t p_zoom) {
@@ -6190,6 +6190,15 @@ bool CanvasItemEditorPlugin::handles(Object *p_object) const {
 	return p_object->is_class("CanvasItem");
 }
 
+void CanvasItemEditorPlugin::edited_scene_changed() {
+	// Follow the document: the view renders whichever scene is current, and
+	// there is no scene root at all while the editor is still being built.
+	SubViewport *scene_root = EditorNode::get_singleton()->get_scene_root();
+	if (scene_root) {
+		canvas_item_editor->set_scene_root(scene_root);
+	}
+}
+
 void CanvasItemEditorPlugin::make_visible(bool p_visible) {
 	if (p_visible) {
 		canvas_item_editor->show();
@@ -6229,7 +6238,6 @@ void CanvasItemEditorPlugin::_notification(int p_what) {
 CanvasItemEditorPlugin::CanvasItemEditorPlugin() {
 	canvas_item_editor = memnew(CanvasItemEditor);
 	canvas_item_editor->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	canvas_item_editor->set_scene_root(EditorNode::get_singleton()->get_scene_root());
 	EditorNode::get_singleton()->get_editor_main_screen()->get_control()->add_child(canvas_item_editor);
 	canvas_item_editor->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	canvas_item_editor->hide();
