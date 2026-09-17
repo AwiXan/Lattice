@@ -6438,7 +6438,7 @@ void AnimationTrackEditor::_move_selection_commit() {
 		float newpos = E->get().pos + motion;
 		undo_redo->add_do_method(animation.ptr(), "track_insert_key", E->key().track, newpos, animation->track_get_key_value(E->key().track, E->key().key), animation->track_get_key_transition(E->key().track, E->key().key));
 		if (animation->track_get_type(E->key().track) == Animation::TYPE_BEZIER) {
-			undo_redo->add_do_method(this, "_bezier_track_set_key_handle_mode", animation.ptr(), E->key().track, E->key().key, animation->bezier_track_get_key_handle_mode(E->key().track, E->key().key));
+			undo_redo->add_do_method(this, "_bezier_track_set_key_handle_mode_at_time", animation.ptr(), E->key().track, newpos, animation->bezier_track_get_key_handle_mode(E->key().track, E->key().key));
 		}
 	}
 
@@ -6452,7 +6452,7 @@ void AnimationTrackEditor::_move_selection_commit() {
 	for (RBMap<SelectedKey, KeyInfo>::Element *E = selection.back(); E; E = E->prev()) {
 		undo_redo->add_undo_method(animation.ptr(), "track_insert_key", E->key().track, E->get().pos, animation->track_get_key_value(E->key().track, E->key().key), animation->track_get_key_transition(E->key().track, E->key().key));
 		if (animation->track_get_type(E->key().track) == Animation::TYPE_BEZIER) {
-			undo_redo->add_undo_method(this, "_bezier_track_set_key_handle_mode", animation.ptr(), E->key().track, E->key().key, animation->bezier_track_get_key_handle_mode(E->key().track, E->key().key));
+			undo_redo->add_undo_method(this, "_bezier_track_set_key_handle_mode_at_time", animation.ptr(), E->key().track, E->get().pos, animation->bezier_track_get_key_handle_mode(E->key().track, E->key().key));
 		}
 	}
 
@@ -7610,7 +7610,7 @@ void AnimationTrackEditor::_edit_menu_pressed(int p_option) {
 			for (RBMap<SelectedKey, KeyInfo>::Element *E = selection.back(); E; E = E->prev()) {
 				undo_redo->add_undo_method(animation.ptr(), "track_insert_key", E->key().track, E->get().pos, animation->track_get_key_value(E->key().track, E->key().key), animation->track_get_key_transition(E->key().track, E->key().key));
 				if (animation->track_get_type(E->key().track) == Animation::TYPE_BEZIER) {
-					undo_redo->add_undo_method(this, "_bezier_track_set_key_handle_mode", animation.ptr(), E->key().track, E->key().key, animation->bezier_track_get_key_handle_mode(E->key().track, E->key().key));
+					undo_redo->add_undo_method(this, "_bezier_track_set_key_handle_mode_at_time", animation.ptr(), E->key().track, E->get().pos, animation->bezier_track_get_key_handle_mode(E->key().track, E->key().key));
 				}
 			}
 
@@ -7936,7 +7936,7 @@ void AnimationTrackEditor::_edit_menu_pressed(int p_option) {
 					undo_redo->add_do_method(animation.ptr(), "track_remove_key", E->key().track, E->key().key);
 					undo_redo->add_undo_method(animation.ptr(), "track_insert_key", E->key().track, E->get().pos, animation->track_get_key_value(E->key().track, E->key().key), animation->track_get_key_transition(E->key().track, E->key().key));
 					if (animation->track_get_type(E->key().track) == Animation::TYPE_BEZIER) {
-						undo_redo->add_undo_method(this, "_bezier_track_set_key_handle_mode", animation.ptr(), E->key().track, E->key().key, animation->bezier_track_get_key_handle_mode(E->key().track, E->key().key));
+						undo_redo->add_undo_method(this, "_bezier_track_set_key_handle_mode_at_time", animation.ptr(), E->key().track, E->get().pos, animation->bezier_track_get_key_handle_mode(E->key().track, E->key().key));
 					}
 				}
 				undo_redo->add_do_method(this, "_clear_selection_for_anim", animation);
