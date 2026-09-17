@@ -11385,10 +11385,12 @@ void Node3DEditor::remove_gizmo_plugin(Ref<EditorNode3DGizmoPlugin> p_plugin) {
 
 void Node3DEditor::_update_all_gizmos_menus() {
 	// The plugin set is shared, so every open view's Gizmos menu follows it.
+	// Every view is rebuilt, in the tree or not: modules register their gizmo
+	// plugins while a view may still be outside it, and a menu left un-rebuilt
+	// has no item for them, which _update_gizmos_menu_theme() would then look
+	// up and get -1 for.
 	for (int i = 0; i < instances.size(); i++) {
-		if (instances[i]->is_inside_tree()) {
-			instances[i]->_update_gizmos_menu();
-		}
+		instances[i]->_update_gizmos_menu();
 	}
 }
 
