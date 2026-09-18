@@ -10820,7 +10820,10 @@ Node3DEditor::Node3DEditor() {
 	HFlowContainer *main_flow = memnew(HFlowContainer);
 	toolbar_margin->add_child(main_flow);
 
-	// Main toolbars.
+	// Main toolbars. Each group is a row of its own in the flow container, so
+	// the toolbar wraps when there is no room instead of making the whole view
+	// as wide as every button laid end to end - which is what stopped two panes
+	// from being resized against each other.
 	HBoxContainer *main_menu_hbox = memnew(HBoxContainer);
 	main_flow->add_child(main_menu_hbox);
 
@@ -10878,6 +10881,8 @@ Node3DEditor::Node3DEditor() {
 	tool_button[TOOL_MODE_SELECT]->set_accessibility_name(TTRC("Select Mode"));
 
 	main_menu_hbox->add_child(memnew(VSeparator));
+	main_menu_hbox = memnew(HBoxContainer);
+	main_flow->add_child(main_menu_hbox);
 
 	tool_button[TOOL_MODE_LIST_SELECT] = memnew(Button);
 	main_menu_hbox->add_child(tool_button[TOOL_MODE_LIST_SELECT]);
@@ -10933,6 +10938,8 @@ Node3DEditor::Node3DEditor() {
 	tool_button[TOOL_RULER]->set_accessibility_name(TTRC("Ruler Mode"));
 
 	main_menu_hbox->add_child(memnew(VSeparator));
+	main_menu_hbox = memnew(HBoxContainer);
+	main_flow->add_child(main_menu_hbox);
 
 	tool_option_button[TOOL_OPT_LOCAL_COORDS] = memnew(Button);
 	main_menu_hbox->add_child(tool_option_button[TOOL_OPT_LOCAL_COORDS]);
@@ -10972,6 +10979,8 @@ Node3DEditor::Node3DEditor() {
 	tool_option_button[TOOL_OPT_PRESERVE_CHILDREN_TRANSFORM]->set_tooltip_text(TTRC("When enabled, transforming a node will preserve the global transform of its children.\nThis also applies when editing transform properties in the Inspector."));
 
 	main_menu_hbox->add_child(memnew(VSeparator));
+	main_menu_hbox = memnew(HBoxContainer);
+	main_flow->add_child(main_menu_hbox);
 	sun_button = memnew(Button);
 	sun_button->set_tooltip_text(TTRC("Toggle preview sunlight.\nIf a DirectionalLight3D node is added to the scene, preview sunlight is disabled."));
 	sun_button->set_toggle_mode(true);
@@ -11002,6 +11011,8 @@ Node3DEditor::Node3DEditor() {
 	main_menu_hbox->add_child(sun_environ_settings);
 
 	main_menu_hbox->add_child(memnew(VSeparator));
+	main_menu_hbox = memnew(HBoxContainer);
+	main_flow->add_child(main_menu_hbox);
 
 	// Drag and drop support;
 	preview_node = memnew(Node3D);
