@@ -198,6 +198,11 @@ public:
 	virtual String get_plugin_version() const;
 	virtual void set_plugin_version(const String &p_version);
 	virtual bool has_main_screen() const;
+	// Builds another, independent view of this plugin's main screen for a
+	// second pane, already shown and processing; the caller parents it and
+	// owns it from then on. Plugins that can only exist once return nullptr,
+	// which is what leaves a single-pane layout and existing addons untouched.
+	virtual Control *create_main_screen_view() { return nullptr; }
 	virtual void make_visible(bool p_visible);
 	virtual void set_current() {}
 	virtual void selected_notify() {} //notify that it was raised by the user, not the editor

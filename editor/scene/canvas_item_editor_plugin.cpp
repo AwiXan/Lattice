@@ -4405,9 +4405,11 @@ void CanvasItemEditor::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
-			// Whichever 2D view the user is looking at owns the editing context.
-			// With a single editor space open this is a no-op: there is only one.
-			if (is_visible_in_tree()) {
+			// Appearing only claims the editing context when nothing else holds
+			// it, so revealing a second pane does not pull the context out of
+			// the one being worked in; from there on a click decides. With a
+			// single view open this is the same as claiming it unconditionally.
+			if (is_visible_in_tree() && (!active_instance || !active_instance->is_visible_in_tree())) {
 				make_active();
 			}
 		} break;
@@ -5751,6 +5753,9 @@ CanvasItemEditor::CanvasItemEditor() {
 	viewport->connect(SceneStringName(draw), callable_mp(this, &CanvasItemEditor::_draw_viewport));
 	viewport->connect(SceneStringName(gui_input), callable_mp(this, &CanvasItemEditor::_gui_input_viewport));
 	viewport->connect(SceneStringName(focus_exited), callable_mp(panner.ptr(), &ViewPanner::release_pan_key));
+	// Focus is what picks the active view among several: it follows the click
+	// that the user made, where visibility only says a pane is on screen.
+	viewport->connect(SceneStringName(focus_entered), callable_mp(this, &CanvasItemEditor::make_active));
 
 	h_scroll = memnew(HScrollBar);
 	viewport->add_child(h_scroll);

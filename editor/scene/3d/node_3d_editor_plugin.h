@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/math/dynamic_bvh.h"
+#include "editor/editor_document_view.h"
 #include "editor/plugins/editor_plugin.h"
 #include "editor/scene/3d/node_3d_editor_gizmos.h"
 #include "editor/themes/editor_scale.h"
@@ -610,8 +611,8 @@ public:
 	Node3DEditorViewportContainer();
 };
 
-class Node3DEditor : public VBoxContainer {
-	GDCLASS(Node3DEditor, VBoxContainer);
+class Node3DEditor : public EditorDocumentView {
+	GDCLASS(Node3DEditor, EditorDocumentView);
 
 public:
 	static const unsigned int VIEWPORTS_COUNT = 4;
@@ -864,7 +865,10 @@ private:
 
 	// Which document this view edits. -1 follows whichever one is current,
 	// which is what a single-pane editor wants; a pane binds its view to one.
-	int bound_document = -1;
+	// The document this view edits, held as a history id because tab indices
+	// shift under it; -1 means it follows whichever document is current.
+	int bound_document_id = -1;
+	int _bound_document_index() const;
 
 	// Owns everything the views instance into the shared world: it alone answers
 	// the _spatial_editor_group broadcast, so a node never has the same gizmo
@@ -994,8 +998,9 @@ public:
 	// The document this view edits, and its scene root. Everything in the view
 	// goes through these rather than asking the editor what is current, so a
 	// second view can be looking at a different scene entirely.
-	void bind_document(int p_idx);
-	int get_bound_document() const { return bound_document; }
+	virtual void bind_document(int p_document_id) override;
+	virtual int get_bound_document() const override { return bound_document_id; }
+	virtual bool supports_document_binding() const override { return true; }
 	Node *get_edited_scene() const;
 	SubViewport *get_scene_root() const;
 
@@ -1128,6 +1133,7 @@ public:
 	Node3DEditor *get_spatial_editor() { return spatial_editor; }
 	virtual String get_plugin_name() const override { return TTRC("3D"); }
 	bool has_main_screen() const override { return true; }
+	virtual Control *create_main_screen_view() override;
 	virtual void make_visible(bool p_visible) override;
 	virtual void edit(Object *p_object) override;
 	virtual bool handles(Object *p_object) const override;

@@ -34,6 +34,7 @@
 
 class Button;
 class ConfigFile;
+class EditorDocumentView;
 class EditorPlugin;
 class HBoxContainer;
 class HSplitContainer;
@@ -60,6 +61,12 @@ private:
 	VBoxContainer *secondary_screen_vbox = nullptr;
 
 	EditorPlugin *selected_plugin = nullptr;
+
+	// The view filling the second pane, owned here. Null whenever the layout is
+	// a single pane, which is what keeps that case exactly as it was.
+	EditorDocumentView *secondary_view = nullptr;
+
+	int _pick_document_for_second_pane() const;
 
 	HBoxContainer *button_hb = nullptr;
 	Vector<Button *> buttons;
@@ -94,6 +101,13 @@ public:
 	// first pane; addons keep reaching it through EditorInterface unchanged.
 	VBoxContainer *get_control() const;
 	VBoxContainer *get_secondary_control() const;
+
+	// Splitting shows a second view of the plugin currently selected, pointed
+	// at another open scene, so two documents are edited side by side. Plugins
+	// that cannot be built twice refuse, and the layout stays single-pane.
+	void set_split_view_enabled(bool p_enabled);
+	bool is_split_view_enabled() const { return secondary_view != nullptr; }
+	bool can_split_view() const;
 
 	void add_main_plugin(EditorPlugin *p_editor);
 	void remove_main_plugin(EditorPlugin *p_editor);

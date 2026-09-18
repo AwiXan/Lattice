@@ -243,6 +243,10 @@ public:
 	int get_scene_history_id_from_path(const String &p_path) const;
 	int get_current_edited_scene_history_id() const;
 	int get_scene_history_id(int p_idx) const;
+	// Documents are addressed by history id rather than by tab index wherever a
+	// reference has to survive: closing or reordering a tab moves every index
+	// after it, and a binding kept as an index would quietly point elsewhere.
+	int get_scene_index_by_history_id(int p_history_id) const;
 
 	void set_plugin_window_layout(Ref<ConfigFile> p_layout);
 	void get_plugin_window_layout(Ref<ConfigFile> p_layout);

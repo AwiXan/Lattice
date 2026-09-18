@@ -32,6 +32,7 @@
 
 #include "core/io/config_file.h"
 #include "core/object/callable_mp.h"
+#include "editor/editor_document_view.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/plugins/editor_plugin.h"
@@ -262,6 +263,58 @@ VBoxContainer *EditorMainScreen::get_control() const {
 
 VBoxContainer *EditorMainScreen::get_secondary_control() const {
 	return secondary_screen_vbox;
+}
+
+bool EditorMainScreen::can_split_view() const {
+	return selected_plugin != nullptr;
+}
+
+int EditorMainScreen::_pick_document_for_second_pane() const {
+	// Show the pane something other than what pane one already shows, since two
+	// views of one scene is the less interesting half of the feature. Returned
+	// as a history id: the pane keeps pointing at that document however its tab
+	// moves, and follows the current one again once it is closed.
+	EditorData &editor_data = EditorNode::get_editor_data();
+	const int count = editor_data.get_edited_scene_count();
+	if (count < 1) {
+		return -1;
+	}
+	const int current = editor_data.get_edited_scene();
+	return editor_data.get_scene_history_id(count > 1 ? (current + 1) % count : current);
+}
+
+void EditorMainScreen::set_split_view_enabled(bool p_enabled) {
+	if (p_enabled == is_split_view_enabled()) {
+		return;
+	}
+
+	if (!p_enabled) {
+		memdelete(secondary_view);
+		secondary_view = nullptr;
+		secondary_screen_vbox->hide();
+		return;
+	}
+
+	ERR_FAIL_NULL_MSG(selected_plugin, "No main screen editor is selected, so there is nothing to show in a second pane.");
+
+	Control *view = selected_plugin->create_main_screen_view();
+	if (!view) {
+		EditorNode::get_singleton()->show_warning(vformat(TTR("The %s editor cannot be opened a second time yet."), selected_plugin->get_plugin_name()));
+		return;
+	}
+
+	secondary_view = Object::cast_to<EditorDocumentView>(view);
+	if (!secondary_view) {
+		memdelete(view);
+		ERR_FAIL_MSG(vformat("The %s editor returned a second view that is not an EditorDocumentView.", selected_plugin->get_plugin_name()));
+	}
+
+	secondary_screen_vbox->add_child(secondary_view);
+	secondary_screen_vbox->show();
+
+	if (secondary_view->supports_document_binding()) {
+		secondary_view->bind_document(_pick_document_for_second_pane());
+	}
 }
 
 void EditorMainScreen::add_main_plugin(EditorPlugin *p_editor) {

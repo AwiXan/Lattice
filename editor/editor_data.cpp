@@ -493,6 +493,17 @@ int EditorData::get_scene_history_id(int p_idx) const {
 	return edited_scene[p_idx].history_id;
 }
 
+int EditorData::get_scene_index_by_history_id(int p_history_id) const {
+	for (int i = 0; i < edited_scene.size(); i++) {
+		if (edited_scene[i].history_id == p_history_id) {
+			return i;
+		}
+	}
+	// The document has been closed. History ids are never reused, so this stays
+	// true once it becomes true.
+	return -1;
+}
+
 void EditorData::add_undo_redo_inspector_hook_callback(Callable p_callable) {
 	undo_redo_callbacks.push_back(p_callable);
 }

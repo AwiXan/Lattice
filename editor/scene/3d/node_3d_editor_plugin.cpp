@@ -1918,6 +1918,9 @@ void Node3DEditorViewport::_surface_mouse_exit() {
 }
 
 void Node3DEditorViewport::_surface_focus_enter() {
+	// Focus is what picks the active view among several: it follows the click
+	// that the user made, where visibility only says a pane is on screen.
+	spatial_editor->make_active();
 	view_display_menu->set_disable_shortcuts(false);
 }
 
@@ -3138,13 +3141,18 @@ void Node3DEditorViewport::set_message(const String &p_message, float p_time) {
 
 void Node3DEditorPlugin::edited_scene_changed() {
 	// The document changed, so its world did too: follow it before anything
-	// tries to draw into the world of the scene that was open before.
-	spatial_editor->update_editing_world();
+	// tries to draw into the world of the scene that was open before. Every
+	// open view has to be told, not just the one in the first pane - a view
+	// bound to a document of its own still follows it when tabs close and the
+	// scene it was pointed at is gone.
+	for (Node3DEditor *editor : Node3DEditor::get_instances()) {
+		editor->update_editing_world();
 
-	for (uint32_t i = 0; i < Node3DEditor::VIEWPORTS_COUNT; i++) {
-		Node3DEditorViewport *viewport = Node3DEditor::get_singleton()->get_editor_viewport(i);
-		if (viewport->is_visible()) {
-			viewport->notification(Control::NOTIFICATION_VISIBILITY_CHANGED);
+		for (uint32_t i = 0; i < Node3DEditor::VIEWPORTS_COUNT; i++) {
+			Node3DEditorViewport *viewport = editor->get_editor_viewport(i);
+			if (viewport->is_visible()) {
+				viewport->notification(Control::NOTIFICATION_VISIBILITY_CHANGED);
+			}
 		}
 	}
 }
@@ -7591,20 +7599,29 @@ void Node3DEditor::update_editing_world() {
 	callable_mp(this, &Node3DEditor::_update_preview_environment).call_deferred();
 }
 
-void Node3DEditor::bind_document(int p_idx) {
-	if (bound_document == p_idx) {
+void Node3DEditor::bind_document(int p_document_id) {
+	if (bound_document_id == p_document_id) {
 		return;
 	}
-	bound_document = p_idx;
+	bound_document_id = p_document_id;
 	update_editing_world();
 }
 
+int Node3DEditor::_bound_document_index() const {
+	if (bound_document_id < 0) {
+		return -1;
+	}
+	// A view whose document was closed follows the current one again rather
+	// than going blank, which is also what -1 asks for.
+	return EditorNode::get_editor_data().get_scene_index_by_history_id(bound_document_id);
+}
+
 Node *Node3DEditor::get_edited_scene() const {
-	return EditorNode::get_editor_data().get_edited_scene_root(bound_document);
+	return EditorNode::get_editor_data().get_edited_scene_root(_bound_document_index());
 }
 
 SubViewport *Node3DEditor::get_scene_root() const {
-	return EditorNode::get_editor_data().get_scene_root_viewport(bound_document);
+	return EditorNode::get_editor_data().get_scene_root_viewport(_bound_document_index());
 }
 
 Ref<World3D> Node3DEditor::get_editing_world() const {
@@ -9924,9 +9941,11 @@ void Node3DEditor::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
-			// Whichever 3D view the user is looking at owns the editing context.
-			// With a single editor space open this is a no-op: there is only one.
-			if (is_visible_in_tree()) {
+			// Appearing only claims the editing context when nothing else holds
+			// it, so revealing a second pane does not pull the context out of
+			// the one being worked in; from there on a click decides. With a
+			// single view open this is the same as claiming it unconditionally.
+			if (is_visible_in_tree() && (!active_instance || !active_instance->is_visible_in_tree())) {
 				make_active();
 			}
 		} break;
@@ -11495,6 +11514,17 @@ Node3DEditor::~Node3DEditor() {
 		}
 		memdelete(preview_environment);
 	}
+}
+
+Control *Node3DEditorPlugin::create_main_screen_view() {
+	// Everything a second view needs is already shared above any one of them:
+	// the gizmo plugins, the grid and the origin lines. What it does not share
+	// is the document it edits, which is the point of having it.
+	Node3DEditor *view = memnew(Node3DEditor);
+	view->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	view->set_process(true);
+	view->set_physics_process(true);
+	return view;
 }
 
 void Node3DEditorPlugin::make_visible(bool p_visible) {
