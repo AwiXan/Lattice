@@ -593,6 +593,10 @@ private:
 	SplitContainer *main_split = nullptr;
 	SplitContainer *first_split = nullptr;
 	SplitContainer *second_split = nullptr;
+	// The viewports this container lays out. Kept rather than looked up through
+	// the active 3D view, which is a different view entirely once a second pane
+	// is open.
+	Node3DEditorViewport *contained_viewports[4] = {};
 
 	void _update_split_drag_margin();
 
@@ -693,7 +697,12 @@ private:
 	int current_hover_gizmo_handle;
 	bool current_hover_gizmo_handle_secondary;
 
-	DynamicBVH gizmo_bvh;
+	// Shared, like the gizmos it indexes: a node has one gizmo however many
+	// views are open, so a view with a tree of its own would be picking against
+	// whatever happened to be registered while it was the active one - which is
+	// nothing, for a view that was never active. Queries scope the hits to the
+	// document the asking view edits.
+	static inline DynamicBVH gizmo_bvh;
 
 	real_t snap_translate_value = 0;
 	real_t snap_rotate_value = 0;
@@ -1115,9 +1124,11 @@ public:
 	void add_gizmo_plugin(Ref<EditorNode3DGizmoPlugin> p_plugin);
 	void remove_gizmo_plugin(Ref<EditorNode3DGizmoPlugin> p_plugin);
 
-	DynamicBVH::ID insert_gizmo_bvh_node(Node3D *p_node, const AABB &p_aabb);
-	void update_gizmo_bvh_node(DynamicBVH::ID p_id, const AABB &p_aabb);
-	void remove_gizmo_bvh_node(DynamicBVH::ID p_id);
+	// Static because which view is active must not decide where a gizmo lands,
+	// and because a gizmo can outlive every view while being freed.
+	static DynamicBVH::ID insert_gizmo_bvh_node(Node3D *p_node, const AABB &p_aabb);
+	static void update_gizmo_bvh_node(DynamicBVH::ID p_id, const AABB &p_aabb);
+	static void remove_gizmo_bvh_node(DynamicBVH::ID p_id);
 	Vector<Node3D *> gizmo_bvh_ray_query(const Vector3 &p_ray_start, const Vector3 &p_ray_end);
 	Vector<Node3D *> gizmo_bvh_frustum_query(const Vector<Plane> &p_frustum);
 

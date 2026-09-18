@@ -699,7 +699,7 @@ void Node3DEditorViewport::_clear_selected() {
 		spatial_editor->update_transform_gizmo();
 	} else {
 		editor_selection->clear();
-		Node3DEditor::get_singleton()->edit(nullptr);
+		spatial_editor->edit(nullptr);
 	}
 }
 
@@ -783,7 +783,7 @@ ObjectID Node3DEditorViewport::_select_ray(const Point2 &p_pos) const {
 	Node *item = nullptr;
 	float closest_dist = 1e20;
 
-	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_ray_query(pos, pos + ray * camera->get_far());
+	Vector<Node3D *> nodes_with_gizmos = spatial_editor->gizmo_bvh_ray_query(pos, pos + ray * camera->get_far());
 
 	for (Node3D *spat : nodes_with_gizmos) {
 		if (!spat || _is_node_locked(spat)) {
@@ -891,7 +891,7 @@ static bool _node_has_snap_target(Node *p_node, bool p_use_collision) {
 
 bool Node3DEditorViewport::_find_closest_vertex_on_node(const Point2 &p_screen_pos, Node3D *p_node, float &r_closest_screen_dist, Vector3 &r_vertex_world) const {
 	bool found = false;
-	bool use_collision = Node3DEditor::get_singleton()->is_vertex_snap_use_collision();
+	bool use_collision = spatial_editor->is_vertex_snap_use_collision();
 	bool walk_collision_segments = use_collision && Object::cast_to<CollisionShape3D>(p_node);
 
 	Transform3D gt = p_node->get_global_transform();
@@ -983,9 +983,9 @@ bool Node3DEditorViewport::_find_closest_vertex_in_scene(const Point2 &p_screen_
 
 	Point2 min_pos(p_screen_pos.x - p_threshold, p_screen_pos.y - p_threshold);
 	Point2 max_pos(p_screen_pos.x + p_threshold, p_screen_pos.y + p_threshold);
-	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_frustum_query(_build_screen_frustum(min_pos, max_pos));
+	Vector<Node3D *> nodes_with_gizmos = spatial_editor->gizmo_bvh_frustum_query(_build_screen_frustum(min_pos, max_pos));
 
-	bool use_collision = Node3DEditor::get_singleton()->is_vertex_snap_use_collision();
+	bool use_collision = spatial_editor->is_vertex_snap_use_collision();
 
 	for (Node3D *spat : nodes_with_gizmos) {
 		if (!spat) {
@@ -1075,7 +1075,7 @@ void Node3DEditorViewport::_vertex_snap_cancel() {
 bool Node3DEditorViewport::_is_vertex_occluded(const Vector3 &p_world_pos, const Vector2 &p_screen_pos) const {
 	Vector3 ray_pos = get_ray_pos(p_screen_pos);
 	float vertex_dist = ray_pos.distance_to(p_world_pos);
-	Vector<Node3D *> hits = Node3DEditor::get_singleton()->gizmo_bvh_ray_query(ray_pos, ray_pos + get_ray(p_screen_pos) * camera->get_far());
+	Vector<Node3D *> hits = spatial_editor->gizmo_bvh_ray_query(ray_pos, ray_pos + get_ray(p_screen_pos) * camera->get_far());
 	for (Node3D *spat : hits) {
 		if (!spat) {
 			continue;
@@ -1156,7 +1156,7 @@ void Node3DEditorViewport::_find_items_at_pos(const Point2 &p_pos, Vector<_RayRe
 	Vector3 ray = get_ray(p_pos);
 	Vector3 pos = get_ray_pos(p_pos);
 
-	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_ray_query(pos, pos + ray * camera->get_far());
+	Vector<Node3D *> nodes_with_gizmos = spatial_editor->gizmo_bvh_ray_query(pos, pos + ray * camera->get_far());
 
 	HashSet<Node3D *> found_nodes;
 
@@ -1330,7 +1330,7 @@ void Node3DEditorViewport::_select_region() {
 		_clear_selected();
 	}
 
-	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_frustum_query(frustum);
+	Vector<Node3D *> nodes_with_gizmos = spatial_editor->gizmo_bvh_frustum_query(frustum);
 	HashSet<Node3D *> found_nodes;
 	Vector<Node *> selected;
 
@@ -2021,13 +2021,16 @@ static bool _redirect_freelook_input(const Ref<InputEvent> &p_event, Node3DEdito
 		return false;
 	}
 
-	Node3DEditor *editor = Node3DEditor::get_singleton();
-	if (!editor->get_freelook_viewport()) {
-		return false;
+	// Whichever view holds freelook, not whichever is active: the mouse is
+	// captured by one viewport at a time, and it need not be in the active one.
+	Node3DEditorViewport *freelook_vp = nullptr;
+	for (Node3DEditor *editor : Node3DEditor::get_instances()) {
+		if (editor->get_freelook_viewport()) {
+			freelook_vp = editor->get_freelook_viewport();
+			break;
+		}
 	}
-
-	Node3DEditorViewport *freelook_vp = editor->get_freelook_viewport();
-	if (freelook_vp == p_exclude_viewport) {
+	if (!freelook_vp || freelook_vp == p_exclude_viewport) {
 		return false;
 	}
 
@@ -4525,7 +4528,7 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 			if (current) {
 				camera->set_environment(Ref<Resource>());
 			} else {
-				camera->set_environment(Node3DEditor::get_singleton()->get_viewport_environment());
+				camera->set_environment(spatial_editor->get_viewport_environment());
 			}
 
 			view_display_menu->get_popup()->set_item_checked(idx, current);
@@ -7252,7 +7255,7 @@ void Node3DEditorViewportContainer::set_view(View p_view) {
 
 	Node3DEditorViewport *viewports[4];
 	for (uint32_t i = 0; i < 4; i++) {
-		viewports[i] = Node3DEditor::get_singleton()->get_editor_viewport(i);
+		viewports[i] = contained_viewports[i];
 		ERR_FAIL_NULL(viewports[i]);
 	}
 
@@ -7320,6 +7323,8 @@ Node3DEditorViewportContainer::View Node3DEditorViewportContainer::get_view() {
 }
 
 void Node3DEditorViewportContainer::add_viewport(Node3DEditorViewport *p_viewport, int p_index) {
+	ERR_FAIL_INDEX(p_index, 4);
+	contained_viewports[p_index] = p_viewport;
 	if (p_index <= 1) {
 		first_split->add_child(p_viewport);
 	} else {
