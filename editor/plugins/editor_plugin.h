@@ -52,6 +52,7 @@ class EditorResourceConversionPlugin;
 class EditorSceneFormatImporter;
 class EditorScenePostImportPlugin;
 class EditorToolAddons;
+class EditorDocumentView;
 class EditorTranslationParserPlugin;
 class EditorUndoRedoManager;
 class ScriptCreateDialog;
@@ -203,6 +204,9 @@ public:
 	// owns it from then on. Plugins that can only exist once return nullptr,
 	// which is what leaves a single-pane layout and existing addons untouched.
 	virtual Control *create_main_screen_view() { return nullptr; }
+	// The view this plugin put in the first pane, when it is one that can be
+	// bound to a document. Null for plugins whose main screen is not.
+	virtual EditorDocumentView *get_main_screen_view() { return nullptr; }
 	virtual void make_visible(bool p_visible);
 	virtual void set_current() {}
 	virtual void selected_notify() {} //notify that it was raised by the user, not the editor

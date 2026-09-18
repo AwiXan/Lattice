@@ -1037,6 +1037,10 @@ public:
 	virtual int get_bound_document() const override { return bound_document_id; }
 	virtual bool supports_document_binding() const override { return true; }
 	Node *get_edited_scene() const;
+	// Whether a node is part of the document this view edits. The selection is
+	// the editor's, not a view's, so a view has to ask before drawing anything
+	// where a selected node is: its coordinates mean nothing in another world.
+	bool is_in_edited_document(const Node *p_node) const;
 	SubViewport *get_scene_root() const;
 
 	Ref<World3D> get_editing_world() const;
@@ -1176,6 +1180,7 @@ public:
 	virtual String get_plugin_name() const override { return TTRC("3D"); }
 	bool has_main_screen() const override { return true; }
 	virtual Control *create_main_screen_view() override;
+	virtual EditorDocumentView *get_main_screen_view() override { return spatial_editor; }
 	virtual void make_visible(bool p_visible) override;
 	virtual void edit(Object *p_object) override;
 	virtual bool handles(Object *p_object) const override;

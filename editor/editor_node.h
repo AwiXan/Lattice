@@ -981,6 +981,10 @@ public:
 	// pane's own close button changes too.
 	void update_split_view_menu_item();
 
+	// Makes an open document the current one. This is what the tab bar does, and
+	// what a pane asks for when it is clicked while showing another document.
+	void set_current_scene_index(int p_idx);
+
 	// Applies the project's render settings to one open document's root. Every
 	// document has a viewport of its own, and these are properties of a
 	// viewport, so each one has to be told.

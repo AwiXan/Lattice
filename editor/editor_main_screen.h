@@ -72,6 +72,19 @@ private:
 	HBoxContainer *secondary_header = nullptr;
 	OptionButton *secondary_document = nullptr;
 
+	// The pane the user last worked in. It is what the Scene tree, the Inspector
+	// and the selection follow, by way of the document it is bound to becoming
+	// the current one - so clicking into a pane showing another scene brings the
+	// rest of the editor with it, and the tab bar says which scene that is.
+	EditorDocumentView *active_view = nullptr;
+	// Set while this class is the one changing the current document, so that
+	// being told about the change does not start over.
+	bool changing_context = false;
+
+	// The first pane's view while it is being held to one document, remembered
+	// rather than looked up: which plugin is selected can change under it.
+	EditorDocumentView *pinned_primary_view = nullptr;
+
 	int _pick_document_for_second_pane() const;
 	void _build_secondary_header();
 	void _update_secondary_document_list();
@@ -114,6 +127,14 @@ public:
 	// Splitting shows a second view of the plugin currently selected, pointed
 	// at another open scene, so two documents are edited side by side. Plugins
 	// that cannot be built twice refuse, and the layout stays single-pane.
+	// Called by a view when the user works in it. The document it is bound to
+	// becomes the current one, which is what makes the docks and the selection
+	// follow the pane rather than the tab bar alone.
+	void view_activated(EditorDocumentView *p_view);
+	// Called when the current document changes by any other route, the tab bar
+	// above all: the pane being worked in follows it.
+	void current_document_changed();
+
 	void set_split_view_enabled(bool p_enabled);
 	bool is_split_view_enabled() const { return secondary_view != nullptr; }
 	bool can_split_view() const;

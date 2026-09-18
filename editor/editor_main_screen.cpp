@@ -266,6 +266,51 @@ VBoxContainer *EditorMainScreen::get_secondary_control() const {
 	return secondary_screen_vbox;
 }
 
+void EditorMainScreen::view_activated(EditorDocumentView *p_view) {
+	active_view = p_view;
+	if (!p_view || changing_context) {
+		return;
+	}
+
+	const int document_id = p_view->get_bound_document();
+	if (document_id < 0) {
+		// This view follows the current document already; there is nothing to
+		// bring the rest of the editor to.
+		return;
+	}
+
+	EditorData &editor_data = EditorNode::get_editor_data();
+	const int idx = editor_data.get_scene_index_by_history_id(document_id);
+	// A closed document leaves the view following the current one, and there is
+	// nothing to switch to.
+	if (idx < 0 || idx == editor_data.get_edited_scene()) {
+		return;
+	}
+
+	changing_context = true;
+	EditorNode::get_singleton()->set_current_scene_index(idx);
+	changing_context = false;
+}
+
+void EditorMainScreen::current_document_changed() {
+	if (changing_context || !active_view) {
+		return;
+	}
+	// A view that follows the current document needs no telling.
+	if (active_view->get_bound_document() < 0) {
+		return;
+	}
+	// The pane being worked in is what the tab bar acts on: picking a scene up
+	// there shows it in that pane, and leaves the other panes where they are.
+	EditorData &editor_data = EditorNode::get_editor_data();
+	if (editor_data.get_edited_scene_count() > 0) {
+		active_view->bind_document(editor_data.get_scene_history_id(editor_data.get_edited_scene()));
+	}
+	// The header names the document its pane shows, so it has to be told when
+	// something other than the header itself changed which one that is.
+	_update_secondary_document_list();
+}
+
 bool EditorMainScreen::can_split_view() const {
 	return selected_plugin != nullptr;
 }
@@ -350,6 +395,13 @@ void EditorMainScreen::set_split_view_enabled(bool p_enabled) {
 		memdelete(secondary_view);
 		secondary_view = nullptr;
 		secondary_screen_vbox->hide();
+		// One pane follows the current document again, as it did before there
+		// was anything to hold still for.
+		if (pinned_primary_view) {
+			pinned_primary_view->bind_document(-1);
+			pinned_primary_view = nullptr;
+		}
+		active_view = nullptr;
 		EditorNode::get_singleton()->update_split_view_menu_item();
 		return;
 	}
@@ -373,7 +425,20 @@ void EditorMainScreen::set_split_view_enabled(bool p_enabled) {
 	secondary_screen_vbox->show();
 
 	if (secondary_view->supports_document_binding()) {
-		secondary_view->bind_document(_pick_document_for_second_pane());
+		const int document_id = _pick_document_for_second_pane();
+		// The first pane stops following the current document and holds the one
+		// it is showing, or pointing the second pane elsewhere - which makes
+		// that document current - would drag the first pane along with it and
+		// leave both panes showing the same scene.
+		EditorDocumentView *primary_view = selected_plugin->get_main_screen_view();
+		if (primary_view && primary_view->supports_document_binding()) {
+			primary_view->bind_document(document_id);
+			pinned_primary_view = primary_view;
+			// Something has to be what the tab bar acts on, and until the user
+			// works in a pane it is the one that was there first.
+			active_view = primary_view;
+		}
+		secondary_view->bind_document(document_id);
 		secondary_header->show();
 	} else {
 		// Nothing to choose: this view always shows the current scene.

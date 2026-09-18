@@ -7492,7 +7492,7 @@ void Node3DEditor::update_transform_gizmo() {
 
 	Node3DEditorSelectedItem *se = selected ? editor_selection->get_node_editor_data<Node3DEditorSelectedItem>(selected) : nullptr;
 
-	if (se && se->gizmo.is_valid()) {
+	if (se && se->gizmo.is_valid() && is_in_edited_document(se->sp)) {
 		for (const KeyValue<int, Transform3D> &E : se->subgizmos) {
 			Transform3D xf = se->sp->get_global_transform() * se->gizmo->get_subgizmo_transform(E.key);
 			if (!xf.is_finite()) {
@@ -7509,6 +7509,13 @@ void Node3DEditor::update_transform_gizmo() {
 		for (Node *E : selection) {
 			Node3D *sp = Object::cast_to<Node3D>(E);
 			if (!sp) {
+				continue;
+			}
+
+			// The selection belongs to the editor, not to this view. A node of
+			// another open document would put the manipulator at coordinates
+			// that mean nothing in the world this view draws into.
+			if (!is_in_edited_document(sp)) {
 				continue;
 			}
 
@@ -7701,6 +7708,11 @@ Node *Node3DEditor::get_edited_scene() const {
 
 SubViewport *Node3DEditor::get_scene_root() const {
 	return EditorNode::get_editor_data().get_scene_root_viewport(_bound_document_index());
+}
+
+bool Node3DEditor::is_in_edited_document(const Node *p_node) const {
+	const Node *edited_scene = get_edited_scene();
+	return p_node && edited_scene && (p_node == edited_scene || edited_scene->is_ancestor_of(p_node));
 }
 
 Ref<World3D> Node3DEditor::get_editing_world() const {
@@ -10364,6 +10376,11 @@ void Node3DEditor::_toggle_maximize_view(Object *p_viewport) {
 
 void Node3DEditor::_viewport_clicked(int p_viewport_idx) {
 	last_used_viewport = p_viewport_idx;
+	// A click, never a hover: this brings the Scene tree, the Inspector and the
+	// selection to the document this view shows, which is not something to do
+	// because the mouse passed over it.
+	make_active();
+	EditorNode::get_singleton()->get_editor_main_screen()->view_activated(this);
 }
 
 bool Node3DEditor::_is_preview_node_of_any_view(const Node *p_node) {

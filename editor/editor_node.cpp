@@ -471,6 +471,11 @@ void EditorNode::_update_vsync_mode() {
 	DisplayServer::get_singleton()->window_set_vsync_mode(window_vsync_mode);
 }
 
+void EditorNode::set_current_scene_index(int p_idx) {
+	ERR_FAIL_INDEX(p_idx, editor_data.get_edited_scene_count());
+	_set_current_scene(p_idx);
+}
+
 void EditorNode::update_split_view_menu_item() {
 	const int item = settings_menu->get_item_index(EDITOR_TOGGLE_SPLIT_VIEW);
 	if (item >= 0) {
@@ -4839,6 +4844,12 @@ void EditorNode::_set_current_scene_nocheck(int p_idx, bool p_ignore_state) {
 	_update_unsaved_cache();
 
 	changing_scene = false;
+
+	// The pane being worked in follows the tab bar, so that picking a scene up
+	// there shows it where the user is looking.
+	if (editor_main_screen) {
+		editor_main_screen->current_document_changed();
+	}
 
 	if (EDITOR_GET("interface/scene_tabs/auto_select_current_scene_file")) {
 		FileSystemDock::get_singleton()->navigate_to_path(scene_path);
