@@ -45,7 +45,13 @@
 
 bool EditorNode3DGizmo::is_editable() const {
 	ERR_FAIL_NULL_V(spatial_node, false);
-	Node *edited_root = spatial_node->get_tree()->get_edited_scene_root();
+	// The document this node belongs to, not whichever one is current: a pane
+	// can be showing another document, and its nodes are no less editable for
+	// it. A gizmo is shared between views, so it has no view to ask.
+	Node *edited_root = EditorNode::get_editor_data().get_document_root_for(spatial_node);
+	if (!edited_root) {
+		return false;
+	}
 	if (spatial_node == edited_root) {
 		return true;
 	}

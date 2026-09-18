@@ -247,6 +247,10 @@ public:
 	// reference has to survive: closing or reordering a tab moves every index
 	// after it, and a binding kept as an index would quietly point elsewhere.
 	int get_scene_index_by_history_id(int p_history_id) const;
+	// The root of the open document a node belongs to, for code that has a node
+	// but no view to ask which document it is looking at. Null if the node is
+	// in none of them.
+	Node *get_document_root_for(const Node *p_node);
 
 	void set_plugin_window_layout(Ref<ConfigFile> p_layout);
 	void get_plugin_window_layout(Ref<ConfigFile> p_layout);

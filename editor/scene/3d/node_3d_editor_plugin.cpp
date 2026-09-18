@@ -778,7 +778,7 @@ ObjectID Node3DEditorViewport::_select_ray(const Point2 &p_pos) const {
 
 	HashSet<Ref<EditorNode3DGizmo>> found_gizmos;
 
-	Node *edited_scene = get_tree()->get_edited_scene_root();
+	Node *edited_scene = get_edited_scene();
 	ObjectID closest;
 	Node *item = nullptr;
 	float closest_dist = 1e20;
@@ -1334,7 +1334,7 @@ void Node3DEditorViewport::_select_region() {
 	HashSet<Node3D *> found_nodes;
 	Vector<Node *> selected;
 
-	Node *edited_scene = get_tree()->get_edited_scene_root();
+	Node *edited_scene = get_edited_scene();
 	if (edited_scene == nullptr) {
 		return;
 	}
@@ -1968,7 +1968,7 @@ void Node3DEditorViewport::_list_select(Ref<InputEventMouseButton> b) {
 			_select_clicked(b->is_alt_pressed());
 		}
 	} else if (!selection_results.is_empty()) {
-		NodePath root_path = get_tree()->get_edited_scene_root()->get_path();
+		NodePath root_path = get_edited_scene()->get_path();
 		StringName root_name = root_path.get_name(root_path.get_name_count() - 1);
 		int icon_max_width = EditorNode::get_singleton()->get_editor_theme()->get_constant(SNAME("class_icon_size"), EditorStringName(Editor));
 
@@ -6165,7 +6165,7 @@ void Node3DEditorViewport::drop_data_fw(const Point2 &p_point, const Variant &p_
 		} else {
 			// Create a root node so we can add child nodes to it.
 			SceneTreeDock::get_singleton()->add_root_node(memnew(Node3D));
-			target_node = get_tree()->get_edited_scene_root();
+			target_node = get_edited_scene();
 		}
 	}
 
@@ -7496,7 +7496,7 @@ void _update_all_gizmos(Node *p_node) {
 
 void Node3DEditor::update_all_gizmos(Node *p_node) {
 	if (!p_node && is_inside_tree()) {
-		p_node = get_tree()->get_edited_scene_root();
+		p_node = get_edited_scene();
 	}
 
 	if (!p_node) {
@@ -8397,7 +8397,7 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 				return;
 			}
 
-			Node *root = get_tree()->get_edited_scene_root();
+			Node *root = get_edited_scene();
 			if (!root) {
 				WARN_PRINT("No active scene is currently open. Cannot create camera from view.");
 				return;
@@ -9793,11 +9793,11 @@ void Node3DEditor::_add_sun_to_scene(bool p_already_added_environment) {
 		_add_environment_to_scene(true);
 	}
 
-	Node *base = get_tree()->get_edited_scene_root();
+	Node *base = get_edited_scene();
 	if (!base) {
 		// Create a root node so we can add child nodes to it.
 		SceneTreeDock::get_singleton()->add_root_node(memnew(Node3D));
-		base = get_tree()->get_edited_scene_root();
+		base = get_edited_scene();
 	}
 	ERR_FAIL_NULL(base);
 	Node *new_sun = preview_sun->duplicate();
@@ -9823,11 +9823,11 @@ void Node3DEditor::_add_environment_to_scene(bool p_already_added_sun) {
 		_add_sun_to_scene(true);
 	}
 
-	Node *base = get_tree()->get_edited_scene_root();
+	Node *base = get_edited_scene();
 	if (!base) {
 		// Create a root node so we can add child nodes to it.
 		SceneTreeDock::get_singleton()->add_root_node(memnew(Node3D));
-		base = get_tree()->get_edited_scene_root();
+		base = get_edited_scene();
 	}
 	ERR_FAIL_NULL(base);
 

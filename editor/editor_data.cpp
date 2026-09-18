@@ -493,6 +493,19 @@ int EditorData::get_scene_history_id(int p_idx) const {
 	return edited_scene[p_idx].history_id;
 }
 
+Node *EditorData::get_document_root_for(const Node *p_node) {
+	if (!p_node) {
+		return nullptr;
+	}
+	for (int i = 0; i < edited_scene.size(); i++) {
+		Node *root = edited_scene[i].root;
+		if (root && (root == p_node || root->is_ancestor_of(p_node))) {
+			return root;
+		}
+	}
+	return nullptr;
+}
+
 int EditorData::get_scene_index_by_history_id(int p_history_id) const {
 	for (int i = 0; i < edited_scene.size(); i++) {
 		if (edited_scene[i].history_id == p_history_id) {
