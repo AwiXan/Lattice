@@ -39,6 +39,7 @@
 #include "editor/settings/editor_settings.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
+#include "scene/gui/option_button.h"
 #include "scene/gui/split_container.h"
 
 void EditorMainScreen::_notification(int p_what) {
@@ -283,6 +284,61 @@ int EditorMainScreen::_pick_document_for_second_pane() const {
 	return editor_data.get_scene_history_id(count > 1 ? (current + 1) % count : current);
 }
 
+void EditorMainScreen::_build_secondary_header() {
+	if (secondary_header) {
+		return;
+	}
+
+	secondary_header = memnew(HBoxContainer);
+	secondary_screen_vbox->add_child(secondary_header);
+
+	secondary_document = memnew(OptionButton);
+	secondary_document->set_tooltip_text(TTRC("The scene this pane is showing. It does not have to be the one the tab bar has selected."));
+	secondary_document->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	secondary_document->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+	// Filled when it is opened rather than kept in step with the tab bar, so
+	// that opening and closing scenes needs no notification to reach here.
+	secondary_document->get_popup()->connect(SNAME("about_to_popup"), callable_mp(this, &EditorMainScreen::_update_secondary_document_list));
+	secondary_document->connect(SceneStringName(item_selected), callable_mp(this, &EditorMainScreen::_secondary_document_selected));
+	secondary_header->add_child(secondary_document);
+
+	Button *close_button = memnew(Button);
+	close_button->set_flat(true);
+	close_button->set_tooltip_text(TTRC("Close this pane."));
+	close_button->set_text(TTRC("Close"));
+	close_button->connect(SceneStringName(pressed), callable_mp(this, &EditorMainScreen::set_split_view_enabled).bind(false));
+	secondary_header->add_child(close_button);
+}
+
+void EditorMainScreen::_update_secondary_document_list() {
+	if (!secondary_document) {
+		return;
+	}
+
+	const int bound = secondary_view ? secondary_view->get_bound_document() : -1;
+	secondary_document->clear();
+
+	EditorData &editor_data = EditorNode::get_editor_data();
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		const int history_id = editor_data.get_scene_history_id(i);
+		String title = editor_data.get_scene_title(i);
+		if (title.is_empty()) {
+			title = TTR("[unsaved]");
+		}
+		secondary_document->add_item(title, history_id);
+		if (history_id == bound) {
+			secondary_document->select(secondary_document->get_item_count() - 1);
+		}
+	}
+}
+
+void EditorMainScreen::_secondary_document_selected(int p_index) {
+	if (!secondary_view) {
+		return;
+	}
+	secondary_view->bind_document(secondary_document->get_item_id(p_index));
+}
+
 void EditorMainScreen::set_split_view_enabled(bool p_enabled) {
 	if (p_enabled == is_split_view_enabled()) {
 		return;
@@ -292,6 +348,7 @@ void EditorMainScreen::set_split_view_enabled(bool p_enabled) {
 		memdelete(secondary_view);
 		secondary_view = nullptr;
 		secondary_screen_vbox->hide();
+		EditorNode::get_singleton()->update_split_view_menu_item();
 		return;
 	}
 
@@ -309,12 +366,19 @@ void EditorMainScreen::set_split_view_enabled(bool p_enabled) {
 		ERR_FAIL_MSG(vformat("The %s editor returned a second view that is not an EditorDocumentView.", selected_plugin->get_plugin_name()));
 	}
 
+	_build_secondary_header();
 	secondary_screen_vbox->add_child(secondary_view);
 	secondary_screen_vbox->show();
 
 	if (secondary_view->supports_document_binding()) {
 		secondary_view->bind_document(_pick_document_for_second_pane());
+		secondary_header->show();
+	} else {
+		// Nothing to choose: this view always shows the current scene.
+		secondary_header->hide();
 	}
+	_update_secondary_document_list();
+	EditorNode::get_singleton()->update_split_view_menu_item();
 }
 
 void EditorMainScreen::add_main_plugin(EditorPlugin *p_editor) {

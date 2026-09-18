@@ -36,6 +36,7 @@ class Button;
 class ConfigFile;
 class EditorDocumentView;
 class EditorPlugin;
+class OptionButton;
 class HBoxContainer;
 class HSplitContainer;
 class VBoxContainer;
@@ -65,8 +66,16 @@ private:
 	// The view filling the second pane, owned here. Null whenever the layout is
 	// a single pane, which is what keeps that case exactly as it was.
 	EditorDocumentView *secondary_view = nullptr;
+	// The beginnings of the pane header: it says which document the pane is
+	// showing, which a pane that can show something other than the current
+	// scene has to, and lets that be changed.
+	HBoxContainer *secondary_header = nullptr;
+	OptionButton *secondary_document = nullptr;
 
 	int _pick_document_for_second_pane() const;
+	void _build_secondary_header();
+	void _update_secondary_document_list();
+	void _secondary_document_selected(int p_index);
 
 	HBoxContainer *button_hb = nullptr;
 	Vector<Button *> buttons;

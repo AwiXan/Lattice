@@ -3935,11 +3935,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 			feature_profile_manager->popup_centered_clamped(Size2(900, 800) * EDSCALE, 0.8);
 		} break;
 		case EDITOR_TOGGLE_SPLIT_VIEW: {
-			const bool enable = !editor_main_screen->is_split_view_enabled();
-			editor_main_screen->set_split_view_enabled(enable);
-			// The plugin may have refused, so report what actually happened.
-			const int item = settings_menu->get_item_index(EDITOR_TOGGLE_SPLIT_VIEW);
-			settings_menu->set_item_checked(item, editor_main_screen->is_split_view_enabled());
+			editor_main_screen->set_split_view_enabled(!editor_main_screen->is_split_view_enabled());
 		} break;
 		case EDITOR_TOGGLE_FULLSCREEN: {
 			DisplayServerEnums::WindowMode mode = DisplayServer::get_singleton()->window_get_mode();
