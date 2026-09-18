@@ -745,6 +745,17 @@ void EditorData::set_scene_root(int p_idx, Node *p_root) {
 
 	scene_info.root = p_root;
 	if (p_root) {
+		// A document's scene belongs in the document's own viewport from the
+		// moment it is loaded, not from the moment its tab is first selected.
+		// A pane can be showing a document that has never been current, and an
+		// unparented root is in no world: nothing renders, and nothing in it
+		// can be selected, since a node has to be inside the tree for that.
+		if (scene_info.root_viewport && p_root->get_parent() != scene_info.root_viewport) {
+			if (p_root->get_parent()) {
+				p_root->get_parent()->remove_child(p_root);
+			}
+			scene_info.root_viewport->add_child(p_root, true);
+		}
 		if (p_root->is_instance()) {
 			scene_info.path = p_root->get_scene_file_path();
 		} else {

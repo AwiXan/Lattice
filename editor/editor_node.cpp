@@ -4681,7 +4681,9 @@ void EditorNode::set_edited_scene_root(Node *p_scene, bool p_auto_add) {
 		get_tree()->set_edited_scene_root(p_scene);
 	}
 
-	if (p_auto_add && p_scene) {
+	if (p_auto_add && p_scene && p_scene->get_parent() != get_scene_root()) {
+		// Setting the root already put it in its document's viewport, so this
+		// only has to cover a scene that came from somewhere else.
 		get_scene_root()->add_child(p_scene, true);
 	}
 }
@@ -7371,13 +7373,11 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 		editor_data.set_edited_scene(current_scene_idx);
 		Node *current_edited_scene = editor_data.get_edited_scene_root(current_scene_idx);
 
-		// Make sure the node is in the tree so that editor_selection can add node smoothly.
-		if (original_edited_scene_idx != current_scene_idx) {
-			// Prevent scene roots with the same name from being in the tree at the same time.
-			Node *original_edited_scene_root = editor_data.get_edited_scene_root(original_edited_scene_idx);
-			if (original_edited_scene_root && original_edited_scene_root->get_name() == current_edited_scene->get_name()) {
-				get_scene_root()->remove_child(original_edited_scene_root);
-			}
+		// Make sure the node is in the tree so that editor_selection can add node
+		// smoothly. Each document has a viewport of its own, so its scene is
+		// already there and two roots sharing a name are no longer siblings -
+		// this only has to cover a scene that somehow has no home.
+		if (current_edited_scene && !current_edited_scene->get_parent()) {
 			get_scene_root()->add_child(current_edited_scene);
 		}
 
@@ -7679,15 +7679,17 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 		// Cleanup the history of the changes.
 		editor_history.cleanup_history();
 
+		// A scene is not taken back out of its own document's viewport: it was
+		// not borrowed from another document to begin with. Only a root that
+		// ended up with no home at all still needs one, or SceneTreeDock crashes
+		// reloading a scene that is not in the tree.
 		if (original_edited_scene_idx != current_scene_idx) {
-			get_scene_root()->remove_child(current_edited_scene);
-
-			// Ensure the current edited scene is re-added if removed earlier because it has the same name
-			// as the reimported scene. The editor could crash when reloading SceneTreeDock if the current
-			// edited scene is not in the scene tree.
 			Node *original_edited_scene_root = editor_data.get_edited_scene_root(original_edited_scene_idx);
 			if (original_edited_scene_root && !original_edited_scene_root->get_parent()) {
-				get_scene_root()->add_child(original_edited_scene_root);
+				SubViewport *original_root_viewport = editor_data.get_scene_root_viewport(original_edited_scene_idx);
+				if (original_root_viewport) {
+					original_root_viewport->add_child(original_edited_scene_root);
+				}
 			}
 		}
 	}
