@@ -962,6 +962,10 @@ private:
 	void _environ_set_gi();
 
 	void _load_default_preview_settings();
+	// A preview node belongs to some view, never to the scene. Two views on one
+	// document park theirs in the same place, so each has to recognise the
+	// other's or it counts them as the scene's own and disables its preview.
+	static bool _is_preview_node_of_any_view(const Node *p_node);
 	void _drop_freed_preview_nodes();
 	void _ensure_preview_nodes();
 	void _update_preview_environment();

@@ -682,9 +682,12 @@ int EditorData::add_edited_scene(int p_at_pos) {
 	es.root_viewport->set_disable_3d(true);
 	es.root_viewport->set_disable_input(true);
 	es.root_viewport->set_update_mode(SubViewport::UPDATE_DISABLED);
-	// No container sizes it, so the project resolution is what full-rect
-	// Controls lay out against.
-	es.root_viewport->set_size(Size2i(GLOBAL_GET("display/window/size/viewport_width"), GLOBAL_GET("display/window/size/viewport_height")));
+	// The render settings are properties of a viewport, so a new document needs
+	// them now rather than at the next settings change: a pane can be showing it
+	// before then, and a world with no environment renders black.
+	if (EditorNode::get_singleton()) {
+		EditorNode::get_singleton()->apply_render_settings_to_document(es.root_viewport);
+	}
 	if (scene_root_host) {
 		scene_root_host->add_child(es.root_viewport, false, Node::INTERNAL_MODE_BACK);
 	}

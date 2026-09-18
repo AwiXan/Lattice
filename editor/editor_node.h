@@ -977,6 +977,15 @@ public:
 
 	void show_accept(const String &p_text, const String &p_title);
 	void show_save_accept(const String &p_text, const String &p_title);
+	// Keeps the Split Editor View check mark in step with the layout, which the
+	// pane's own close button changes too.
+	void update_split_view_menu_item();
+
+	// Applies the project's render settings to one open document's root. Every
+	// document has a viewport of its own, and these are properties of a
+	// viewport, so each one has to be told.
+	void apply_render_settings_to_document(SubViewport *p_document_root);
+
 	void show_warning(const String &p_text, const String &p_title = TTR("Warning!"));
 
 	void _copy_warning(const String &p_str);

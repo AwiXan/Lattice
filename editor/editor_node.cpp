@@ -471,22 +471,73 @@ void EditorNode::_update_vsync_mode() {
 	DisplayServer::get_singleton()->window_set_vsync_mode(window_vsync_mode);
 }
 
+void EditorNode::update_split_view_menu_item() {
+	const int item = settings_menu->get_item_index(EDITOR_TOGGLE_SPLIT_VIEW);
+	if (item >= 0) {
+		// Reports what the layout actually is: a plugin can refuse to be shown
+		// twice, and the pane closes itself from its own header.
+		settings_menu->set_item_checked(item, editor_main_screen->is_split_view_enabled());
+	}
+}
+
+void EditorNode::apply_render_settings_to_document(SubViewport *p_document_root) {
+	if (!p_document_root) {
+		return;
+	}
+
+	p_document_root->set_default_canvas_item_texture_filter((Viewport::DefaultCanvasItemTextureFilter)(int)GLOBAL_GET("rendering/textures/canvas_textures/default_texture_filter"));
+	p_document_root->set_default_canvas_item_texture_repeat((Viewport::DefaultCanvasItemTextureRepeat)(int)GLOBAL_GET("rendering/textures/canvas_textures/default_texture_repeat"));
+
+	p_document_root->set_snap_2d_transforms_to_pixel(GLOBAL_GET("rendering/2d/snap/snap_2d_transforms_to_pixel"));
+	p_document_root->set_snap_2d_vertices_to_pixel(GLOBAL_GET("rendering/2d/snap/snap_2d_vertices_to_pixel"));
+
+	p_document_root->set_sdf_oversize(Viewport::SDFOversize(int(GLOBAL_GET("rendering/2d/sdf/oversize"))));
+	p_document_root->set_sdf_scale(Viewport::SDFScale(int(GLOBAL_GET("rendering/2d/sdf/scale"))));
+
+	p_document_root->set_msaa_2d(Viewport::MSAA(int(GLOBAL_GET("rendering/anti_aliasing/quality/msaa_2d"))));
+	p_document_root->set_use_debanding(GLOBAL_GET("rendering/anti_aliasing/quality/use_debanding"));
+
+	const bool hdr_requested = GLOBAL_GET("display/window/hdr/request_hdr_output");
+	p_document_root->set_use_hdr_2d(GLOBAL_GET("rendering/viewport/hdr_2d").operator bool() || hdr_requested);
+
+	p_document_root->set_mesh_lod_threshold(GLOBAL_GET("rendering/mesh_lod/lod_change/threshold_pixels"));
+
+	// Nothing displays a document's root any more - the views render its worlds
+	// through viewports of their own - so its size has to be stated rather than
+	// inherited from a container, or full-rect Controls would have no rect.
+	const Size2i viewport_size = Size2i(GLOBAL_GET("display/window/size/viewport_width"), GLOBAL_GET("display/window/size/viewport_height"));
+	if (viewport_size.x > 0 && viewport_size.y > 0 && p_document_root->get_size() != viewport_size) {
+		p_document_root->set_size(viewport_size);
+	}
+
+	// SceneTree keeps the project's default environment on the root window's
+	// world, and only refreshes it when the setting changes. Every document has
+	// a world of its own, so without this a scene with no WorldEnvironment
+	// renders against nothing: black background, no ambient, and objects that
+	// look like they are missing rather than unlit.
+	const Ref<World3D> &document_world = p_document_root->find_world_3d();
+	if (document_world.is_valid()) {
+		SceneTree *tree = SceneTree::get_singleton();
+		const Ref<Environment> &fallback = tree ? tree->get_root()->get_world_3d()->get_fallback_environment() : Ref<Environment>();
+		if (document_world->get_fallback_environment() != fallback) {
+			document_world->set_fallback_environment(fallback);
+		}
+	}
+}
+
 void EditorNode::_update_from_settings() {
 	if (!is_inside_tree()) {
 		return;
 	}
 	_update_title();
 
-	int current_filter = GLOBAL_GET("rendering/textures/canvas_textures/default_texture_filter");
-	if (current_filter != get_scene_root()->get_default_canvas_item_texture_filter()) {
-		Viewport::DefaultCanvasItemTextureFilter tf = (Viewport::DefaultCanvasItemTextureFilter)current_filter;
-		get_scene_root()->set_default_canvas_item_texture_filter(tf);
+	// These are properties of a viewport, and every open document has one. Only
+	// the current document used to be reached, which left a pane showing any
+	// other document rendering against stale defaults.
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		apply_render_settings_to_document(editor_data.get_scene_root_viewport(i));
 	}
-	int current_repeat = GLOBAL_GET("rendering/textures/canvas_textures/default_texture_repeat");
-	if (current_repeat != get_scene_root()->get_default_canvas_item_texture_repeat()) {
-		Viewport::DefaultCanvasItemTextureRepeat tr = (Viewport::DefaultCanvasItemTextureRepeat)current_repeat;
-		get_scene_root()->set_default_canvas_item_texture_repeat(tr);
-	}
+
 	String current_fallback_locale = GLOBAL_GET("internationalization/locale/fallback");
 	if (current_fallback_locale != TranslationServer::get_singleton()->get_fallback_locale()) {
 		TranslationServer::get_singleton()->set_fallback_locale(current_fallback_locale);
@@ -494,7 +545,12 @@ void EditorNode::_update_from_settings() {
 		if (!domain->is_enabled()) {
 			domain->set_locale_override(current_fallback_locale);
 		}
-		get_scene_root()->propagate_notification(Control::NOTIFICATION_LAYOUT_DIRECTION_CHANGED);
+		for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+			SubViewport *document_root = editor_data.get_scene_root_viewport(i);
+			if (document_root) {
+				document_root->propagate_notification(Control::NOTIFICATION_LAYOUT_DIRECTION_CHANGED);
+			}
+		}
 	}
 
 	RSE::DOFBokehShape dof_shape = RSE::DOFBokehShape(int(GLOBAL_GET("rendering/camera/depth_of_field/depth_of_field_bokeh_shape")));
@@ -537,22 +593,7 @@ void EditorNode::_update_from_settings() {
 	bool use_half_res_gi = GLOBAL_GET("rendering/global_illumination/gi/use_half_resolution");
 	RS::get_singleton()->gi_set_use_half_resolution(use_half_res_gi);
 
-	bool snap_2d_transforms = GLOBAL_GET("rendering/2d/snap/snap_2d_transforms_to_pixel");
-	get_scene_root()->set_snap_2d_transforms_to_pixel(snap_2d_transforms);
-	bool snap_2d_vertices = GLOBAL_GET("rendering/2d/snap/snap_2d_vertices_to_pixel");
-	get_scene_root()->set_snap_2d_vertices_to_pixel(snap_2d_vertices);
-
-	Viewport::SDFOversize sdf_oversize = Viewport::SDFOversize(int(GLOBAL_GET("rendering/2d/sdf/oversize")));
-	get_scene_root()->set_sdf_oversize(sdf_oversize);
-	Viewport::SDFScale sdf_scale = Viewport::SDFScale(int(GLOBAL_GET("rendering/2d/sdf/scale")));
-	get_scene_root()->set_sdf_scale(sdf_scale);
-
-	Viewport::MSAA msaa = Viewport::MSAA(int(GLOBAL_GET("rendering/anti_aliasing/quality/msaa_2d")));
-	get_scene_root()->set_msaa_2d(msaa);
-
-	// 2D doesn't use a dedicated SubViewport like 3D does, so we apply it on the root viewport instead.
 	bool use_debanding = GLOBAL_GET("rendering/anti_aliasing/quality/use_debanding");
-	get_scene_root()->set_use_debanding(use_debanding);
 	get_viewport()->set_use_debanding(use_debanding);
 
 	// Enable HDR if requested.
@@ -560,22 +601,10 @@ void EditorNode::_update_from_settings() {
 	DisplayServer::get_singleton()->window_request_hdr_output(hdr_requested);
 
 	const bool use_hdr_2d = GLOBAL_GET("rendering/viewport/hdr_2d");
-	get_scene_root()->set_use_hdr_2d(use_hdr_2d || hdr_requested);
 	get_viewport()->set_use_hdr_2d(use_hdr_2d || hdr_requested);
 
 	if (hdr_requested && !use_hdr_2d) {
 		WARN_PRINT_ED("HDR 2D was automatically enabled because HDR output was requested in project settings. To avoid this warning, enable rendering/viewport/hdr_2d in the Project Settings.");
-	}
-
-	float mesh_lod_threshold = GLOBAL_GET("rendering/mesh_lod/lod_change/threshold_pixels");
-	get_scene_root()->set_mesh_lod_threshold(mesh_lod_threshold);
-
-	// Nothing displays the scene root any more - the views render its worlds
-	// through viewports of their own - so its size has to be stated rather than
-	// inherited from a container, or full-rect Controls would have no rect.
-	const Size2i viewport_size = Size2i(GLOBAL_GET("display/window/size/viewport_width"), GLOBAL_GET("display/window/size/viewport_height"));
-	if (viewport_size.x > 0 && viewport_size.y > 0 && get_scene_root()->get_size() != viewport_size) {
-		get_scene_root()->set_size(viewport_size);
 	}
 
 	RS::get_singleton()->decals_set_filter(RSE::DecalFilter(int(GLOBAL_GET("rendering/textures/decals/filter"))));
@@ -896,15 +925,20 @@ void EditorNode::_notification(int p_what) {
 				scene_tabs->update_scene_tabs();
 			}
 
-			// SceneTree keeps the project's default environment on the root
-			// window's world, and only refreshes it when the setting changes.
-			// The edited scene has a world of its own, so mirror it there or a
-			// scene without a WorldEnvironment renders against nothing.
+			// Every open document, not just the current one: a pane can be
+			// showing any of them, and the default environment is what a scene
+			// without a WorldEnvironment of its own renders against.
 			{
-				Ref<World3D> scene_world = get_scene_root()->find_world_3d();
 				const Ref<Environment> &fallback = get_tree()->get_root()->get_world_3d()->get_fallback_environment();
-				if (scene_world.is_valid() && scene_world->get_fallback_environment() != fallback) {
-					scene_world->set_fallback_environment(fallback);
+				for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+					SubViewport *document_root = editor_data.get_scene_root_viewport(i);
+					if (!document_root) {
+						continue;
+					}
+					const Ref<World3D> &document_world = document_root->find_world_3d();
+					if (document_world.is_valid() && document_world->get_fallback_environment() != fallback) {
+						document_world->set_fallback_environment(fallback);
+					}
 				}
 			}
 

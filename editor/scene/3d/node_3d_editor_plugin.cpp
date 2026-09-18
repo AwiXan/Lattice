@@ -10281,11 +10281,20 @@ void Node3DEditor::_viewport_clicked(int p_viewport_idx) {
 	last_used_viewport = p_viewport_idx;
 }
 
+bool Node3DEditor::_is_preview_node_of_any_view(const Node *p_node) {
+	for (const Node3DEditor *editor : instances) {
+		if (p_node == editor->preview_sun || p_node == editor->preview_environment) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void Node3DEditor::_node_added(Node *p_node) {
-	if (p_node == preview_sun || p_node == preview_environment) {
-		// The preview's own nodes live in the scene root so they light and shade
-		// the scene's world, but they are not part of the scene and must not
-		// count towards what disables the preview.
+	if (_is_preview_node_of_any_view(p_node)) {
+		// Preview nodes live in the document's root so they light and shade its
+		// world, but they are not part of the scene and must not count towards
+		// what disables the preview - whichever view they belong to.
 		return;
 	}
 	if (get_scene_root()->is_ancestor_of(p_node)) {
@@ -10306,7 +10315,7 @@ void Node3DEditor::_node_added(Node *p_node) {
 }
 
 void Node3DEditor::_node_removed(Node *p_node) {
-	if (p_node == preview_sun || p_node == preview_environment) {
+	if (_is_preview_node_of_any_view(p_node)) {
 		return;
 	}
 	if (get_scene_root()->is_ancestor_of(p_node)) {
