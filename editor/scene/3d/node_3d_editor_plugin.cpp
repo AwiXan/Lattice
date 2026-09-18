@@ -7577,7 +7577,9 @@ void Node3DEditor::update_editing_world() {
 	}
 
 	// The preview nodes are sitting in the previous document's root; take them
-	// out and let the update below place them in the current one.
+	// out and let the update below place them in the current one. That document
+	// may be gone, in which case they went with it and are rebuilt there.
+	_drop_freed_preview_nodes();
 	if (preview_sun && preview_sun->get_parent()) {
 		preview_sun->get_parent()->remove_child(preview_sun);
 		preview_sun_dangling = true;
@@ -9761,6 +9763,7 @@ void Node3DEditor::_sun_environ_settings_pressed() {
 }
 
 void Node3DEditor::_add_sun_to_scene(bool p_already_added_environment) {
+	_ensure_preview_nodes();
 	sun_environ_popup->hide();
 
 	if (!p_already_added_environment && world_env_count == 0 && Input::get_singleton()->is_key_pressed(Key::SHIFT)) {
@@ -9790,6 +9793,7 @@ void Node3DEditor::_add_sun_to_scene(bool p_already_added_environment) {
 }
 
 void Node3DEditor::_add_environment_to_scene(bool p_already_added_sun) {
+	_ensure_preview_nodes();
 	sun_environ_popup->hide();
 
 	if (!p_already_added_sun && directional_light_count == 0 && Input::get_singleton()->is_key_pressed(Key::SHIFT)) {
@@ -10402,6 +10406,7 @@ void Node3DEditor::clear() {
 }
 
 void Node3DEditor::_sun_direction_draw() {
+	_ensure_preview_nodes();
 	sun_direction->draw_rect(Rect2(Vector2(), sun_direction->get_size()), Color(1, 1, 1, 1));
 	Vector3 z_axis = preview_sun->get_transform().basis.get_column(Vector3::AXIS_Z);
 	z_axis = get_editor_viewport(0)->camera->get_camera_transform().basis.xform_inv(z_axis);
@@ -10411,6 +10416,7 @@ void Node3DEditor::_sun_direction_draw() {
 }
 
 void Node3DEditor::_preview_settings_changed() {
+	_ensure_preview_nodes();
 	if (sun_environ_updating) {
 		return;
 	}
@@ -10475,7 +10481,67 @@ void Node3DEditor::_load_default_preview_settings() {
 	sun_environ_updating = false;
 }
 
+void Node3DEditor::_drop_freed_preview_nodes() {
+	// Whoever the preview nodes were parked in may have been freed since, which
+	// leaves these pointers reading as garbage rather than as null.
+	if (preview_sun && !ObjectDB::get_instance(preview_sun_id)) {
+		preview_sun = nullptr;
+		preview_sun_dangling = false;
+	}
+	if (preview_environment && !ObjectDB::get_instance(preview_environment_id)) {
+		preview_environment = nullptr;
+		preview_env_dangling = false;
+	}
+}
+
+void Node3DEditor::_ensure_preview_nodes() {
+	_drop_freed_preview_nodes();
+
+	// The settings themselves live in this view's controls and in these
+	// resources, so a rebuilt node picks up where the old one left off.
+	if (environment.is_null()) {
+		environment.instantiate();
+		Ref<Sky> sky;
+		sky.instantiate();
+		sky_material.instantiate();
+		sky->set_material(sky_material);
+		environment->set_sky(sky);
+		environment->set_background(Environment::BG_SKY);
+	}
+
+	bool rebuilt = false;
+
+	if (!preview_sun) {
+		preview_sun = memnew(DirectionalLight3D);
+		preview_sun_id = preview_sun->get_instance_id();
+		preview_sun->set_shadow(true);
+		preview_sun->set_shadow_mode(DirectionalLight3D::SHADOW_PARALLEL_4_SPLITS);
+		rebuilt = true;
+	}
+
+	if (!preview_environment) {
+		preview_environment = memnew(WorldEnvironment);
+		preview_environment_id = preview_environment->get_instance_id();
+		preview_environment->set_environment(environment);
+		if (GLOBAL_GET("rendering/lights_and_shadows/use_physical_light_units")) {
+			if (camera_attributes.is_null()) {
+				camera_attributes.instantiate();
+			}
+			preview_environment->set_camera_attributes(camera_attributes);
+		}
+		rebuilt = true;
+	}
+
+	// Only once the view is built: the constructor applies the settings itself,
+	// after the controls they are read from exist.
+	if (rebuilt && is_inside_tree()) {
+		_preview_settings_changed();
+	}
+}
+
 void Node3DEditor::_update_preview_environment() {
+	_ensure_preview_nodes();
+
 	bool disable_light = directional_light_count > 0 || !sun_button->is_pressed();
 
 	sun_button->set_disabled(directional_light_count > 0);
@@ -10575,6 +10641,7 @@ void Node3DEditor::_sun_direction_set_azimuth(float p_azimuth) {
 }
 
 void Node3DEditor::_sun_set_color(const Color &p_color) {
+	_ensure_preview_nodes();
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action(TTR("Set Preview Sun Color"), UndoRedo::MergeMode::MERGE_ENDS);
 	undo_redo->add_do_method(sun_color, "set_pick_color", p_color);
@@ -10585,6 +10652,7 @@ void Node3DEditor::_sun_set_color(const Color &p_color) {
 }
 
 void Node3DEditor::_sun_set_energy(float p_energy) {
+	_ensure_preview_nodes();
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action(TTR("Set Preview Sun Energy"), UndoRedo::MergeMode::MERGE_ENDS);
 	undo_redo->add_do_method(sun_energy, "set_value_no_signal", p_energy);
@@ -10595,6 +10663,7 @@ void Node3DEditor::_sun_set_energy(float p_energy) {
 }
 
 void Node3DEditor::_sun_set_shadow_max_distance(float p_shadow_max_distance) {
+	_ensure_preview_nodes();
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action(TTR("Set Preview Sun Max Shadow Distance"), UndoRedo::MergeMode::MERGE_ENDS);
 	undo_redo->add_do_method(sun_shadow_max_distance, "set_value_no_signal", p_shadow_max_distance);
@@ -11370,22 +11439,7 @@ void fragment() {
 		environ_state->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
 		environ_state->set_h_size_flags(SIZE_EXPAND_FILL);
 
-		preview_sun = memnew(DirectionalLight3D);
-		preview_sun->set_shadow(true);
-		preview_sun->set_shadow_mode(DirectionalLight3D::SHADOW_PARALLEL_4_SPLITS);
-		preview_environment = memnew(WorldEnvironment);
-		environment.instantiate();
-		preview_environment->set_environment(environment);
-		if (GLOBAL_GET("rendering/lights_and_shadows/use_physical_light_units")) {
-			camera_attributes.instantiate();
-			preview_environment->set_camera_attributes(camera_attributes);
-		}
-		Ref<Sky> sky;
-		sky.instantiate();
-		sky_material.instantiate();
-		sky->set_material(sky_material);
-		environment->set_sky(sky);
-		environment->set_background(Environment::BG_SKY);
+		_ensure_preview_nodes();
 
 		sun_environ_popup->set_process_shortcut_input(true);
 
@@ -11411,9 +11465,24 @@ Node3DEditor::~Node3DEditor() {
 			scene_visuals_owner->add_to_group(SceneStringName(_spatial_editor_group));
 		}
 	}
+
+	if (instances.is_empty()) {
+		// What is held above any one view has to go with the last of them. These
+		// were members before views could exist more than once, and were freed
+		// with the only view there was; shared, nothing was freeing them, and
+		// they outlived the servers that own what they point at.
+		gizmo_plugins_by_priority.clear();
+		gizmo_plugins_by_name.clear();
+		origin_mat.unref();
+		for (int i = 0; i < 3; i++) {
+			grid_mat[i].unref();
+		}
+	}
 	memdelete(preview_node);
-	// The preview nodes sit in the scene root, which outlives this view, so they
-	// have to be taken along rather than left lighting the scene for nobody.
+	// The preview nodes are taken along rather than left lighting a scene for
+	// nobody - unless the document they were parked in was torn down first, at
+	// editor exit or when its tab was closed, and took them with it.
+	_drop_freed_preview_nodes();
 	if (preview_sun) {
 		if (preview_sun->get_parent()) {
 			preview_sun->get_parent()->remove_child(preview_sun);

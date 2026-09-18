@@ -924,9 +924,16 @@ private:
 
 	Button *sun_environ_settings = nullptr;
 
+	// The preview nodes are parked in the document being edited, and a document
+	// can be closed - or torn down when the editor exits - while this view is
+	// still alive, taking them along. They are ours only for as long as ObjectDB
+	// still knows them, which is what these ids are for; _ensure_preview_nodes()
+	// drops what has been freed and builds it again.
 	DirectionalLight3D *preview_sun = nullptr;
+	ObjectID preview_sun_id;
 	bool preview_sun_dangling = false;
 	WorldEnvironment *preview_environment = nullptr;
+	ObjectID preview_environment_id;
 	bool preview_env_dangling = false;
 	Ref<Environment> environment;
 	Ref<CameraAttributesPractical> camera_attributes;
@@ -951,6 +958,8 @@ private:
 	void _environ_set_gi();
 
 	void _load_default_preview_settings();
+	void _drop_freed_preview_nodes();
+	void _ensure_preview_nodes();
 	void _update_preview_environment();
 
 	void _preview_settings_changed();
