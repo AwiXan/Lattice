@@ -7560,24 +7560,27 @@ void Node3DEditor::update_editing_world() {
 		}
 	}
 
-	// The grid and origin lines are shared, so only their owner moves them.
-	if (scene_visuals_owner != this) {
-		return;
-	}
 	const Ref<World3D> world = get_editing_world();
 	if (world.is_null()) {
 		return;
 	}
-	const RID scenario = world->get_scenario();
-	if (origin_instance.is_valid()) {
-		RS::get_singleton()->instance_set_scenario(origin_instance, scenario);
+
+	// The grid and origin lines are shared, so only their owner moves them. The
+	// rest of this belongs to the view itself and has to run in every one of
+	// them, or a view that does not own the shared visuals never lights the
+	// document it was just pointed at.
+	if (scene_visuals_owner == this) {
+		const RID scenario = world->get_scenario();
+		if (origin_instance.is_valid()) {
+			RS::get_singleton()->instance_set_scenario(origin_instance, scenario);
+		}
+		// The grid is rebuilt rather than moved: update_grid() only rebuilds when
+		// the camera has travelled far or changed projection, so switching to a
+		// document whose camera happens to sit nearby would leave the grid in the
+		// world of the scene just left.
+		grid_init_draw = false;
+		update_grid();
 	}
-	// The grid is rebuilt rather than moved: update_grid() only rebuilds when the
-	// camera has travelled far or changed projection, so switching to a document
-	// whose camera happens to sit nearby would leave the grid in the world of the
-	// scene just left.
-	grid_init_draw = false;
-	update_grid();
 
 	// Documents stay live in roots of their own, so switching between them
 	// fires no node-removed notifications and these counts would keep counting

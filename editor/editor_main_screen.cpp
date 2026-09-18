@@ -271,17 +271,19 @@ bool EditorMainScreen::can_split_view() const {
 }
 
 int EditorMainScreen::_pick_document_for_second_pane() const {
-	// Show the pane something other than what pane one already shows, since two
-	// views of one scene is the less interesting half of the feature. Returned
-	// as a history id: the pane keeps pointing at that document however its tab
-	// moves, and follows the current one again once it is closed.
+	// The scene being worked on, so that splitting gives two views of it and
+	// nothing appears to have gone wrong. Showing a different document is what
+	// the header's picker is for, and it is the more interesting half of the
+	// feature, but it is not what someone asking for a split expects to get.
+	//
+	// Returned as a history id: the pane keeps pointing at that document however
+	// its tab moves, and follows the current one again once it is closed.
 	EditorData &editor_data = EditorNode::get_editor_data();
 	const int count = editor_data.get_edited_scene_count();
 	if (count < 1) {
 		return -1;
 	}
-	const int current = editor_data.get_edited_scene();
-	return editor_data.get_scene_history_id(count > 1 ? (current + 1) % count : current);
+	return editor_data.get_scene_history_id(editor_data.get_edited_scene());
 }
 
 void EditorMainScreen::_build_secondary_header() {
