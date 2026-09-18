@@ -187,6 +187,15 @@ public:
 	static constexpr int32_t GIZMO_GRID_LAYER = 25;
 	static constexpr int32_t MISC_TOOL_LAYER = 24;
 
+	// A view's manipulator is drawn only for its own camera, by putting its
+	// instances on a layer that only that camera includes. Layers 0-19 belong to
+	// the scene and three more are taken by the tool, grid and selection
+	// visuals, so these nine are what is left to hand out. The first four keep
+	// the assignment a single 3D editor had before views could be shared, so
+	// nothing moves in the common case.
+	static constexpr int32_t GIZMO_VIEW_LAYERS[] = { 27, 28, 29, 30, 31, 23, 22, 21, 20 };
+	static constexpr int32_t GIZMO_VIEW_LAYER_COUNT = 9;
+
 	static constexpr int32_t FRAME_TIME_HISTORY = 20;
 
 private:
@@ -214,6 +223,16 @@ private:
 	Label *ruler_label_z = nullptr;
 
 	int index;
+	// Which layer this view's manipulator instances are on, and the scenario it
+	// was taken from. Handed out per world: two views of one document have to
+	// differ or each draws the other's manipulator, while views of different
+	// documents never collide, their worlds being separate.
+	int gizmo_layer = GIZMO_BASE_LAYER;
+	RID gizmo_layer_scenario;
+
+	void _acquire_gizmo_layer();
+	void _release_gizmo_layer();
+	void _apply_gizmo_layer();
 	void _menu_option(int p_option);
 	Node3D *preview_node = nullptr;
 	bool update_preview_node = false;
@@ -697,6 +716,9 @@ private:
 	int current_hover_gizmo_handle;
 	bool current_hover_gizmo_handle_secondary;
 
+	// Which manipulator layers are taken in each world, as a bit per layer.
+	static inline HashMap<RID, uint32_t> gizmo_layers_in_use;
+
 	// Shared, like the gizmos it indexes: a node has one gizmo however many
 	// views are open, so a view with a tree of its own would be picking against
 	// whatever happened to be registered while it was the active one - which is
@@ -1126,6 +1148,11 @@ public:
 
 	// Static because which view is active must not decide where a gizmo lands,
 	// and because a gizmo can outlive every view while being freed.
+	// Hands out a manipulator layer within one world, and takes it back. Views
+	// of different worlds are free to use the same one.
+	static int acquire_gizmo_layer(const RID &p_scenario);
+	static void release_gizmo_layer(const RID &p_scenario, int p_layer);
+
 	static DynamicBVH::ID insert_gizmo_bvh_node(Node3D *p_node, const AABB &p_aabb);
 	static void update_gizmo_bvh_node(DynamicBVH::ID p_id, const AABB &p_aabb);
 	static void remove_gizmo_bvh_node(DynamicBVH::ID p_id);

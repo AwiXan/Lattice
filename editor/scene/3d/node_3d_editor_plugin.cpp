@@ -3910,10 +3910,12 @@ void Node3DEditorViewport::_notification(int p_what) {
 			viewport->set_world_3d(get_editing_world());
 
 			_init_gizmo_instance(index);
+			_apply_gizmo_layer();
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
 			_finish_gizmo_instances();
+			_release_gizmo_layer();
 		} break;
 
 		case NOTIFICATION_THEME_CHANGED: {
@@ -4811,8 +4813,53 @@ void Node3DEditorViewport::_update_centered_labels() {
 	}
 }
 
+void Node3DEditorViewport::_acquire_gizmo_layer() {
+	const Ref<World3D> world = get_editing_world();
+	const RID scenario = world.is_valid() ? world->get_scenario() : RID();
+	if (scenario == gizmo_layer_scenario) {
+		return;
+	}
+	_release_gizmo_layer();
+	gizmo_layer_scenario = scenario;
+	gizmo_layer = Node3DEditor::acquire_gizmo_layer(scenario);
+}
+
+void Node3DEditorViewport::_release_gizmo_layer() {
+	if (gizmo_layer_scenario.is_null()) {
+		return;
+	}
+	Node3DEditor::release_gizmo_layer(gizmo_layer_scenario, gizmo_layer);
+	gizmo_layer_scenario = RID();
+	gizmo_layer = GIZMO_BASE_LAYER;
+}
+
+void Node3DEditorViewport::_apply_gizmo_layer() {
+	const uint32_t layer = 1 << gizmo_layer;
+	// The manipulator instances only exist while the view is in the tree; the
+	// camera's mask is worth setting either way.
+	if (move_gizmo_instance[0].is_valid()) {
+		for (int i = 0; i < 3; i++) {
+			RS::get_singleton()->instance_set_layer_mask(move_gizmo_instance[i], layer);
+			RS::get_singleton()->instance_set_layer_mask(move_plane_gizmo_instance[i], layer);
+			RS::get_singleton()->instance_set_layer_mask(scale_gizmo_instance[i], layer);
+			RS::get_singleton()->instance_set_layer_mask(scale_plane_gizmo_instance[i], layer);
+			RS::get_singleton()->instance_set_layer_mask(axis_gizmo_instance[i], layer);
+		}
+		for (int i = 0; i < 4; i++) {
+			RS::get_singleton()->instance_set_layer_mask(rotate_gizmo_instance[i], layer);
+		}
+		if (trackball_sphere_instance.is_valid()) {
+			RS::get_singleton()->instance_set_layer_mask(trackball_sphere_instance, layer);
+		}
+	}
+	// The camera sees the scene, the shared editor visuals, and its own
+	// manipulator - never another view's.
+	camera->set_cull_mask(((1 << 20) - 1) | layer | (1 << GIZMO_EDIT_LAYER) | (1 << GIZMO_GRID_LAYER) | (1 << MISC_TOOL_LAYER));
+}
+
 void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
-	uint32_t layer = 1 << (GIZMO_BASE_LAYER + p_idx);
+	_acquire_gizmo_layer();
+	uint32_t layer = 1 << gizmo_layer;
 
 	for (int i = 0; i < 3; i++) {
 		move_gizmo_instance[i] = RS::get_singleton()->instance_create();
@@ -4888,6 +4935,9 @@ void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 
 void Node3DEditorViewport::_finish_gizmo_instances() {
 	ERR_FAIL_NULL(RenderingServer::get_singleton());
+	// Cleared, not just freed: a view leaves and re-enters the tree now, and a
+	// freed RID still reads as valid, so code that asks whether the instances
+	// are there would be answered wrongly.
 	for (int i = 0; i < 3; i++) {
 		RS::get_singleton()->free_rid(move_gizmo_instance[i]);
 		RS::get_singleton()->free_rid(move_plane_gizmo_instance[i]);
@@ -4895,11 +4945,19 @@ void Node3DEditorViewport::_finish_gizmo_instances() {
 		RS::get_singleton()->free_rid(scale_gizmo_instance[i]);
 		RS::get_singleton()->free_rid(scale_plane_gizmo_instance[i]);
 		RS::get_singleton()->free_rid(axis_gizmo_instance[i]);
+		move_gizmo_instance[i] = RID();
+		move_plane_gizmo_instance[i] = RID();
+		rotate_gizmo_instance[i] = RID();
+		scale_gizmo_instance[i] = RID();
+		scale_plane_gizmo_instance[i] = RID();
+		axis_gizmo_instance[i] = RID();
 	}
 	// Rotation white outline
 	RS::get_singleton()->free_rid(rotate_gizmo_instance[3]);
+	rotate_gizmo_instance[3] = RID();
 
 	RS::get_singleton()->free_rid(trackball_sphere_instance);
+	trackball_sphere_instance = RID();
 }
 
 void Node3DEditorViewport::_disable_follow_mode() {
@@ -6786,7 +6844,8 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	surface->set_clip_contents(true);
 	camera = memnew(Camera3D);
 	camera->set_disable_gizmos(true);
-	camera->set_cull_mask(((1 << 20) - 1) | (1 << (GIZMO_BASE_LAYER + p_index)) | (1 << GIZMO_EDIT_LAYER) | (1 << GIZMO_GRID_LAYER) | (1 << MISC_TOOL_LAYER));
+	// Refined once the view has a world and a layer of its own to go with it.
+	camera->set_cull_mask(((1 << 20) - 1) | (1 << GIZMO_BASE_LAYER) | (1 << GIZMO_EDIT_LAYER) | (1 << GIZMO_GRID_LAYER) | (1 << MISC_TOOL_LAYER));
 	viewport->add_child(camera);
 	camera->make_current();
 	surface->set_focus_mode(FOCUS_ALL);
@@ -7507,11 +7566,23 @@ void Node3DEditor::update_all_gizmos(Node *p_node) {
 }
 
 void Node3DEditorViewport::update_editing_world() {
+	// Out of the tree this view renders nothing, and its manipulator instances
+	// do not exist. Taking a layer here would be taking one nothing gives back,
+	// since only leaving the tree releases it - and entering it again does all
+	// of this anyway.
+	if (!is_inside_tree()) {
+		return;
+	}
 	const Ref<World3D> world = get_editing_world();
 	if (world.is_null()) {
 		return;
 	}
 	viewport->set_world_3d(world);
+
+	// The layer was taken from the world being left, and a free one in the world
+	// being entered may well be a different one.
+	_acquire_gizmo_layer();
+	_apply_gizmo_layer();
 
 	// The manipulator instances were created in whatever world was current when
 	// this viewport entered the tree, so carry them over rather than leaving
@@ -11692,6 +11763,41 @@ void Node3DEditor::_update_all_gizmos_menus() {
 	// up and get -1 for.
 	for (int i = 0; i < instances.size(); i++) {
 		instances[i]->_update_gizmos_menu();
+	}
+}
+
+int Node3DEditor::acquire_gizmo_layer(const RID &p_scenario) {
+	if (p_scenario.is_null()) {
+		return Node3DEditorViewport::GIZMO_BASE_LAYER;
+	}
+	uint32_t &taken = gizmo_layers_in_use[p_scenario];
+	for (int i = 0; i < Node3DEditorViewport::GIZMO_VIEW_LAYER_COUNT; i++) {
+		const int layer = Node3DEditorViewport::GIZMO_VIEW_LAYERS[i];
+		if (!(taken & (1 << i))) {
+			taken |= 1 << i;
+			return layer;
+		}
+	}
+	// More views are showing this one document than there are layers to keep
+	// their manipulators apart. Sharing one means seeing a neighbour's
+	// manipulator, which is worth more than refusing to open the view.
+	WARN_PRINT_ONCE("More than " + itos(Node3DEditorViewport::GIZMO_VIEW_LAYER_COUNT) + " 3D views are open on one scene; their manipulators will be drawn in each other's views.");
+	return Node3DEditorViewport::GIZMO_BASE_LAYER;
+}
+
+void Node3DEditor::release_gizmo_layer(const RID &p_scenario, int p_layer) {
+	HashMap<RID, uint32_t>::Iterator taken = gizmo_layers_in_use.find(p_scenario);
+	if (!taken) {
+		return;
+	}
+	for (int i = 0; i < Node3DEditorViewport::GIZMO_VIEW_LAYER_COUNT; i++) {
+		if (Node3DEditorViewport::GIZMO_VIEW_LAYERS[i] == p_layer) {
+			taken->value &= ~(1 << i);
+			break;
+		}
+	}
+	if (taken->value == 0) {
+		gizmo_layers_in_use.remove(taken);
 	}
 }
 
