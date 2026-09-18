@@ -9277,6 +9277,12 @@ void Node3DEditor::_update_gizmos_menu_theme() {
 		}
 		const int plugin_state = gizmo_plugins_by_name[i]->get_state();
 		const int idx = gizmos_menu->get_item_index(i);
+		if (idx < 0) {
+			// A view built after the gizmo plugins were registered is themed
+			// before its menu is filled from them, and there is nothing yet to
+			// put an icon on. _update_gizmos_menu() sets them when it builds it.
+			continue;
+		}
 		switch (plugin_state) {
 			case EditorNode3DGizmoPlugin::VISIBLE:
 				gizmos_menu->set_item_icon(idx, get_editor_theme_icon(SNAME("GuiVisibilityVisible")));
