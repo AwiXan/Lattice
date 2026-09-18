@@ -514,6 +514,8 @@ protected:
 public:
 	// Follows the world of the view this viewport belongs to, so its gizmo
 	// instances and picks land in the scene it is actually showing.
+	Node *get_edited_scene() const;
+	SubViewport *get_scene_root() const;
 	Ref<World3D> get_editing_world() const;
 	// Re-points this viewport at the world of the document now being edited,
 	// and carries its manipulator instances over to that world's scenario.
@@ -860,6 +862,10 @@ private:
 	static Vector<Ref<EditorNode3DGizmoPlugin>> gizmo_plugins_by_priority;
 	static Vector<Ref<EditorNode3DGizmoPlugin>> gizmo_plugins_by_name;
 
+	// Which document this view edits. -1 follows whichever one is current,
+	// which is what a single-pane editor wants; a pane binds its view to one.
+	int bound_document = -1;
+
 	// Owns everything the views instance into the shared world: it alone answers
 	// the _spatial_editor_group broadcast, so a node never has the same gizmo
 	// added twice, and it alone creates and frees the grid and origin lines.
@@ -976,6 +982,14 @@ public:
 	// The world the scene this view edits lives in. Every gizmo, indicator and
 	// viewport pick goes through here, so once panes own their own scenes this
 	// is the single place that has to start answering per pane.
+	// The document this view edits, and its scene root. Everything in the view
+	// goes through these rather than asking the editor what is current, so a
+	// second view can be looking at a different scene entirely.
+	void bind_document(int p_idx);
+	int get_bound_document() const { return bound_document; }
+	Node *get_edited_scene() const;
+	SubViewport *get_scene_root() const;
+
 	Ref<World3D> get_editing_world() const;
 	// Called when the edited document changes: every viewport follows the new
 	// world, and the shared grid and origin lines move into it.

@@ -4611,6 +4611,11 @@ bool EditorNode::is_viewport_editable(const Viewport *p_viewport) {
 	if (!p_viewport) {
 		return true;
 	}
+	// Deliberately the current document only, not every open one. Documents stay
+	// live now, so widening this lets nodes of a scene nobody is looking at pass
+	// the filter, and the editor then asks the scene in front of it whether it
+	// owns them. Once panes exist this becomes a question per view: is this the
+	// root of the document *I* am editing.
 	if (singleton && p_viewport == singleton->get_scene_root()) {
 		return true;
 	}

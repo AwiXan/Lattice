@@ -717,7 +717,7 @@ void Node3DEditorViewport::_select_clicked(bool p_allow_locked) {
 		return;
 	}
 
-	Node *edited_scene = EditorNode::get_singleton()->get_edited_scene();
+	Node *edited_scene = get_edited_scene();
 
 	// Prevent selection of nodes not owned by the edited scene.
 	while (node && node != edited_scene->get_parent()) {
@@ -1369,7 +1369,7 @@ void Node3DEditorViewport::_select_region() {
 		// Replace the node by the group if grouped
 		if (node->is_class("Node3D")) {
 			Node3D *sel = Object::cast_to<Node3D>(node);
-			while (node && node != EditorNode::get_singleton()->get_edited_scene()->get_parent()) {
+			while (node && node != get_edited_scene()->get_parent()) {
 				Node3D *selected_tmp = Object::cast_to<Node3D>(node);
 				if (selected_tmp && node->has_meta("_edit_group_")) {
 					sel = selected_tmp;
@@ -1933,7 +1933,7 @@ void Node3DEditorViewport::_list_select(Ref<InputEventMouseButton> b) {
 	Vector<_RayResult> potential_selection_results;
 	_find_items_at_pos(b->get_position(), potential_selection_results, b->is_alt_pressed());
 
-	Node *edited_scene = EditorNode::get_singleton()->get_edited_scene();
+	Node *edited_scene = get_edited_scene();
 
 	// Filter to a list of nodes which include either the edited scene or nodes directly owned by the edited scene.
 	// If a node has an invalid owner, recursively check their parents until a valid node is found.
@@ -1980,7 +1980,7 @@ void Node3DEditorViewport::_list_select(Ref<InputEventMouseButton> b) {
 			if (_is_node_locked(spat)) {
 				locked = 1;
 			} else {
-				Node *ed_scene = EditorNode::get_singleton()->get_edited_scene();
+				Node *ed_scene = get_edited_scene();
 				Node *node = spat;
 
 				while (node && node != ed_scene->get_parent()) {
@@ -2348,7 +2348,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 					}
 
 					if (spatial_editor->get_tool_mode() == Node3DEditor::TOOL_RULER) {
-						EditorNode::get_singleton()->get_scene_root()->add_child(ruler);
+						get_scene_root()->add_child(ruler);
 						collision_reposition = true;
 						break;
 					}
@@ -2553,7 +2553,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 					surface->queue_redraw();
 				} else {
 					if (ruler->is_inside_tree()) {
-						EditorNode::get_singleton()->get_scene_root()->remove_child(ruler);
+						get_scene_root()->remove_child(ruler);
 						ruler_start_point->set_visible(false);
 						ruler_end_point->set_visible(false);
 						ruler_label->set_visible(false);
@@ -5301,7 +5301,7 @@ void Node3DEditorViewport::set_state(const Dictionary &p_state) {
 		preview_camera->disconnect(SceneStringName(toggled), callable_mp(this, &Node3DEditorViewport::_toggle_camera_preview));
 	}
 	if (p_state.has("previewing")) {
-		Node *pv = EditorNode::get_singleton()->get_edited_scene()->get_node(p_state["previewing"]);
+		Node *pv = get_edited_scene()->get_node(p_state["previewing"]);
 		if (Object::cast_to<Camera3D>(pv)) {
 			previewing = Object::cast_to<Camera3D>(pv);
 			previewing->connect(SceneStringName(tree_exiting), callable_mp(this, &Node3DEditorViewport::_preview_exited_scene));
@@ -5361,7 +5361,7 @@ Dictionary Node3DEditorViewport::get_state() const {
 	d["half_res"] = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_HALF_RESOLUTION));
 	d["cinematic_preview"] = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_CINEMATIC_PREVIEW));
 	if (previewing) {
-		d["previewing"] = EditorNode::get_singleton()->get_edited_scene()->get_path_to(previewing);
+		d["previewing"] = get_edited_scene()->get_path_to(previewing);
 	}
 	d["lock_rotation"] = view_3d_controller->is_locking_rotation();
 
@@ -5638,7 +5638,7 @@ void Node3DEditorViewport::_create_preview_node(const Vector<String> &files) con
 		}
 	}
 	if (add_preview) {
-		EditorNode::get_singleton()->get_scene_root()->add_child(preview_node);
+		get_scene_root()->add_child(preview_node);
 		*preview_bounds = _calculate_spatial_bounds(preview_node);
 	}
 }
@@ -5653,7 +5653,7 @@ void Node3DEditorViewport::_remove_preview_node() {
 			node->queue_free();
 			preview_node->remove_child(node);
 		}
-		EditorNode::get_singleton()->get_scene_root()->remove_child(preview_node);
+		get_scene_root()->remove_child(preview_node);
 	}
 }
 
@@ -5803,8 +5803,8 @@ bool Node3DEditorViewport::_create_instance(Node *p_parent, const String &p_path
 		return false;
 	}
 
-	if (!EditorNode::get_singleton()->get_edited_scene()->get_scene_file_path().is_empty()) { // Cyclic instantiation.
-		if (_cyclical_dependency_exists(EditorNode::get_singleton()->get_edited_scene()->get_scene_file_path(), instantiated_scene)) {
+	if (!get_edited_scene()->get_scene_file_path().is_empty()) { // Cyclic instantiation.
+		if (_cyclical_dependency_exists(get_edited_scene()->get_scene_file_path(), instantiated_scene)) {
 			memdelete(instantiated_scene);
 			return false;
 		}
@@ -5816,15 +5816,15 @@ bool Node3DEditorViewport::_create_instance(Node *p_parent, const String &p_path
 
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->add_do_method(p_parent, "add_child", instantiated_scene, true);
-	undo_redo->add_do_method(instantiated_scene, "set_owner", EditorNode::get_singleton()->get_edited_scene());
+	undo_redo->add_do_method(instantiated_scene, "set_owner", get_edited_scene());
 	undo_redo->add_do_reference(instantiated_scene);
 	undo_redo->add_undo_method(p_parent, "remove_child", instantiated_scene);
 	undo_redo->add_do_method(editor_selection, "add_node", instantiated_scene);
 
 	String new_name = p_parent->validate_child_name(instantiated_scene);
 	EditorDebuggerNode *ed = EditorDebuggerNode::get_singleton();
-	undo_redo->add_do_method(ed, "live_debug_instantiate_node", EditorNode::get_singleton()->get_edited_scene()->get_path_to(p_parent), p_path, new_name);
-	undo_redo->add_undo_method(ed, "live_debug_remove_node", NodePath(String(EditorNode::get_singleton()->get_edited_scene()->get_path_to(p_parent)) + "/" + new_name));
+	undo_redo->add_do_method(ed, "live_debug_instantiate_node", get_edited_scene()->get_path_to(p_parent), p_path, new_name);
+	undo_redo->add_undo_method(ed, "live_debug_remove_node", NodePath(String(get_edited_scene()->get_path_to(p_parent)) + "/" + new_name));
 
 	Node3D *node3d = Object::cast_to<Node3D>(instantiated_scene);
 	if (node3d) {
@@ -5863,15 +5863,15 @@ bool Node3DEditorViewport::_create_audio_node(Node *p_parent, const String &p_pa
 
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->add_do_method(p_parent, "add_child", audio_player, true);
-	undo_redo->add_do_method(audio_player, "set_owner", EditorNode::get_singleton()->get_edited_scene());
+	undo_redo->add_do_method(audio_player, "set_owner", get_edited_scene());
 	undo_redo->add_do_reference(audio_player);
 	undo_redo->add_undo_method(p_parent, "remove_child", audio_player);
 	undo_redo->add_do_method(editor_selection, "add_node", audio_player);
 
 	const String new_name = p_parent->validate_child_name(audio_player);
 	EditorDebuggerNode *ed = EditorDebuggerNode::get_singleton();
-	undo_redo->add_do_method(ed, "live_debug_create_node", EditorNode::get_singleton()->get_edited_scene()->get_path_to(p_parent), audio_player->get_class(), new_name);
-	undo_redo->add_undo_method(ed, "live_debug_remove_node", NodePath(String(EditorNode::get_singleton()->get_edited_scene()->get_path_to(p_parent)) + "/" + new_name));
+	undo_redo->add_do_method(ed, "live_debug_create_node", get_edited_scene()->get_path_to(p_parent), audio_player->get_class(), new_name);
+	undo_redo->add_undo_method(ed, "live_debug_remove_node", NodePath(String(get_edited_scene()->get_path_to(p_parent)) + "/" + new_name));
 
 	Transform3D parent_tf;
 	Node3D *parent_node3d = Object::cast_to<Node3D>(p_parent);
@@ -6029,7 +6029,7 @@ bool Node3DEditorViewport::can_drop_data_fw(const Point2 &p_point, const Variant
 				if (!instantiated_scene) {
 					continue;
 				}
-				Node *edited_scene = EditorNode::get_singleton()->get_edited_scene();
+				Node *edited_scene = get_edited_scene();
 				if (edited_scene && !edited_scene->get_scene_file_path().is_empty() && _cyclical_dependency_exists(edited_scene->get_scene_file_path(), instantiated_scene)) {
 					memdelete(instantiated_scene);
 					is_cyclical_dep = true;
@@ -6138,7 +6138,7 @@ void Node3DEditorViewport::drop_data_fw(const Point2 &p_point, const Variant &p_
 	}
 
 	const List<Node *> &selected_nodes = EditorNode::get_singleton()->get_editor_selection()->get_top_selected_node_list();
-	Node *root_node = EditorNode::get_singleton()->get_edited_scene();
+	Node *root_node = get_edited_scene();
 	if (selected_nodes.size() > 0) {
 		Node *selected_node = selected_nodes.front()->get();
 		if (is_alt) {
@@ -7517,6 +7517,14 @@ void Node3DEditorViewport::update_editing_world() {
 	RS::get_singleton()->instance_set_scenario(trackball_sphere_instance, scenario);
 }
 
+Node *Node3DEditorViewport::get_edited_scene() const {
+	return spatial_editor->get_edited_scene();
+}
+
+SubViewport *Node3DEditorViewport::get_scene_root() const {
+	return spatial_editor->get_scene_root();
+}
+
 Ref<World3D> Node3DEditorViewport::get_editing_world() const {
 	return spatial_editor->get_editing_world();
 }
@@ -7551,18 +7559,19 @@ void Node3DEditor::update_editing_world() {
 	if (origin_instance.is_valid()) {
 		RS::get_singleton()->instance_set_scenario(origin_instance, scenario);
 	}
-	for (int i = 0; i < 3; i++) {
-		if (grid_instance[i].is_valid()) {
-			RS::get_singleton()->instance_set_scenario(grid_instance[i], scenario);
-		}
-	}
+	// The grid is rebuilt rather than moved: update_grid() only rebuilds when the
+	// camera has travelled far or changed projection, so switching to a document
+	// whose camera happens to sit nearby would leave the grid in the world of the
+	// scene just left.
+	grid_init_draw = false;
+	update_grid();
 
 	// Documents stay live in roots of their own, so switching between them
 	// fires no node-removed notifications and these counts would keep counting
 	// the lights and environments of a scene that is no longer in front of us.
 	world_env_count = 0;
 	directional_light_count = 0;
-	Node *edited_scene = EditorNode::get_singleton()->get_edited_scene();
+	Node *edited_scene = get_edited_scene();
 	if (edited_scene) {
 		_count_preview_blockers(edited_scene, world_env_count, directional_light_count);
 	}
@@ -7580,11 +7589,27 @@ void Node3DEditor::update_editing_world() {
 	callable_mp(this, &Node3DEditor::_update_preview_environment).call_deferred();
 }
 
+void Node3DEditor::bind_document(int p_idx) {
+	if (bound_document == p_idx) {
+		return;
+	}
+	bound_document = p_idx;
+	update_editing_world();
+}
+
+Node *Node3DEditor::get_edited_scene() const {
+	return EditorNode::get_editor_data().get_edited_scene_root(bound_document);
+}
+
+SubViewport *Node3DEditor::get_scene_root() const {
+	return EditorNode::get_editor_data().get_scene_root_viewport(bound_document);
+}
+
 Ref<World3D> Node3DEditor::get_editing_world() const {
 	// The world belongs to the scene root the edited scene is hosted in, so the
 	// gizmos, indicators and picks that go through here follow the scene rather
 	// than the editor window.
-	SubViewport *scene_root = EditorNode::get_singleton()->get_scene_root();
+	SubViewport *scene_root = get_scene_root();
 	if (!scene_root) {
 		// Asked before the first document exists, while the editor is still
 		// being built. Fall back so nothing instances into a null world.
@@ -9367,8 +9392,17 @@ void Node3DEditor::_finish_indicators() {
 
 void Node3DEditor::_finish_grid() {
 	for (int i = 0; i < 3; i++) {
-		RenderingServer::get_singleton()->free_rid(grid_instance[i]);
-		RenderingServer::get_singleton()->free_rid(grid[i]);
+		// Cleared, not just freed: the grid belongs to a world now, and code that
+		// moves it between documents has to be able to tell a live RID from one
+		// that was released.
+		if (grid_instance[i].is_valid()) {
+			RenderingServer::get_singleton()->free_rid(grid_instance[i]);
+			grid_instance[i] = RID();
+		}
+		if (grid[i].is_valid()) {
+			RenderingServer::get_singleton()->free_rid(grid[i]);
+			grid[i] = RID();
+		}
 	}
 }
 
@@ -10093,7 +10127,7 @@ void Node3DEditor::_request_gizmo(Object *p_obj) {
 
 	bool is_selected = (sp == selected);
 
-	Node *edited_scene = EditorNode::get_singleton()->get_edited_scene();
+	Node *edited_scene = get_edited_scene();
 	if (edited_scene && (sp == edited_scene || (sp->get_owner() && edited_scene->is_ancestor_of(sp)))) {
 		for (int i = 0; i < gizmo_plugins_by_priority.size(); ++i) {
 			Ref<EditorNode3DGizmo> seg = gizmo_plugins_by_priority.write[i]->get_gizmo(sp);
@@ -10231,7 +10265,7 @@ void Node3DEditor::_node_added(Node *p_node) {
 		// count towards what disables the preview.
 		return;
 	}
-	if (EditorNode::get_singleton()->get_scene_root()->is_ancestor_of(p_node)) {
+	if (get_scene_root()->is_ancestor_of(p_node)) {
 		// Deferred because this fires while the scene root is still adding the
 		// scene's children, and the update parents the preview nodes into it.
 		if (Object::cast_to<WorldEnvironment>(p_node)) {
@@ -10252,7 +10286,7 @@ void Node3DEditor::_node_removed(Node *p_node) {
 	if (p_node == preview_sun || p_node == preview_environment) {
 		return;
 	}
-	if (EditorNode::get_singleton()->get_scene_root()->is_ancestor_of(p_node)) {
+	if (get_scene_root()->is_ancestor_of(p_node)) {
 		if (Object::cast_to<WorldEnvironment>(p_node)) {
 			world_env_count--;
 			if (world_env_count == 0) {
@@ -10464,7 +10498,7 @@ void Node3DEditor::_update_preview_environment() {
 		if (!preview_sun->get_parent()) {
 			// Into the scene root, so the preview lights the world the scene is
 			// actually in rather than the editor window's.
-			EditorNode::get_singleton()->get_scene_root()->add_child(preview_sun, true);
+			get_scene_root()->add_child(preview_sun, true);
 			sun_state->hide();
 			sun_vb->show();
 			preview_sun_dangling = false;
@@ -10493,7 +10527,7 @@ void Node3DEditor::_update_preview_environment() {
 
 	} else {
 		if (!preview_environment->get_parent()) {
-			EditorNode::get_singleton()->get_scene_root()->add_child(preview_environment);
+			get_scene_root()->add_child(preview_environment);
 			environ_state->hide();
 			environ_vb->show();
 			preview_env_dangling = false;
@@ -11434,8 +11468,14 @@ Size2i Node3DEditor::get_camera_viewport_size(Camera3D *p_camera) {
 	SubViewport *sub_viewport = Object::cast_to<SubViewport>(viewport);
 	ERR_FAIL_NULL_V(sub_viewport, Size2i());
 
-	if (sub_viewport == EditorNode::get_singleton()->get_scene_root()) {
-		return Size2(GLOBAL_GET("display/window/size/viewport_width"), GLOBAL_GET("display/window/size/viewport_height"));
+	// Any document's root reports the project resolution; a SubViewport placed
+	// inside a scene reports its own size. Static, so it cannot go through a
+	// view's binding and asks the document list directly.
+	EditorData &ed = EditorNode::get_editor_data();
+	for (int i = 0; i < ed.get_edited_scene_count(); i++) {
+		if (sub_viewport == ed.get_scene_root_viewport(i)) {
+			return Size2(GLOBAL_GET("display/window/size/viewport_width"), GLOBAL_GET("display/window/size/viewport_height"));
+		}
 	}
 
 	return sub_viewport->get_size();
@@ -11541,6 +11581,22 @@ void Node3DEditor::remove_gizmo_bvh_node(DynamicBVH::ID p_id) {
 	gizmo_bvh.remove(p_id);
 }
 
+// Documents stay live in roots of their own now, so gizmos created for a scene
+// that was current earlier are still in the BVH. Picking must not reach them:
+// the view would hand a node of another scene to the scene in front of it.
+static Vector<Node3D *> _keep_nodes_of_scene(const Vector<Node3D *> &p_nodes, const Node *p_edited_scene) {
+	if (!p_edited_scene) {
+		return Vector<Node3D *>();
+	}
+	Vector<Node3D *> kept;
+	for (Node3D *node : p_nodes) {
+		if (node && (node == p_edited_scene || p_edited_scene->is_ancestor_of(node))) {
+			kept.push_back(node);
+		}
+	}
+	return kept;
+}
+
 Vector<Node3D *> Node3DEditor::gizmo_bvh_ray_query(const Vector3 &p_ray_start, const Vector3 &p_ray_end) {
 	struct Result {
 		Vector<Node3D *> nodes;
@@ -11552,7 +11608,7 @@ Vector<Node3D *> Node3DEditor::gizmo_bvh_ray_query(const Vector3 &p_ray_start, c
 
 	gizmo_bvh.ray_query(p_ray_start, p_ray_end, result);
 
-	return result.nodes;
+	return _keep_nodes_of_scene(result.nodes, get_edited_scene());
 }
 
 Vector<Node3D *> Node3DEditor::gizmo_bvh_frustum_query(const Vector<Plane> &p_frustum) {
@@ -11568,7 +11624,7 @@ Vector<Node3D *> Node3DEditor::gizmo_bvh_frustum_query(const Vector<Plane> &p_fr
 
 	gizmo_bvh.convex_query(p_frustum.ptr(), p_frustum.size(), points.ptr(), points.size(), result);
 
-	return result.nodes;
+	return _keep_nodes_of_scene(result.nodes, get_edited_scene());
 }
 
 Node3DEditorPlugin::Node3DEditorPlugin() {
