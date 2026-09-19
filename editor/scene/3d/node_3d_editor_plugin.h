@@ -839,6 +839,8 @@ private:
 	void _snap_update();
 	void _update_vertex_snap_tooltips();
 	void _xform_dialog_action();
+	// What the user pressed, as opposed to what this class calls on itself.
+	void _menu_item_activated(int p_option);
 	void _menu_item_pressed(int p_option);
 	void _menu_item_toggled(bool pressed, int p_option);
 	void _menu_gizmo_toggled(int p_option);
