@@ -111,6 +111,7 @@
 #include "editor/import/resource_importer_texture_atlas.h"
 #include "editor/import/resource_importer_wav.h"
 #include "editor/inspector/editor_context_menu_plugin.h"
+#include "editor/inspector/editor_document_inspector.h"
 #include "editor/inspector/editor_inspector.h"
 #include "editor/inspector/editor_preview_plugins.h"
 #include "editor/inspector/editor_properties.h"
@@ -8969,6 +8970,19 @@ EditorNode::EditorNode() {
 		type.binding = EditorPanelRegistry::BINDING_DOCUMENT;
 		type.create = callable_mp_static(&SceneTreeEditor::create_panel);
 		type.bind = callable_mp_static(&SceneTreeEditor::bind_panel);
+		EditorPanelRegistry::register_type(type);
+	}
+
+	{
+		// An inspector following one document, which is what a pane showing a
+		// scene puts beside its tree.
+		EditorPanelRegistry::PanelType type;
+		type.id = "inspector";
+		type.title = TTRC("Inspector");
+		type.icon = "Object";
+		type.binding = EditorPanelRegistry::BINDING_DOCUMENT;
+		type.create = callable_mp_static(&EditorDocumentInspector::create_panel);
+		type.bind = callable_mp_static(&EditorDocumentInspector::bind_panel);
 		EditorPanelRegistry::register_type(type);
 	}
 
