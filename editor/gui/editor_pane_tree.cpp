@@ -175,12 +175,19 @@ Dictionary EditorPaneTree::_save_node(Control *p_node) const {
 	const EditorPane *pane = Object::cast_to<EditorPane>(p_node);
 	if (pane) {
 		data["kind"] = "pane";
-		// The type's id, never its class.
-		data["panel"] = String(pane->get_panel_type());
-		data["subject"] = pane->get_panel_subject();
-		// Which pane shows the editor's main screen, so that restoring an
-		// arrangement puts it back rather than losing it.
-		data["adopted"] = pane->is_adopting();
+		// Every panel the pane holds, in tab order. Type ids and subjects, never
+		// classes; "adopted" marks the one that is the editor's main screen, so
+		// that restoring an arrangement puts it back rather than losing it.
+		Array saved_panels;
+		for (int i = 0; i < pane->get_panel_count(); i++) {
+			Dictionary panel;
+			panel["panel"] = String(pane->get_panel_type_at(i));
+			panel["subject"] = pane->get_panel_subject_at(i);
+			panel["adopted"] = pane->is_panel_adopted_at(i);
+			saved_panels.push_back(panel);
+		}
+		data["panels"] = saved_panels;
+		data["current"] = pane->get_current_panel();
 		return data;
 	}
 
@@ -235,15 +242,23 @@ Control *EditorPaneTree::_load_node(const Dictionary &p_data) {
 		pane->connect(SNAME("split_requested"), callable_mp(this, &EditorPaneTree::split_pane).bind(pane).unbind(1), CONNECT_DEFERRED);
 		pane->connect(SNAME("close_requested"), callable_mp(this, &EditorPaneTree::close_pane).bind(pane), CONNECT_DEFERRED);
 
-		const StringName panel = StringName(String(p_data.get("panel", "")));
-		const bool adopted = p_data.get("adopted", false);
-		// A pane that held the editor's main screen is left empty here and given
-		// it back once the old arrangement has let go of it. A type that is no
-		// longer registered - an addon removed since - also leaves an empty pane
-		// rather than losing the whole arrangement.
-		if (!adopted && panel != StringName() && EditorPanelRegistry::has_type(panel)) {
-			pane->set_panel_type(panel, p_data.get("subject", Variant()));
+		const Array saved_panels = p_data.get("panels", Array());
+		for (int i = 0; i < saved_panels.size(); i++) {
+			const Dictionary panel_data = saved_panels[i];
+			if (bool(panel_data.get("adopted", false))) {
+				// The editor's main screen. It is given back to this pane once
+				// the old arrangement has let go of it.
+				pending_main_screen_host = pane;
+				continue;
+			}
+			const StringName panel = StringName(String(panel_data.get("panel", "")));
+			// A type that is no longer registered - an addon removed since -
+			// leaves that tab out rather than losing the whole arrangement.
+			if (panel != StringName() && EditorPanelRegistry::has_type(panel)) {
+				pane->add_panel(panel, panel_data.get("subject", Variant()));
+			}
 		}
+		pane->set_current_panel(p_data.get("current", 0));
 		return pane;
 	}
 
@@ -251,6 +266,7 @@ Control *EditorPaneTree::_load_node(const Dictionary &p_data) {
 }
 
 void EditorPaneTree::load_layout(const Dictionary &p_layout) {
+	pending_main_screen_host = nullptr;
 	Control *loaded = _load_node(p_layout);
 	if (!loaded) {
 		return;
@@ -277,23 +293,15 @@ void EditorPaneTree::load_layout(const Dictionary &p_layout) {
 	add_child(root);
 
 	if (main_screen) {
-		EditorPane *host = nullptr;
-		for (EditorPane *pane : get_panes()) {
-			if (pane->get_panel_type() == StringName() && !pane->get_panel()) {
-				host = pane;
-				break;
-			}
-		}
 		// An arrangement that says nothing about where the main screen goes -
 		// saved by an older build, or hand-edited - still has to put it
 		// somewhere, and the first pane is where it started.
-		if (!host) {
-			host = get_first_pane();
-		}
+		EditorPane *host = pending_main_screen_host ? pending_main_screen_host : get_first_pane();
 		if (host) {
 			host->adopt_panel(main_screen, main_screen_title);
 		}
 	}
+	pending_main_screen_host = nullptr;
 
 	_update_closable();
 	emit_signal(SNAME("layout_changed"));

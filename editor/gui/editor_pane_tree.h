@@ -51,6 +51,9 @@ class EditorPaneTree : public MarginContainer {
 	void _collapse_split(SplitContainer *p_split, Control *p_survivor);
 	Dictionary _save_node(Control *p_node) const;
 	Control *_load_node(const Dictionary &p_data);
+	// Which pane a layout being loaded says holds the editor's main screen, so
+	// that it can be given back once the old arrangement has let go of it.
+	EditorPane *pending_main_screen_host = nullptr;
 	void _collect_panes(Control *p_node, Vector<EditorPane *> &r_panes) const;
 	void _update_closable();
 
