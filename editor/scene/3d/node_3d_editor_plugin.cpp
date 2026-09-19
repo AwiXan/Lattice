@@ -7505,7 +7505,9 @@ void Node3DEditor::update_transform_gizmo() {
 			count++;
 		}
 	} else {
-		const List<Node *> &selection = editor_selection->get_top_selected_node_list();
+		// This view's document: the manipulator stands over what is selected in
+		// the scene this pane shows, not in whichever scene is in context.
+		const List<Node *> selection = editor_selection->get_top_selected_node_list_for(get_edited_scene());
 		for (Node *E : selection) {
 			Node3D *sp = Object::cast_to<Node3D>(E);
 			if (!sp) {
@@ -9590,7 +9592,11 @@ void Node3DEditor::update_grid() {
 void Node3DEditor::_selection_changed() {
 	_refresh_menu_icons();
 
-	const HashMap<ObjectID, Object *> &selection = editor_selection->get_selection();
+	// This view's document, not the one in context: a pane showing another scene
+	// draws what is selected in *that* scene, and both are live at once.
+	Node *edited_scene = get_edited_scene();
+	const HashMap<ObjectID, Object *> &selection = editor_selection->get_selection_for(edited_scene);
+	const List<Node *> top_selected = editor_selection->get_top_selected_node_list_for(edited_scene);
 
 	for (const KeyValue<ObjectID, Object *> &E : selection) {
 		Node3D *sp = ObjectDB::get_instance<Node3D>(E.key);
@@ -9603,7 +9609,7 @@ void Node3DEditor::_selection_changed() {
 			continue;
 		}
 
-		if (sp == editor_selection->get_top_selected_node_list().back()->get()) {
+		if (!top_selected.is_empty() && sp == top_selected.back()->get()) {
 			RenderingServer::get_singleton()->instance_set_base(se->sbox_instance, active_selection_box->get_rid());
 			RenderingServer::get_singleton()->instance_set_base(se->sbox_instance_xray, active_selection_box_xray->get_rid());
 			RenderingServer::get_singleton()->instance_set_base(se->sbox_instance_offset, active_selection_box->get_rid());
@@ -9616,7 +9622,7 @@ void Node3DEditor::_selection_changed() {
 		}
 	}
 
-	if (selected && editor_selection->get_top_selected_node_list().size() != 1) {
+	if (selected && top_selected.size() != 1) {
 		Vector<Ref<Node3DGizmo>> gizmos = selected->get_gizmos();
 		for (int i = 0; i < gizmos.size(); i++) {
 			Ref<EditorNode3DGizmo> seg = gizmos[i];
@@ -9638,7 +9644,6 @@ void Node3DEditor::_selection_changed() {
 	// Ensure gizmo updates are performed when the selection changes
 	// outside of the 3D view (see GH-106713).
 	if (!is_visible()) {
-		const List<Node *> &top_selected = editor_selection->get_top_selected_node_list();
 		if (top_selected.size() == 1) {
 			Node3D *new_selected = Object::cast_to<Node3D>(top_selected.back()->get());
 			if (new_selected != selected) {
@@ -9670,7 +9675,8 @@ void Node3DEditor::_refresh_menu_icons() {
 	bool all_grouped = true;
 	bool has_node3d_item = false;
 
-	const List<Node *> &selection = editor_selection->get_top_selected_node_list();
+	// This pane's buttons report on this pane's scene.
+	const List<Node *> selection = editor_selection->get_top_selected_node_list_for(get_edited_scene());
 
 	if (selection.is_empty()) {
 		all_locked = false;

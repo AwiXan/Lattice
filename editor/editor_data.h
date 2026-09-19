@@ -120,7 +120,6 @@ public:
 		String path;
 		uint64_t file_modified_time = 0;
 		Dictionary editor_states;
-		List<Node *> selection;
 		Vector<EditorSelectionHistory::HistoryElement> history_stored;
 		int history_current = 0;
 		Dictionary custom_state;
@@ -294,24 +293,39 @@ public:
 class EditorSelection : public Object {
 	GDCLASS(EditorSelection, Object);
 
-	// Contains the selected nodes and corresponding metadata.
+	// What is selected in one document.
 	// Metadata objects come from calling _get_editor_data on the editor_plugins, passing the selected node.
-	HashMap<ObjectID, Object *> selection;
+	struct DocumentSelection {
+		HashMap<ObjectID, Object *> selection;
+		LocalVector<ObjectID> top_selected_node_list;
+		bool node_list_changed = false;
+	};
+
+	// One selection per open document, keyed by the document's root node. Panes
+	// showing different scenes each keep what is selected in theirs, and both
+	// stay live: selecting in one does not empty the other. Nodes that belong to
+	// no open document share the entry under a null id.
+	HashMap<ObjectID, DocumentSelection> documents;
 
 	// Tracks whether the selection change signal has been emitted.
 	// Prevents multiple signals being called in one frame.
 	bool emitted = false;
 
 	bool changed = false;
-	bool node_list_changed = false;
 
 	void _node_removed(Node *p_node);
 
 	// Editor plugins which are related to selection.
 	List<Object *> editor_plugins;
-	LocalVector<ObjectID> top_selected_node_list;
 
-	void _update_node_list();
+	static ObjectID _document_key(const Node *p_node);
+	static ObjectID _context_document_key();
+	DocumentSelection &_document_for(const Node *p_node);
+	DocumentSelection &_context_document();
+	DocumentSelection *_find_document_of(const Node *p_node);
+	Object *_get_node_meta(Node *p_node);
+	List<Node *> _top_selected_of(DocumentSelection &p_document);
+	void _update_node_list(DocumentSelection &p_document);
 	void _emit_change();
 
 protected:
@@ -324,14 +338,7 @@ public:
 
 	template <typename T>
 	T *get_node_editor_data(Node *p_node) {
-		if (!p_node) {
-			return nullptr;
-		}
-		ObjectID nid = p_node->get_instance_id();
-		if (!selection.has(nid)) {
-			return nullptr;
-		}
-		return Object::cast_to<T>(selection[nid]);
+		return Object::cast_to<T>(_get_node_meta(p_node));
 	}
 
 	// Adds an editor plugin which can provide metadata for selected nodes.
@@ -350,7 +357,15 @@ public:
 	// Same as get_full_selected_node_list but returns a copy in a TypedArray for binding to scripts.
 	TypedArray<Node> get_selected_nodes();
 	// Returns the map of selected objects and their metadata.
-	HashMap<ObjectID, Object *> &get_selection() { return selection; }
+	HashMap<ObjectID, Object *> &get_selection() { return _context_document().selection; }
+
+	// The same, for a document other than the one in context. A view showing a
+	// scene the rest of the editor is not on draws from these, which is what
+	// lets two panes show their own selections at once.
+	HashMap<ObjectID, Object *> &get_selection_for(const Node *p_document_root);
+	List<Node *> get_top_selected_node_list_for(const Node *p_document_root);
+	// Everything selected in one document, dropped when it is closed.
+	void clear_document(const Node *p_document_root);
 
 	~EditorSelection();
 };
