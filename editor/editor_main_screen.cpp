@@ -98,12 +98,32 @@ void EditorMainScreen::save_layout_to_config(Ref<ConfigFile> p_config_file, cons
 	} else {
 		p_config_file->set_value(p_section, "selected_main_editor_idx", Variant());
 	}
+
+	// How the panes were arranged and what was in them. Written as panel type
+	// ids and scene paths, so it means the same thing next time the editor runs.
+	if (pane_tree) {
+		p_config_file->set_value(p_section, "panes", pane_tree->save_layout());
+	}
 }
 
 void EditorMainScreen::load_layout_from_config(Ref<ConfigFile> p_config_file, const String &p_section) {
 	int selected_main_editor_idx = p_config_file->get_value(p_section, "selected_main_editor_idx", -1);
 	if (selected_main_editor_idx >= 0 && selected_main_editor_idx < buttons.size()) {
 		callable_mp(this, &EditorMainScreen::select).call_deferred(selected_main_editor_idx);
+	}
+
+	const Dictionary panes = p_config_file->get_value(p_section, "panes", Dictionary());
+	if (!panes.is_empty()) {
+		// Deferred, because a pane that was on a particular scene is written
+		// down by that scene's path, and the scenes are not open yet when the
+		// layout is read.
+		callable_mp(this, &EditorMainScreen::_restore_panes).call_deferred(panes);
+	}
+}
+
+void EditorMainScreen::_restore_panes(const Dictionary &p_layout) {
+	if (pane_tree) {
+		pane_tree->load_layout(p_layout);
 	}
 }
 

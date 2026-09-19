@@ -31,6 +31,8 @@
 #include "editor_pane_tree.h"
 
 #include "core/object/callable_mp.h"
+#include "editor/editor_data.h"
+#include "editor/editor_node.h"
 #include "editor/editor_panel_registry.h"
 #include "editor/gui/editor_pane.h"
 #include "scene/gui/split_container.h"
@@ -218,6 +220,49 @@ void EditorPaneTree::close_pane(EditorPane *p_pane) {
 	emit_signal(SNAME("layout_changed"));
 }
 
+Variant EditorPaneTree::_subject_to_saved(const StringName &p_type, const Variant &p_subject) {
+	const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(p_type);
+	if (!type || type->binding != EditorPanelRegistry::BINDING_DOCUMENT) {
+		// A resource is already named by its path, and a panel bound to nothing
+		// has nothing to write down.
+		return p_subject;
+	}
+
+	// A history id means nothing next time the editor runs. The scene's path
+	// does. An empty path is "follow whichever document is current", which is
+	// what a binding of -1 says while running.
+	EditorData &editor_data = EditorNode::get_editor_data();
+	if (p_subject.get_type() != Variant::INT || (int)p_subject < 0) {
+		return String();
+	}
+	const int index = editor_data.get_scene_index_by_history_id((int)p_subject);
+	if (index < 0) {
+		return String();
+	}
+	return editor_data.get_scene_path(index);
+}
+
+Variant EditorPaneTree::_subject_from_saved(const StringName &p_type, const Variant &p_saved) {
+	const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(p_type);
+	if (!type || type->binding != EditorPanelRegistry::BINDING_DOCUMENT) {
+		return p_saved;
+	}
+
+	const String path = p_saved;
+	if (path.is_empty()) {
+		return -1;
+	}
+	EditorData &editor_data = EditorNode::get_editor_data();
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		if (editor_data.get_scene_path(i) == path) {
+			return editor_data.get_scene_history_id(i);
+		}
+	}
+	// The scene this pane was on is not open. Rather than open files behind the
+	// user's back, the pane follows the current document until told otherwise.
+	return -1;
+}
+
 Dictionary EditorPaneTree::_save_node(Control *p_node) const {
 	Dictionary data;
 	if (!p_node) {
@@ -234,7 +279,7 @@ Dictionary EditorPaneTree::_save_node(Control *p_node) const {
 		for (int i = 0; i < pane->get_panel_count(); i++) {
 			Dictionary panel;
 			panel["panel"] = String(pane->get_panel_type_at(i));
-			panel["subject"] = pane->get_panel_subject_at(i);
+			panel["subject"] = _subject_to_saved(pane->get_panel_type_at(i), pane->get_panel_subject_at(i));
 			panel["adopted"] = pane->is_panel_adopted_at(i);
 			saved_panels.push_back(panel);
 		}
@@ -306,7 +351,7 @@ Control *EditorPaneTree::_load_node(const Dictionary &p_data) {
 			// A type that is no longer registered - an addon removed since -
 			// leaves that tab out rather than losing the whole arrangement.
 			if (panel != StringName() && EditorPanelRegistry::has_type(panel)) {
-				pane->add_panel(panel, panel_data.get("subject", Variant()));
+				pane->add_panel(panel, _subject_from_saved(panel, panel_data.get("subject", Variant())));
 			}
 		}
 		pane->set_current_panel(p_data.get("current", 0));

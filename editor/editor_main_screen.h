@@ -79,6 +79,7 @@ private:
 	EditorDocumentView *pinned_primary_view = nullptr;
 
 	void _panes_changed();
+	void _restore_panes(const Dictionary &p_layout);
 
 	HBoxContainer *button_hb = nullptr;
 	Vector<Button *> buttons;

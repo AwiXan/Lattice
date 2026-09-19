@@ -53,6 +53,9 @@ class EditorPaneTree : public MarginContainer {
 	void _collapse_split(SplitContainer *p_split, Control *p_survivor);
 	Dictionary _save_node(Control *p_node) const;
 	Control *_load_node(const Dictionary &p_data);
+	// Between what a binding means while running and what it means on disk.
+	static Variant _subject_to_saved(const StringName &p_type, const Variant &p_subject);
+	static Variant _subject_from_saved(const StringName &p_type, const Variant &p_saved);
 	// Which pane a layout being loaded says holds the editor's main screen, so
 	// that it can be given back once the old arrangement has let go of it.
 	EditorPane *pending_main_screen_host = nullptr;
@@ -88,6 +91,13 @@ public:
 	// The arrangement as data: panel types, what each is pointed at, and the
 	// shape of the splits. No class names, so it survives anything but a type
 	// being unregistered.
+	//
+	// What a panel is pointed at is written down in a form that outlives the
+	// session. A document's history id is only meaningful while the editor is
+	// running, so what is saved is the scene's path, and what is read back is
+	// the id that scene has this time round. Saving for the session itself -
+	// switching between arrangements without closing the editor - is the same
+	// call: the path resolves either way.
 	Dictionary save_layout() const;
 	void load_layout(const Dictionary &p_layout);
 
