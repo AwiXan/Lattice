@@ -4330,6 +4330,21 @@ void CanvasItemEditor::update_viewport() {
 	viewport->queue_redraw();
 }
 
+void CanvasItemEditor::redraw_views_of_document() {
+	update_viewport();
+	Node *edited_scene = get_edited_scene();
+	if (!edited_scene) {
+		return;
+	}
+	// Only the overlay for the others: their scrollbars and their pan are their
+	// own, and nothing about them changed.
+	for (CanvasItemEditor *editor : instances) {
+		if (editor != this && editor->get_edited_scene() == edited_scene) {
+			editor->viewport->queue_redraw();
+		}
+	}
+}
+
 void CanvasItemEditor::set_current_tool(Tool p_tool) {
 	_button_tool_select(p_tool);
 }
@@ -4441,7 +4456,11 @@ void CanvasItemEditor::_notification(int p_what) {
 				Transform2D xform = ci->get_global_transform();
 
 				if (rect != se->prev_rect || xform != se->prev_xform) {
-					viewport->queue_redraw();
+					// These marks live on the node, one set however many views
+					// are open, so whichever view's frame runs first consumes the
+					// change. It has to redraw them all, or the others keep
+					// drawing an outline where the node used to be.
+					redraw_views_of_document();
 					se->prev_rect = rect;
 					se->prev_xform = xform;
 				}
@@ -4464,7 +4483,7 @@ void CanvasItemEditor::_notification(int p_what) {
 						se->prev_anchors[SIDE_RIGHT] = anchors[SIDE_RIGHT];
 						se->prev_anchors[SIDE_TOP] = anchors[SIDE_TOP];
 						se->prev_anchors[SIDE_BOTTOM] = anchors[SIDE_BOTTOM];
-						viewport->queue_redraw();
+						redraw_views_of_document();
 					}
 				}
 			}

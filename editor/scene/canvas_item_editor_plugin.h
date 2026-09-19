@@ -663,6 +663,10 @@ public:
 	void find_canvas_items_at_pos(const Point2 &p_pos, Node *p_node, Vector<SelectResult> &r_items, const Transform2D &p_parent_xform = Transform2D(), const Transform2D &p_canvas_xform = Transform2D());
 
 	void update_viewport();
+	// Redraws every view showing this document, not only this one. What changed
+	// is the document, and an outline drawn over a node that moved is stale in
+	// every pane drawing it.
+	void redraw_views_of_document();
 
 	Tool get_current_tool() { return tool; }
 	void set_current_tool(Tool p_tool);
