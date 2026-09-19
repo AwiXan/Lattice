@@ -104,7 +104,24 @@ private:
 
 		int scrollbar_h_separation = 0;
 		int scrollbar_v_separation = 0;
+
+		// Smooth scrolling, off unless a theme asks for it, so that nothing
+		// scrolls differently than it did until something says so. The speed is
+		// how quickly the view catches up with where the wheel has asked it to
+		// be, in units of "per second"; higher is snappier, and the motion is
+		// framerate-independent either way.
+		int smooth_scroll = 0;
+		int smooth_scroll_speed = 16;
 	} theme_cache;
+
+	// Where the wheel has asked the view to be. The bars chase it while
+	// smoothing is on; the rest of the time it is not used at all.
+	Vector2 smooth_target;
+	bool smoothing = false;
+
+	void _scroll_bar_by(ScrollBar *p_bar, double p_amount);
+	void _stop_smoothing();
+	void _step_smoothing(double p_delta);
 
 	void _cancel_drag();
 

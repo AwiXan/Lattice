@@ -1628,6 +1628,12 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		// Hide scroll hints.
 		Ref<CompressedTexture2D> empty_texture;
 		empty_texture.instantiate();
+		// How quickly a view catches up with the wheel, or not at all. Read here
+		// so that the theme is what decides it, and changing the setting rebuilds
+		// the theme and reaches every container at once.
+		p_theme->set_constant("smooth_scroll", "ScrollContainer", EDITOR_GET("interface/scrolling/smooth_scrolling") ? 1 : 0);
+		p_theme->set_constant("smooth_scroll_speed", "ScrollContainer", int(Math::round(double(EDITOR_GET("interface/scrolling/smooth_scrolling_speed")))));
+
 		p_theme->set_icon("scroll_hint_vertical", "ScrollContainer", empty_texture);
 		p_theme->set_icon("scroll_hint_horizontal", "ScrollContainer", empty_texture);
 		p_theme->set_icon("scroll_hint", "Tree", empty_texture);

@@ -171,15 +171,90 @@ Rect2 ScrollContainer::_get_margins() const {
 	return Rect2(left_margin, top_margin, right_margin, bottom_margin);
 }
 
+void ScrollContainer::_scroll_bar_by(ScrollBar *p_bar, double p_amount) {
+	if (theme_cache.smooth_scroll <= 0) {
+		// Exactly what happened before smooth scrolling existed, so a theme that
+		// does not ask for it changes nothing at all.
+		p_bar->scroll(p_amount);
+		return;
+	}
+
+	if (!smoothing) {
+		// Start from where the view actually is, not from a stale target.
+		smooth_target = Vector2(h_scroll->get_value(), v_scroll->get_value());
+		smoothing = true;
+		set_process_internal(true);
+	}
+
+	const bool vertical = p_bar == v_scroll;
+	double target = (vertical ? smooth_target.y : smooth_target.x) + p_amount;
+	target = CLAMP(target, p_bar->get_min(), p_bar->get_max() - p_bar->get_page());
+	if (vertical) {
+		smooth_target.y = target;
+	} else {
+		smooth_target.x = target;
+	}
+}
+
+void ScrollContainer::_stop_smoothing() {
+	if (!smoothing) {
+		return;
+	}
+	smoothing = false;
+	// Something else may still need the frame: a touch drag, or the scrolling
+	// that happens while dragging something over this container.
+	if (!drag_touching && !(scroll_on_drag_hover && is_inside_tree() && get_viewport() && get_viewport()->gui_is_dragging())) {
+		set_process_internal(false);
+	}
+}
+
+void ScrollContainer::_step_smoothing(double p_delta) {
+	if (!smoothing) {
+		return;
+	}
+
+	// An exponential approach, so the same fraction of the remaining distance is
+	// covered every second however many frames that took. Higher speed, sooner
+	// there.
+	const double speed = MAX(1, theme_cache.smooth_scroll_speed);
+	const double t = 1.0 - Math::exp(-speed * p_delta);
+
+	const Vector2 current(h_scroll->get_value(), v_scroll->get_value());
+	Vector2 next = current.lerp(smooth_target, CLAMP(t, 0.0, 1.0));
+
+	// Close enough that another frame would not show: sit down exactly.
+	if (Math::abs(smooth_target.x - next.x) < 0.5 && Math::abs(smooth_target.y - next.y) < 0.5) {
+		next = smooth_target;
+		_stop_smoothing();
+	}
+
+	if (next.x != current.x) {
+		h_scroll->set_value(next.x);
+	}
+	if (next.y != current.y) {
+		v_scroll->set_value(next.y);
+	}
+}
+
 void ScrollContainer::gui_input(const Ref<InputEvent> &p_gui_input) {
 	ERR_FAIL_COND(p_gui_input.is_null());
 
-	double prev_v_scroll = v_scroll->get_value();
-	double prev_h_scroll = h_scroll->get_value();
+	double prev_v_scroll = smoothing ? smooth_target.y : v_scroll->get_value();
+	double prev_h_scroll = smoothing ? smooth_target.x : h_scroll->get_value();
 	bool h_scroll_enabled = horizontal_scroll_mode != SCROLL_MODE_DISABLED;
 	bool v_scroll_enabled = vertical_scroll_mode != SCROLL_MODE_DISABLED;
 
 	Ref<InputEventMouseButton> mb = p_gui_input;
+
+	// Only the wheel is smoothed. Anything else - a drag, a click on the bar,
+	// the keyboard - means to put the view somewhere now, and fighting it for
+	// the next few frames would feel like a bug.
+	if (smoothing) {
+		const bool is_wheel = mb.is_valid() && (mb->get_button_index() == MouseButton::WHEEL_UP || mb->get_button_index() == MouseButton::WHEEL_DOWN || mb->get_button_index() == MouseButton::WHEEL_LEFT || mb->get_button_index() == MouseButton::WHEEL_RIGHT);
+		if (!is_wheel) {
+			_stop_smoothing();
+		}
+	}
 
 	if (mb.is_valid()) {
 		if (mb->is_pressed()) {
@@ -190,19 +265,19 @@ void ScrollContainer::gui_input(const Ref<InputEvent> &p_gui_input) {
 			if (mb->get_button_index() == MouseButton::WHEEL_UP) {
 				// By default, the vertical orientation takes precedence. This is an exception.
 				if ((h_scroll_enabled && swap_axes) || v_scroll_hidden) {
-					h_scroll->scroll(-h_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
+					_scroll_bar_by(h_scroll, -h_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
 					scroll_value_modified = true;
 				} else if (v_scroll_enabled) {
-					v_scroll->scroll(-v_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
+					_scroll_bar_by(v_scroll, -v_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
 					scroll_value_modified = true;
 				}
 			}
 			if (mb->get_button_index() == MouseButton::WHEEL_DOWN) {
 				if ((h_scroll_enabled && swap_axes) || v_scroll_hidden) {
-					h_scroll->scroll(h_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
+					_scroll_bar_by(h_scroll, h_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
 					scroll_value_modified = true;
 				} else if (v_scroll_enabled) {
-					v_scroll->scroll(v_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
+					_scroll_bar_by(v_scroll, v_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
 					scroll_value_modified = true;
 				}
 			}
@@ -211,24 +286,26 @@ void ScrollContainer::gui_input(const Ref<InputEvent> &p_gui_input) {
 			if (mb->get_button_index() == MouseButton::WHEEL_LEFT) {
 				// By default, the horizontal orientation takes precedence. This is an exception.
 				if ((v_scroll_enabled && swap_axes) || h_scroll_hidden) {
-					v_scroll->scroll(-v_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
+					_scroll_bar_by(v_scroll, -v_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
 					scroll_value_modified = true;
 				} else if (h_scroll_enabled) {
-					h_scroll->scroll(-h_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
+					_scroll_bar_by(h_scroll, -h_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
 					scroll_value_modified = true;
 				}
 			}
 			if (mb->get_button_index() == MouseButton::WHEEL_RIGHT) {
 				if ((v_scroll_enabled && swap_axes) || h_scroll_hidden) {
-					v_scroll->scroll(v_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
+					_scroll_bar_by(v_scroll, v_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
 					scroll_value_modified = true;
 				} else if (h_scroll_enabled) {
-					h_scroll->scroll(h_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
+					_scroll_bar_by(h_scroll, h_scroll->get_page() / ScrollBar::PAGE_DIVISOR * mb->get_factor());
 					scroll_value_modified = true;
 				}
 			}
 
-			if (scroll_value_modified && (v_scroll->get_value() != prev_v_scroll || h_scroll->get_value() != prev_h_scroll)) {
+			const double now_v = smoothing ? smooth_target.y : v_scroll->get_value();
+			const double now_h = smoothing ? smooth_target.x : h_scroll->get_value();
+			if (scroll_value_modified && (now_v != prev_v_scroll || now_h != prev_h_scroll)) {
 				accept_event(); // Accept event if scroll changed.
 				return;
 			}
@@ -538,10 +615,15 @@ void ScrollContainer::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_DRAG_END: {
-			set_process_internal(false);
+			// Unless the view is still catching up with the wheel.
+			if (!smoothing) {
+				set_process_internal(false);
+			}
 		} break;
 
 		case NOTIFICATION_INTERNAL_PROCESS: {
+			_step_smoothing(get_process_delta_time());
+
 			if (scroll_on_drag_hover && get_viewport()->gui_is_dragging()) {
 				Point2 mouse_position = get_viewport()->get_mouse_position() - get_global_position();
 				Transform2D xform = get_transform();
@@ -938,6 +1020,9 @@ void ScrollContainer::_bind_methods() {
 
 	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, ScrollContainer, scrollbar_h_separation);
 	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, ScrollContainer, scrollbar_v_separation);
+
+	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, ScrollContainer, smooth_scroll);
+	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, ScrollContainer, smooth_scroll_speed);
 
 	BIND_THEME_ITEM_CUSTOM(Theme::DATA_TYPE_STYLEBOX, ScrollContainer, panel_style, "panel");
 	BIND_THEME_ITEM_CUSTOM(Theme::DATA_TYPE_STYLEBOX, ScrollContainer, focus_style, "focus");

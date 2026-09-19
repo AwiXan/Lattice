@@ -664,6 +664,11 @@ void fill_default_theme(Ref<Theme> &theme, const Ref<Font> &default_font, const 
 	focus_style->set_border_color(style_focus_color);
 	theme->set_stylebox("focus", "ScrollContainer", focus_style);
 
+	// Off by default: a wheel step puts the view where it asked for, at once,
+	// which is what everything has always done. A theme turns it on.
+	theme->set_constant("smooth_scroll", "ScrollContainer", 0);
+	theme->set_constant("smooth_scroll_speed", "ScrollContainer", 16);
+
 	theme->set_icon("scroll_hint_vertical", "ScrollContainer", icons["scroll_hint_vertical"]);
 	theme->set_icon("scroll_hint_horizontal", "ScrollContainer", icons["scroll_hint_horizontal"]);
 	theme->set_color("scroll_hint_vertical_color", "ScrollContainer", Color(0, 0, 0));
