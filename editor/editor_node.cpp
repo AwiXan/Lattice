@@ -8972,6 +8972,19 @@ EditorNode::EditorNode() {
 		EditorPanelRegistry::register_type(type);
 	}
 
+	{
+		// A resource in a panel of its own, which is what opening a material, a
+		// shader or an image away from the side of the screen amounts to.
+		EditorPanelRegistry::PanelType type;
+		type.id = "resource_inspector";
+		type.title = TTRC("Resource");
+		type.icon = "Object";
+		type.binding = EditorPanelRegistry::BINDING_RESOURCE;
+		type.create = callable_mp_static(&EditorInspector::create_resource_panel);
+		type.bind = callable_mp_static(&EditorInspector::bind_resource_panel);
+		EditorPanelRegistry::register_type(type);
+	}
+
 	editor_data.set_scene_root_host(this);
 	editor_data.add_edited_scene(-1);
 	editor_data.set_edited_scene(0);

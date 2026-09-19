@@ -907,6 +907,12 @@ public:
 	void update_property(const String &p_prop);
 	void edit(Object *p_object);
 	Object *get_edited_object();
+
+	// What the resource panel type registers: an inspector of its own, pointed
+	// at one resource by path. This is how a material, a script's resource or
+	// an image gets a workspace instead of a strip at the side of the screen.
+	static Control *create_resource_panel();
+	static void bind_resource_panel(Control *p_panel, const String &p_path);
 	Object *get_next_edited_object();
 
 	void set_keying(bool p_active);

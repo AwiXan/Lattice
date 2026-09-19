@@ -5253,6 +5253,34 @@ Object *EditorInspector::get_next_edited_object() {
 	return next_object;
 }
 
+Control *EditorInspector::create_resource_panel() {
+	EditorInspector *inspector = memnew(EditorInspector);
+	inspector->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	inspector->set_use_folding(!bool(EDITOR_GET("interface/inspector/disable_folding")));
+	return inspector;
+}
+
+void EditorInspector::bind_resource_panel(Control *p_panel, const String &p_path) {
+	EditorInspector *inspector = Object::cast_to<EditorInspector>(p_panel);
+	if (!inspector) {
+		return;
+	}
+	if (p_path.is_empty()) {
+		inspector->edit(nullptr);
+		inspector->remove_meta(SNAME("_panel_resource"));
+		return;
+	}
+	// Loaded rather than looked up in what is open: a panel can be pointed at a
+	// resource nothing else in the editor is showing, which is the point of
+	// being able to open one in a window of its own.
+	Ref<Resource> resource = ResourceLoader::load(p_path);
+	// And held, because it is the panel that shows it. An inspector keeps a
+	// plain pointer to what it edits, so a resource nothing else in the editor
+	// has a reference to would be freed the moment this returned.
+	inspector->set_meta(SNAME("_panel_resource"), resource);
+	inspector->edit(resource.ptr());
+}
+
 void EditorInspector::edit(Object *p_object) {
 	if (object == p_object) {
 		return;

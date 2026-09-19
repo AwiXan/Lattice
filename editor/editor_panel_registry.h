@@ -61,7 +61,16 @@ public:
 		BINDING_CONTEXT,
 		// Shows one open document, whichever the pane holding it was pointed at.
 		BINDING_DOCUMENT,
+		// Shows one resource: a script, a material, an image. Opening a texture
+		// in a window of its own is a panel of this kind, not a document one.
+		BINDING_RESOURCE,
 	};
+
+	// Whether panels of this kind are pointed at something, and therefore
+	// whether a pane holding one has to record what.
+	static bool binding_takes_subject(Binding p_binding) {
+		return p_binding == BINDING_DOCUMENT || p_binding == BINDING_RESOURCE;
+	}
 
 	struct PanelType {
 		StringName id;
@@ -70,8 +79,16 @@ public:
 		Binding binding = BINDING_CONTEXT;
 		// Builds a panel of this type. Returns a Control the caller owns.
 		Callable create;
-		// Points a panel of this type at a document, by history id; -1 means it
-		// follows whichever document is current. Only for BINDING_DOCUMENT.
+		// Points a panel of this type at what it shows. The subject is whatever
+		// that kind of binding means: a document's history id, where -1 is
+		// "whichever is current", or a resource's path. Kept as a Variant so a
+		// binding kind added later needs nothing here.
+		//
+		// A history id lives only as long as the session. What a saved layout
+		// records is the *persistent* form - a scene path for a document, the
+		// path itself for a resource - which is why a page is restored by
+		// reopening the document and binding to the id it gets, rather than by
+		// writing the id down.
 		Callable bind;
 	};
 
@@ -85,9 +102,9 @@ public:
 	// Builds a panel of the named type, or null if there is no such type or it
 	// refused. The caller owns what comes back and must parent or free it.
 	static Control *create_panel(const StringName &p_id);
-	// Points a panel at a document. Does nothing for a type that is not bound to
-	// one, so callers need not ask first.
-	static void bind_panel(const StringName &p_id, Control *p_panel, int p_document_id);
+	// Points a panel at what it should show. Does nothing for a type that shows
+	// the same thing whoever holds it, so callers need not ask first.
+	static void bind_panel(const StringName &p_id, Control *p_panel, const Variant &p_subject);
 
 	static void cleanup();
 
