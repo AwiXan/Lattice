@@ -3214,12 +3214,18 @@ void Node3DEditorViewport::_project_settings_changed() {
 }
 
 static void override_label_colors(Control *p_control) {
+	// Read from the editor's own base rather than from p_control. These colours
+	// become overrides, and an override keeps whatever it was given: a control
+	// that is between parents - which a pane being split makes it - cannot reach
+	// the editor theme, so it would be handed a default and keep it. That is
+	// what turned the white text on these buttons dark after a split.
+	Control *theme_source = EditorNode::get_singleton()->get_gui_base();
 	p_control->begin_bulk_theme_override();
-	p_control->add_theme_color_override(SceneStringName(font_color), p_control->get_theme_color(SNAME("font_dark_background_color"), EditorStringName(Editor)));
-	p_control->add_theme_color_override("font_hover_color", p_control->get_theme_color(SNAME("font_dark_background_hover_color"), EditorStringName(Editor)));
-	p_control->add_theme_color_override("font_focus_color", p_control->get_theme_color(SNAME("font_dark_background_focus_color"), EditorStringName(Editor)));
-	p_control->add_theme_color_override("font_pressed_color", p_control->get_theme_color(SNAME("font_dark_background_pressed_color"), EditorStringName(Editor)));
-	p_control->add_theme_color_override("font_hover_pressed_color", p_control->get_theme_color(SNAME("font_dark_background_hover_pressed_color"), EditorStringName(Editor)));
+	p_control->add_theme_color_override(SceneStringName(font_color), theme_source->get_theme_color(SNAME("font_dark_background_color"), EditorStringName(Editor)));
+	p_control->add_theme_color_override("font_hover_color", theme_source->get_theme_color(SNAME("font_dark_background_hover_color"), EditorStringName(Editor)));
+	p_control->add_theme_color_override("font_focus_color", theme_source->get_theme_color(SNAME("font_dark_background_focus_color"), EditorStringName(Editor)));
+	p_control->add_theme_color_override("font_pressed_color", theme_source->get_theme_color(SNAME("font_dark_background_pressed_color"), EditorStringName(Editor)));
+	p_control->add_theme_color_override("font_hover_pressed_color", theme_source->get_theme_color(SNAME("font_dark_background_hover_pressed_color"), EditorStringName(Editor)));
 	p_control->end_bulk_theme_override();
 }
 
@@ -3945,9 +3951,9 @@ void Node3DEditorViewport::_notification(int p_what) {
 			override_button_stylebox(preview_camera, information_3d_stylebox);
 			override_label_colors(preview_camera);
 
-			frame_time_gradient->set_color(0, get_theme_color(SNAME("success_color_dark_background"), EditorStringName(Editor)));
-			frame_time_gradient->set_color(1, get_theme_color(SNAME("warning_color_dark_background"), EditorStringName(Editor)));
-			frame_time_gradient->set_color(2, get_theme_color(SNAME("error_color_dark_background"), EditorStringName(Editor)));
+			frame_time_gradient->set_color(0, gui_base->get_theme_color(SNAME("success_color_dark_background"), EditorStringName(Editor)));
+			frame_time_gradient->set_color(1, gui_base->get_theme_color(SNAME("warning_color_dark_background"), EditorStringName(Editor)));
+			frame_time_gradient->set_color(2, gui_base->get_theme_color(SNAME("error_color_dark_background"), EditorStringName(Editor)));
 
 			override_button_stylebox(pilot_camera, information_3d_stylebox);
 			override_label_colors(pilot_camera);
@@ -8653,10 +8659,16 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 
 void Node3DEditor::_init_indicators() {
 	// The grid and origin lines are instanced into the world every view shares,
-	// so only their owner builds them. The manipulator meshes further down are
-	// this view's own and are always built - a view without them crashes the
-	// moment one of its viewports tries to instance them.
-	if (scene_visuals_owner == this) {
+	// so only their owner builds them - and only once. Entering the tree used to
+	// happen exactly once; a pane that is split reparents its view, so it
+	// happens again, and building them again leaves the old ones in the scenario
+	// with the new ones drawn over them. That is what turned the origin's red
+	// line pale: two of it, blended.
+	//
+	// The manipulator meshes further down are this view's own and are always
+	// built - a view without them crashes the moment one of its viewports tries
+	// to instance them.
+	if (scene_visuals_owner == this && !origin_instance.is_valid()) {
 		origin_enabled = true;
 		grid_enabled = true;
 
@@ -9535,14 +9547,22 @@ void Node3DEditor::_init_grid() {
 }
 
 void Node3DEditor::_finish_indicators() {
+	// Cleared, not just freed: whether these exist is what says the shared
+	// visuals have been built, and a freed RID still reads as valid.
 	RenderingServer::get_singleton()->free_rid(origin_instance);
 	RenderingServer::get_singleton()->free_rid(origin_multimesh);
 	RenderingServer::get_singleton()->free_rid(origin_mesh);
+	origin_instance = RID();
+	origin_multimesh = RID();
+	origin_mesh = RID();
 
 	_finish_grid();
 }
 
 void Node3DEditor::_finish_grid() {
+	// Whatever tore the grid down, it has to be buildable again: update_grid()
+	// otherwise waits for the camera to travel before noticing it is gone.
+	grid_init_draw = false;
 	for (int i = 0; i < 3; i++) {
 		// Cleared, not just freed: the grid belongs to a world now, and code that
 		// moves it between documents has to be able to tell a live RID from one
@@ -10081,11 +10101,12 @@ void Node3DEditor::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
-			if (scene_visuals_owner == this && instances.size() == 1) {
-				// The last view is closing, so nothing is left that would show
-				// the shared grid and origin lines.
-				_finish_indicators();
-			}
+			// The shared grid and origin lines are not torn down here. Leaving the
+			// tree no longer means going away: a pane that is split reparents its
+			// view, and rebuilding shaders and meshes every time something moved
+			// would be waste at best - at worst the grid would stay gone, since
+			// update_grid() only rebuilds when the camera has travelled. They go
+			// with the last view that is actually destroyed.
 		} break;
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
@@ -11666,6 +11687,9 @@ Node3DEditor::~Node3DEditor() {
 	}
 
 	if (instances.is_empty()) {
+		// Nothing is left that would show them.
+		_finish_indicators();
+
 		// What is held above any one view has to go with the last of them. These
 		// were members before views could exist more than once, and were freed
 		// with the only view there was; shared, nothing was freeing them, and
