@@ -52,6 +52,12 @@ public:
 	// one. A view that says no still works in a pane; it just follows along.
 	virtual bool supports_document_binding() const { return false; }
 
+	// The registered panel type this view is one of. A view names itself so
+	// that nothing else has to keep a table of which class is which type - the
+	// editor asks the view it is working in, and a scene dropped on a pane can
+	// become the same kind of view.
+	virtual StringName get_panel_type() const { return StringName(); }
+
 	// What a panel type registers as its binder: every view of this kind is
 	// pointed at a document the same way, so none of them has to say how.
 	static void bind_panel(Control *p_panel, int p_document_id) {

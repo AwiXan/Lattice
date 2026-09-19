@@ -220,6 +220,14 @@ void EditorMainScreen::select(int p_index) {
 	selected_plugin = new_editor;
 	selected_plugin->make_visible(true);
 	selected_plugin->selected_notify();
+	// A scene dropped on a pane becomes this kind of view, unless the pane it
+	// lands on is already showing one and has its own answer. A main screen
+	// that is not a document view - the script editor, the asset library -
+	// leaves the last answer standing rather than clearing it.
+	const StringName selected_panel_type = selected_plugin->get_main_screen_panel_type();
+	if (selected_panel_type != StringName()) {
+		EditorPanelRegistry::set_default_type_for(EditorPanelRegistry::BINDING_DOCUMENT, selected_panel_type);
+	}
 	set_accessibility_name(selected_plugin->get_plugin_name());
 
 	EditorData &editor_data = EditorNode::get_editor_data();
@@ -345,7 +353,18 @@ void EditorMainScreen::set_split_view_enabled(bool p_enabled) {
 
 void EditorMainScreen::view_activated(EditorDocumentView *p_view) {
 	active_view = p_view;
-	if (!p_view || changing_context) {
+	if (!p_view) {
+		return;
+	}
+
+	// A scene dropped on a pane that has nothing to go by becomes the kind of
+	// view last worked in, which is this one.
+	const StringName panel_type = p_view->get_panel_type();
+	if (panel_type != StringName()) {
+		EditorPanelRegistry::set_default_type_for(EditorPanelRegistry::BINDING_DOCUMENT, panel_type);
+	}
+
+	if (changing_context) {
 		return;
 	}
 

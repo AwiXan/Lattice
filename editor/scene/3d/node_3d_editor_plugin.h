@@ -1041,6 +1041,7 @@ public:
 	virtual void bind_document(int p_document_id) override;
 	virtual int get_bound_document() const override { return bound_document_id; }
 	virtual bool supports_document_binding() const override { return true; }
+	virtual StringName get_panel_type() const override { return SNAME("view_3d"); }
 	Node *get_edited_scene() const;
 	// Whether a node is part of the document this view edits. The selection is
 	// the editor's, not a view's, so a view has to ask before drawing anything
@@ -1185,7 +1186,7 @@ public:
 	virtual String get_plugin_name() const override { return TTRC("3D"); }
 	bool has_main_screen() const override { return true; }
 	virtual Control *create_main_screen_view() override;
-	virtual StringName get_main_screen_panel_type() const override { return "view_3d"; }
+	virtual StringName get_main_screen_panel_type() const override { return spatial_editor ? spatial_editor->get_panel_type() : StringName(); }
 	virtual EditorDocumentView *get_main_screen_view() override { return spatial_editor; }
 	virtual void make_visible(bool p_visible) override;
 	virtual void edit(Object *p_object) override;

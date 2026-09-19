@@ -82,7 +82,12 @@ private:
 	void _scene_tabs_resized();
 
 	void _update_tab_titles();
-	void _reposition_active_tab(int p_to_index);
+	void _tab_moved(int p_from_index, int p_to_index);
+	// A scene tab is dragged as two things at once: the tab bar's own drag, so
+	// that letting it go on the bar reorders the tabs, and an offer of a panel
+	// showing that scene, so that letting it go on a pane opens it there. See
+	// EditorPane::PanelDrop for the two keys that make the second.
+	Variant _tabs_get_drag_data(const Point2 &p_point);
 	void _update_context_menu();
 	void _custom_menu_option(int p_option);
 	void _update_scene_list();

@@ -45,6 +45,7 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
+#include "scene/gui/label.h"
 #include "scene/gui/button.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/panel.h"
@@ -163,9 +164,43 @@ void EditorSceneTabs::unhandled_key_input(const Ref<InputEvent> &p_event) {
 	}
 }
 
-void EditorSceneTabs::_reposition_active_tab(int p_to_index) {
-	EditorNode::get_editor_data().move_edited_scene_to_index(p_to_index);
+void EditorSceneTabs::_tab_moved(int p_from_index, int p_to_index) {
+	// Which tab moved, not which one is current: dragging a tab no longer
+	// selects it, so the two are not the same thing any more.
+	EditorNode::get_editor_data().move_scene_to_index(p_from_index, p_to_index);
 	update_scene_tabs();
+}
+
+Variant EditorSceneTabs::_tabs_get_drag_data(const Point2 &p_point) {
+	const int tab = scene_tabs->get_tab_idx_at_point(p_point);
+	if (tab < 0) {
+		return Variant();
+	}
+
+	EditorData &editor_data = EditorNode::get_editor_data();
+
+	HBoxContainer *preview = memnew(HBoxContainer);
+	if (scene_tabs->get_tab_icon(tab).is_valid()) {
+		TextureRect *icon = memnew(TextureRect);
+		icon->set_texture(scene_tabs->get_tab_icon(tab));
+		icon->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
+		preview->add_child(icon);
+	}
+	Label *label = memnew(Label(scene_tabs->get_tab_title(tab)));
+	label->set_auto_translate_mode(scene_tabs->get_auto_translate_mode());
+	preview->add_child(label);
+	scene_tabs->set_drag_preview(preview);
+
+	Dictionary data;
+	// What the tab bar itself reads, so dropping back on the bar reorders.
+	data["type"] = "tab";
+	data["tab_type"] = "tab_bar_tab";
+	data["tab_index"] = tab;
+	data["from_path"] = scene_tabs->get_path();
+	// What a pane reads. No type is named: the pane gives the scene the kind of
+	// view it is already showing, or the kind last worked in.
+	data["editor_panel_subject"] = editor_data.get_scene_history_id(tab);
+	return data;
 }
 
 void EditorSceneTabs::_update_context_menu() {
@@ -465,6 +500,13 @@ EditorSceneTabs::EditorSceneTabs() {
 	scene_tabs->set_tab_close_display_policy((TabBar::CloseButtonDisplayPolicy)EDITOR_GET("interface/scene_tabs/display_close_button").operator int());
 	scene_tabs->set_max_tab_width(int(EDITOR_GET("interface/scene_tabs/maximum_width")) * EDSCALE);
 	scene_tabs->set_drag_to_rearrange_enabled(true);
+	// Taking hold of a tab is not the same as asking for that scene: the tab is
+	// chosen when the mouse comes back up on it, so a tab can be dragged off
+	// somewhere without the editor switching to it on the way.
+	scene_tabs->set_switch_on_release(true);
+	// Only the getting: the bar keeps its own answers for what may be dropped
+	// on it and what to do with it, which is how reordering still works.
+	scene_tabs->set_drag_forwarding(callable_mp(this, &EditorSceneTabs::_tabs_get_drag_data), Callable(), Callable());
 	scene_tabs->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 	scene_tabs->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tabbar_container->add_child(scene_tabs);
@@ -475,7 +517,7 @@ EditorSceneTabs::EditorSceneTabs() {
 	scene_tabs->connect("tab_hovered", callable_mp(this, &EditorSceneTabs::_scene_tab_hovered));
 	scene_tabs->connect(SceneStringName(mouse_exited), callable_mp(this, &EditorSceneTabs::_scene_tab_exit));
 	scene_tabs->connect(SceneStringName(gui_input), callable_mp(this, &EditorSceneTabs::_scene_tab_input));
-	scene_tabs->connect("active_tab_rearranged", callable_mp(this, &EditorSceneTabs::_reposition_active_tab));
+	scene_tabs->connect("tab_moved", callable_mp(this, &EditorSceneTabs::_tab_moved));
 	scene_tabs->connect(SceneStringName(resized), callable_mp(this, &EditorSceneTabs::_scene_tabs_resized), CONNECT_DEFERRED);
 
 	scene_tabs_context_menu = memnew(PopupMenu);

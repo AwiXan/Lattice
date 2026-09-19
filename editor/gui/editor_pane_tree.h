@@ -82,6 +82,10 @@ public:
 	// This is what dropping a tab on the edge of a pane does.
 	EditorPane *split_with_panel(EditorPane *p_target, bool p_vertical, bool p_before, EditorPane *p_source, int p_panel_index);
 
+	// The same, for a drop that brought a description rather than a panel - a
+	// scene tab, a file - so the new pane is given a panel built for it.
+	EditorPane *split_with_new_panel(EditorPane *p_target, bool p_vertical, bool p_before, const StringName &p_type, const Variant &p_subject);
+
 	// Closes any pane left holding nothing. A pane that has just given its last
 	// panel away has no reason to take up room.
 	void drop_empty_panes();

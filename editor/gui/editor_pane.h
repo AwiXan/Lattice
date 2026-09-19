@@ -113,10 +113,32 @@ private:
 	void _show_only_current();
 
 	EditorPaneTree *_get_pane_tree() const;
-	// The pane and panel a drag is carrying, or null if it is carrying something
-	// else entirely - a node, a file, anything the editor drags about.
-	static EditorPane *_dragged_panel(const Variant &p_data, int *r_index);
-	bool _accept_drop(const Variant &p_data, DropZone p_zone, int p_tab_index);
+
+	// What a drag is offering a pane.
+	//
+	// Either a panel that already exists somewhere - moved rather than made
+	// again, so it keeps its camera, its scroll and what it had selected - or a
+	// description of one to build. Anything in the editor can offer the second
+	// kind by putting two keys in its drag data:
+	//
+	//   "editor_panel"         the registered type to build, which may be left
+	//                          out to mean "whatever suits what it is pointed at"
+	//   "editor_panel_subject" what that panel should show: a document's history
+	//                          id, or a resource's path
+	//
+	// Every other key is none of a pane's business, which is what lets a scene
+	// tab's drag be a tab bar's own drag as well, so dropping it back on the bar
+	// still reorders the tabs.
+	struct PanelDrop {
+		EditorPane *source = nullptr;
+		int source_index = -1;
+		StringName type;
+		Variant subject;
+		bool is_valid() const { return source || type != StringName(); }
+	};
+	PanelDrop _read_drop(const Variant &p_data) const;
+	StringName _type_for_subject(const Variant &p_subject) const;
+	bool _accept_drop(const PanelDrop &p_drop, DropZone p_zone, int p_tab_index);
 
 	Variant _tab_get_drag_data_fw(const Point2 &p_point, Control *p_from);
 	bool _tab_can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const;

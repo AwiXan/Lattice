@@ -630,6 +630,7 @@ public:
 	virtual void bind_document(int p_document_id) override;
 	virtual int get_bound_document() const override { return bound_document_id; }
 	virtual bool supports_document_binding() const override { return true; }
+	virtual StringName get_panel_type() const override { return SNAME("view_2d"); }
 
 	// The document this view edits, and its root. Everything goes through these
 	// rather than asking the editor what is current, so a second view can be
@@ -704,7 +705,7 @@ public:
 	virtual String get_plugin_name() const override { return TTRC("2D"); }
 	bool has_main_screen() const override { return true; }
 	virtual Control *create_main_screen_view() override;
-	virtual StringName get_main_screen_panel_type() const override { return "view_2d"; }
+	virtual StringName get_main_screen_panel_type() const override { return canvas_item_editor ? canvas_item_editor->get_panel_type() : StringName(); }
 	virtual EditorDocumentView *get_main_screen_view() override { return canvas_item_editor; }
 	virtual void edit(Object *p_object) override;
 	virtual bool handles(Object *p_object) const override;

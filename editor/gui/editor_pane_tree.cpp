@@ -156,6 +156,22 @@ EditorPane *EditorPaneTree::split_with_panel(EditorPane *p_target, bool p_vertic
 	return fresh;
 }
 
+EditorPane *EditorPaneTree::split_with_new_panel(EditorPane *p_target, bool p_vertical, bool p_before, const StringName &p_type, const Variant &p_subject) {
+	ERR_FAIL_NULL_V(p_target, nullptr);
+
+	EditorPane *fresh = split_pane(p_target, p_vertical, p_before, false);
+	if (!fresh) {
+		return nullptr;
+	}
+	if (fresh->add_panel(p_type, p_subject) < 0) {
+		// The type refused to be built twice, so the pane made for it goes again.
+		close_pane(fresh);
+		return nullptr;
+	}
+	emit_signal(SNAME("layout_changed"));
+	return fresh;
+}
+
 void EditorPaneTree::drop_empty_panes() {
 	// Repeated, because closing one collapses a split and can leave the next
 	// one somewhere else in the tree.

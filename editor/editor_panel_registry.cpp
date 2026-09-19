@@ -45,6 +45,24 @@ void EditorPanelRegistry::unregister_type(const StringName &p_id) {
 	types.erase(p_id);
 }
 
+void EditorPanelRegistry::set_default_type_for(Binding p_binding, const StringName &p_id) {
+	if (p_id == StringName()) {
+		default_types.erase((int)p_binding);
+		return;
+	}
+	default_types[(int)p_binding] = p_id;
+}
+
+StringName EditorPanelRegistry::get_default_type_for(Binding p_binding) {
+	const StringName *id = default_types.getptr((int)p_binding);
+	// Only a type that is still registered: an addon can be turned off between
+	// one drop and the next.
+	if (id && types.has(*id)) {
+		return *id;
+	}
+	return StringName();
+}
+
 bool EditorPanelRegistry::has_type(const StringName &p_id) {
 	return types.has(p_id);
 }
@@ -91,5 +109,6 @@ void EditorPanelRegistry::bind_panel(const StringName &p_id, Control *p_panel, c
 void EditorPanelRegistry::cleanup() {
 	// The callables hold the plugins that registered them, and those are gone by
 	// the time the editor is torn down.
+	default_types.clear();
 	types.clear();
 }

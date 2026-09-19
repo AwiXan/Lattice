@@ -1651,9 +1651,15 @@ void TabBar::_handle_drop_data(const String &p_type, const Point2 &p_point, cons
 			}
 
 			p_move_tab_callback.call(tab_from_id, hover_now);
+			emit_signal(SNAME("tab_moved"), tab_from_id, hover_now);
 			if (!is_tab_disabled(hover_now)) {
 				emit_signal(SNAME("active_tab_rearranged"), hover_now);
-				set_current_tab(hover_now);
+				// move_tab() has already kept the current tab current, so this
+				// only ever does anything when the drag began without selecting
+				// - and then selecting is exactly what was being avoided.
+				if (!switch_on_release) {
+					set_current_tab(hover_now);
+				}
 			}
 		} else if (get_tabs_rearrange_group() != -1) {
 			// Drag and drop between Tabs.
@@ -2225,6 +2231,7 @@ void TabBar::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("tab_button_pressed", PropertyInfo(Variant::INT, "tab")));
 	ADD_SIGNAL(MethodInfo("tab_hovered", PropertyInfo(Variant::INT, "tab")));
 	ADD_SIGNAL(MethodInfo("active_tab_rearranged", PropertyInfo(Variant::INT, "idx_to")));
+	ADD_SIGNAL(MethodInfo("tab_moved", PropertyInfo(Variant::INT, "from"), PropertyInfo(Variant::INT, "to")));
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "current_tab", PROPERTY_HINT_RANGE, "-1,4096,1"), "set_current_tab", "get_current_tab");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "tab_alignment", PROPERTY_HINT_ENUM, "Left,Center,Right"), "set_tab_alignment", "get_tab_alignment");

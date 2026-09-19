@@ -95,6 +95,13 @@ public:
 	static void register_type(const PanelType &p_type);
 	static void unregister_type(const StringName &p_id);
 
+	// What a subject of this kind turns into when it is dropped somewhere and
+	// nothing has named a type - a scene tab dragged onto a pane. The editor
+	// keeps it on whichever view was last worked in, so a drop gives the kind
+	// of view being used rather than one chosen here once and for all.
+	static void set_default_type_for(Binding p_binding, const StringName &p_id);
+	static StringName get_default_type_for(Binding p_binding);
+
 	static bool has_type(const StringName &p_id);
 	static const PanelType *get_type(const StringName &p_id);
 	static Vector<StringName> get_type_ids();
@@ -110,4 +117,5 @@ public:
 
 private:
 	static inline HashMap<StringName, PanelType> types;
+	static inline HashMap<int, StringName> default_types;
 };

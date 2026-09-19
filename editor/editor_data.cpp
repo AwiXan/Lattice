@@ -909,6 +909,16 @@ void EditorData::move_scene_to_index(int p_idx, int p_to_idx) {
 	EditedScene es = edited_scene[p_idx];
 	edited_scene.remove_at(p_idx);
 	edited_scene.insert(p_to_idx, es);
+
+	// Reordering the tabs is not a way of switching between them: whichever
+	// scene was being edited still is, wherever it has ended up.
+	if (current_edited_scene == p_idx) {
+		current_edited_scene = p_to_idx;
+	} else if (current_edited_scene > p_idx && current_edited_scene <= p_to_idx) {
+		current_edited_scene--;
+	} else if (current_edited_scene < p_idx && current_edited_scene >= p_to_idx) {
+		current_edited_scene++;
+	}
 }
 
 int EditorData::get_edited_scene() const {
@@ -1022,7 +1032,6 @@ void EditorData::move_edited_scene_to_index(int p_idx) {
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
 
 	move_scene_to_index(current_edited_scene, p_idx);
-	current_edited_scene = p_idx;
 }
 
 Ref<Script> EditorData::get_scene_root_script(int p_idx) const {

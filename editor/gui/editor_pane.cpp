@@ -389,26 +389,55 @@ EditorPaneTree *EditorPane::_get_pane_tree() const {
 	return nullptr;
 }
 
-EditorPane *EditorPane::_dragged_panel(const Variant &p_data, int *r_index) {
+StringName EditorPane::_type_for_subject(const Variant &p_subject) const {
+	// A history id names a document, a path names a resource. Nothing else is
+	// offered yet, and a binding added later decides the same way.
+	const EditorPanelRegistry::Binding binding = p_subject.get_type() == Variant::INT
+			? EditorPanelRegistry::BINDING_DOCUMENT
+			: EditorPanelRegistry::BINDING_RESOURCE;
+
+	// The kind of panel already here, so dropping a scene on a pane showing a 2D
+	// view gives a 2D view of it rather than something else.
+	const EditorPanelRegistry::PanelType *here = (current >= 0 && current < panels.size())
+			? EditorPanelRegistry::get_type(panels[current].type)
+			: nullptr;
+	if (here && here->binding == binding) {
+		return here->id;
+	}
+	// Failing that, the kind last worked in.
+	return EditorPanelRegistry::get_default_type_for(binding);
+}
+
+EditorPane::PanelDrop EditorPane::_read_drop(const Variant &p_data) const {
+	PanelDrop drop;
 	if (p_data.get_type() != Variant::DICTIONARY) {
-		return nullptr;
+		return drop;
 	}
 	const Dictionary data = p_data;
-	if (String(data.get("type", "")) != "editor_pane_panel") {
-		return nullptr;
+
+	if (String(data.get("type", "")) == "editor_pane_panel") {
+		EditorPane *pane = ObjectDB::get_instance<EditorPane>(ObjectID((uint64_t)(int64_t)data.get("pane", 0)));
+		const int index = data.get("index", -1);
+		if (pane && index >= 0 && index < pane->get_panel_count()) {
+			drop.source = pane;
+			drop.source_index = index;
+		}
+		return drop;
 	}
-	EditorPane *pane = ObjectDB::get_instance<EditorPane>(ObjectID((uint64_t)(int64_t)data.get("pane", 0)));
-	if (!pane) {
-		return nullptr;
+
+	if (!data.has("editor_panel") && !data.has("editor_panel_subject")) {
+		// Something else the editor drags about: a node, a file, a colour.
+		return drop;
 	}
-	const int index = data.get("index", -1);
-	if (index < 0 || index >= pane->get_panel_count()) {
-		return nullptr;
+	drop.subject = data.get("editor_panel_subject", Variant());
+
+	const String named = data.get("editor_panel", String());
+	drop.type = named.is_empty() ? _type_for_subject(drop.subject) : StringName(named);
+	if (!EditorPanelRegistry::has_type(drop.type)) {
+		// Nothing registered can show it, so there is nothing to make.
+		drop.type = StringName();
 	}
-	if (r_index) {
-		*r_index = index;
-	}
-	return pane;
+	return drop;
 }
 
 EditorPane::DropZone EditorPane::get_drop_zone_at(const Point2 &p_point) const {
@@ -467,15 +496,17 @@ Variant EditorPane::_tab_get_drag_data_fw(const Point2 &p_point, Control *p_from
 }
 
 bool EditorPane::_tab_can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const {
-	int index = -1;
-	EditorPane *source = _dragged_panel(p_data, &index);
-	return source && !(source == this && tab_bar->get_tab_idx_at_point(p_point) == index);
+	const PanelDrop drop = _read_drop(p_data);
+	if (!drop.is_valid()) {
+		return false;
+	}
+	// Dropping a tab back where it came from changes nothing.
+	return !(drop.source == this && tab_bar->get_tab_idx_at_point(p_point) == drop.source_index);
 }
 
 void EditorPane::_tab_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) {
-	int index = -1;
-	EditorPane *source = _dragged_panel(p_data, &index);
-	if (!source) {
+	const PanelDrop drop = _read_drop(p_data);
+	if (!drop.is_valid()) {
 		return;
 	}
 	// Where along the bar it was let go, so a tab can be put in order rather
@@ -484,19 +515,18 @@ void EditorPane::_tab_drop_data_fw(const Point2 &p_point, const Variant &p_data,
 	if (at < 0) {
 		at = panels.size();
 	}
-	_accept_drop(p_data, DROP_INTO, at);
+	_accept_drop(drop, DROP_INTO, at);
 }
 
 bool EditorPane::can_drop_data(const Point2 &p_point, const Variant &p_data) const {
-	int index = -1;
-	EditorPane *source = _dragged_panel(p_data, &index);
-	if (!source) {
+	const PanelDrop drop = _read_drop(p_data);
+	if (!drop.is_valid()) {
 		drop_zone = DROP_NONE;
 		return false;
 	}
 	const DropZone zone = get_drop_zone_at(p_point);
 	// Dropping a pane's only panel back into the same pane changes nothing.
-	if (source == this && zone == DROP_INTO) {
+	if (drop.source == this && zone == DROP_INTO) {
 		drop_zone = DROP_NONE;
 		return false;
 	}
@@ -508,40 +538,39 @@ bool EditorPane::can_drop_data(const Point2 &p_point, const Variant &p_data) con
 }
 
 void EditorPane::drop_data(const Point2 &p_point, const Variant &p_data) {
-	int index = -1;
-	EditorPane *source = _dragged_panel(p_data, &index);
+	const PanelDrop drop = _read_drop(p_data);
 	const DropZone zone = get_drop_zone_at(p_point);
 	drop_zone = DROP_NONE;
 	queue_redraw();
-	if (!source) {
-		return;
-	}
-	_accept_drop(p_data, zone, -1);
+	_accept_drop(drop, zone, -1);
 }
 
-bool EditorPane::_accept_drop(const Variant &p_data, DropZone p_zone, int p_tab_index) {
-	int index = -1;
-	EditorPane *source = _dragged_panel(p_data, &index);
-	if (!source) {
+bool EditorPane::_accept_drop(const PanelDrop &p_drop, DropZone p_zone, int p_tab_index) {
+	if (!p_drop.is_valid()) {
 		return false;
 	}
+	EditorPaneTree *tree = _get_pane_tree();
 
 	if (p_zone == DROP_INTO) {
-		const bool moved = source->transfer_panel_to(this, index, p_tab_index);
-		EditorPaneTree *tree = _get_pane_tree();
+		if (!p_drop.source) {
+			return add_panel(p_drop.type, p_drop.subject) >= 0;
+		}
+		const bool moved = p_drop.source->transfer_panel_to(this, p_drop.source_index, p_tab_index);
 		if (tree) {
 			tree->drop_empty_panes();
 		}
 		return moved;
 	}
 
-	EditorPaneTree *tree = _get_pane_tree();
 	if (!tree) {
 		return false;
 	}
 	const bool vertical = p_zone == DROP_TOP || p_zone == DROP_BOTTOM;
 	const bool before = p_zone == DROP_LEFT || p_zone == DROP_TOP;
-	return tree->split_with_panel(this, vertical, before, source, index) != nullptr;
+	if (!p_drop.source) {
+		return tree->split_with_new_panel(this, vertical, before, p_drop.type, p_drop.subject) != nullptr;
+	}
+	return tree->split_with_panel(this, vertical, before, p_drop.source, p_drop.source_index) != nullptr;
 }
 
 void EditorPane::_notification(int p_what) {
