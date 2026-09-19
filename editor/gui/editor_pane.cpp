@@ -303,9 +303,7 @@ void EditorPane::close_panel(int p_index) {
 		return;
 	}
 
-	if (panels[p_index].control) {
-		memdelete(panels[p_index].control);
-	}
+	_let_go_of(panels[p_index]);
 	panels.remove_at(p_index);
 
 	if (panels.is_empty()) {
@@ -366,9 +364,7 @@ void EditorPane::set_panel_type(const StringName &p_type, const Variant &p_subje
 	// Everything but the editor's main screen, which cannot be dropped.
 	for (int i = panels.size() - 1; i >= 0; i--) {
 		if (!panels[i].adopted) {
-			if (panels[i].control) {
-				memdelete(panels[i].control);
-			}
+			_let_go_of(panels[i]);
 			panels.remove_at(i);
 		}
 	}
@@ -437,6 +433,38 @@ Control *EditorPane::release_adopted_panel() {
 		return released;
 	}
 	return nullptr;
+}
+
+void EditorPane::_let_go_of(const PanelEntry &p_entry) {
+	if (!p_entry.control) {
+		return;
+	}
+	// A lent panel goes home; one this pane had built is this pane's to free.
+	// Either way it stops being a child first, so that a lender putting it
+	// somewhere else is not fighting this pane for it.
+	const bool given_back = EditorPanelRegistry::release_panel(p_entry.type, p_entry.control);
+	if (p_entry.control->get_parent() == this) {
+		remove_child(p_entry.control);
+	}
+	if (!given_back) {
+		memdelete(p_entry.control);
+	}
+}
+
+void EditorPane::_return_everything_lent() {
+	// Whatever was lent to this pane goes back rather than down with it: the
+	// editor has one FileSystem, and a pane closing is not a reason to lose it.
+	for (const PanelEntry &entry : panels) {
+		if (entry.adopted || !entry.control) {
+			continue;
+		}
+		if (EditorPanelRegistry::release_panel(entry.type, entry.control)) {
+			if (entry.control->get_parent() == this) {
+				remove_child(entry.control);
+			}
+		}
+	}
+	panels.clear();
 }
 
 EditorPaneTree *EditorPane::_get_pane_tree() const {
@@ -659,6 +687,13 @@ void EditorPane::_notification(int p_what) {
 		case NOTIFICATION_ENTER_TREE:
 		case NOTIFICATION_THEME_CHANGED: {
 			_update_theme();
+		} break;
+
+		case NOTIFICATION_PREDELETE: {
+			// A Node kills its children as it goes, and it does that from this
+			// very notification - so anything lent has to leave before the base
+			// class gets its turn. Being told in reverse is what makes that work.
+			_return_everything_lent();
 		} break;
 
 		case NOTIFICATION_DRAG_END: {

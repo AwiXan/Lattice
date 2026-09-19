@@ -36,6 +36,8 @@ void EditorPanelRegistry::register_type(const PanelType &p_type) {
 	ERR_FAIL_COND_MSG(p_type.id == StringName(), "A panel type needs an id to be asked for by.");
 	ERR_FAIL_COND_MSG(!p_type.create.is_valid(), vformat("The panel type '%s' has no way to build a panel.", p_type.id));
 	ERR_FAIL_COND_MSG(types.has(p_type.id), vformat("A panel type '%s' is already registered.", p_type.id));
+	ERR_FAIL_COND_MSG(p_type.lent && !p_type.release.is_valid(),
+			vformat("The panel type '%s' lends its panels but has no way to be given one back.", p_type.id));
 	ERR_FAIL_COND_MSG(binding_takes_subject(p_type.binding) && !p_type.bind.is_valid(),
 			vformat("The panel type '%s' says it shows one thing but has no way to be pointed at one.", p_type.id));
 	types.insert(p_type.id, p_type);
@@ -104,6 +106,17 @@ void EditorPanelRegistry::bind_panel(const StringName &p_id, Control *p_panel, c
 		return;
 	}
 	type->bind.call(p_panel, p_subject);
+}
+
+bool EditorPanelRegistry::release_panel(const StringName &p_id, Control *p_panel) {
+	const PanelType *type = types.getptr(p_id);
+	if (!type || !type->lent || !type->release.is_valid()) {
+		// Either this type builds its panels, or whoever lent this one is gone -
+		// at which point the caller freeing it is the right thing.
+		return false;
+	}
+	type->release.call(p_panel);
+	return true;
 }
 
 void EditorPanelRegistry::cleanup() {

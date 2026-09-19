@@ -378,9 +378,7 @@ Control *EditorPaneTree::_load_node(const Dictionary &p_data) {
 }
 
 void EditorPaneTree::load_layout(const Dictionary &p_layout) {
-	pending_main_screen_host = nullptr;
-	Control *loaded = _load_node(p_layout);
-	if (!loaded) {
+	if (p_layout.is_empty()) {
 		return;
 	}
 
@@ -397,9 +395,24 @@ void EditorPaneTree::load_layout(const Dictionary &p_layout) {
 		}
 	}
 
+	// The old arrangement goes before the new one is built, not after. There is
+	// one FileSystem: if the old panes still held it, the new ones asking for it
+	// would be told it was taken, and it would be missing from the arrangement
+	// that was supposed to have it.
 	if (root) {
 		remove_child(root);
 		memdelete(root);
+		root = nullptr;
+	}
+
+	pending_main_screen_host = nullptr;
+	Control *loaded = _load_node(p_layout);
+	if (!loaded) {
+		// Nothing readable in it, and the old arrangement is already gone. One
+		// empty pane is still an editor.
+		EditorPane *fresh = memnew(EditorPane);
+		_wire_pane(fresh);
+		loaded = fresh;
 	}
 	root = loaded;
 	add_child(root);

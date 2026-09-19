@@ -255,6 +255,22 @@ Rect2 DockTabContainer::get_default_floating_dock_rect(EditorDock *p_dock) {
 	return ret;
 }
 
+Variant DockTabContainer::_get_drag_data_fw(const Point2 &p_point, Control *p_from_control) {
+	Variant data = TabContainer::_get_drag_data_fw(p_point, p_from_control);
+	if (data.get_type() != Variant::DICTIONARY) {
+		return data;
+	}
+
+	EditorDock *dock = get_dock(get_tab_bar()->get_tab_idx_at_point(p_point));
+	if (!dock) {
+		return data;
+	}
+
+	Dictionary dict = data;
+	dict["editor_panel"] = String(EditorDockManager::get_dock_panel_type_id(dock));
+	return dict;
+}
+
 DockTabContainer::DockTabContainer(EditorDock::DockSlot p_slot) {
 	ERR_FAIL_INDEX(p_slot, EditorDock::DOCK_SLOT_MAX);
 	dock_slot = p_slot;

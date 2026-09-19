@@ -79,6 +79,14 @@ public:
 		Binding binding = BINDING_CONTEXT;
 		// Builds a panel of this type. Returns a Control the caller owns.
 		Callable create;
+		// Some panels are not built but lent. The editor has one FileSystem: a
+		// pane showing it is showing that one, taken out of its slot for as long
+		// as the pane holds it. A pane never frees a lent panel - it gives it
+		// back, and whoever lent it decides where it goes.
+		bool lent = false;
+		// Called with the panel when a pane stops showing it. Lent types only;
+		// nothing else has anywhere to give one back to.
+		Callable release;
 		// Points a panel of this type at what it shows. The subject is whatever
 		// that kind of binding means: a document's history id, where -1 is
 		// "whichever is current", or a resource's path. Kept as a Variant so a
@@ -112,6 +120,9 @@ public:
 	// Points a panel at what it should show. Does nothing for a type that shows
 	// the same thing whoever holds it, so callers need not ask first.
 	static void bind_panel(const StringName &p_id, Control *p_panel, const Variant &p_subject);
+	// Gives a panel back to whoever lent it. False means nobody did, and the
+	// caller is the one who has to free it.
+	static bool release_panel(const StringName &p_id, Control *p_panel);
 
 	static void cleanup();
 

@@ -103,6 +103,10 @@ private:
 	EditorDock *dock_tab_dragged = nullptr;
 	bool docks_visible = true;
 
+	// Docks a pane is showing instead of a dock slot. The editor has one of
+	// each, so a dock that is out on loan cannot be lent again.
+	HashSet<EditorDock *> lent_docks;
+
 	DockContextPopup *dock_context_popup = nullptr;
 	PopupMenu *docks_menu = nullptr;
 	LocalVector<EditorDock *> docks_menu_docks;
@@ -125,6 +129,13 @@ private:
 
 	void _queue_update_tab_style(EditorDock *p_dock);
 	void _update_dirty_dock_tabs();
+
+	// A dock as a panel: taken out of the arrangement of slots for as long as
+	// something else shows it, and put back when that thing has done with it.
+	// Registered for every dock, which is what lets a pane, a saved layout or a
+	// window ask for one without knowing this class exists.
+	Control *_lend_dock_panel(EditorDock *p_dock);
+	void _return_dock_panel(Control *p_panel, EditorDock *p_dock);
 
 public:
 	static EditorDockManager *get_singleton() { return singleton; }
@@ -155,6 +166,13 @@ public:
 
 	void add_dock(EditorDock *p_dock);
 	void remove_dock(EditorDock *p_dock);
+
+	// Whether this dock is somewhere that is not one of the slots, which is why
+	// the slots no longer show it.
+	bool is_dock_lent(EditorDock *p_dock) const { return lent_docks.has(p_dock); }
+	// What this dock is called in the panel registry, and therefore in a saved
+	// layout and in what a dock tab carries while it is being dragged.
+	static StringName get_dock_panel_type_id(const EditorDock *p_dock);
 
 	EditorDockManager();
 };

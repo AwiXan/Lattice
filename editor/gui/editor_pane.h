@@ -116,6 +116,10 @@ private:
 	void _close_pressed();
 	String _title_of(const PanelEntry &p_entry) const;
 	void _show_only_current();
+	// Stops showing a panel: back to whoever lent it, or freed if this pane
+	// built it.
+	void _let_go_of(const PanelEntry &p_entry);
+	void _return_everything_lent();
 
 	EditorPaneTree *_get_pane_tree() const;
 

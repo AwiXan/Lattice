@@ -79,6 +79,12 @@ class DockTabContainer : public TabContainer {
 protected:
 	DockContextPopup *dock_context_popup = nullptr;
 
+	// A dock tab is dragged as two things at once: the tab bar's own drag, so
+	// letting it go on another slot still moves it there, and an offer of a
+	// panel, so letting it go on a pane shows the dock in that pane. See
+	// EditorPane::PanelDrop.
+	virtual Variant _get_drag_data_fw(const Point2 &p_point, Control *p_from_control) override;
+
 	void _notification(int p_what);
 
 public:

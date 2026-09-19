@@ -140,7 +140,6 @@ private:
 	void _on_active_tab_rearranged(int p_tab);
 	void _on_tab_visibility_changed(Control *p_child);
 
-	Variant _get_drag_data_fw(const Point2 &p_point, Control *p_from_control);
 	bool _can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from_control) const;
 	void _drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from_control);
 	void _drag_move_tab(int p_from_index, int p_to_index);
@@ -159,6 +158,10 @@ protected:
 	bool _property_get_revert(const StringName &p_name, Variant &r_property) const;
 
 	void _maximum_size_changed();
+
+	// What a tab carries while it is being dragged. A subclass may add to it,
+	// which is how a dock tab is also an offer of a panel.
+	virtual Variant _get_drag_data_fw(const Point2 &p_point, Control *p_from_control);
 
 	void _notification(int p_what);
 	virtual void add_child_notify(Node *p_child) override;

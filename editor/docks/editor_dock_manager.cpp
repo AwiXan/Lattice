@@ -34,6 +34,7 @@
 #include "editor/docks/dock_tab_container.h"
 #include "editor/docks/editor_dock.h"
 #include "editor/editor_node.h"
+#include "editor/editor_panel_registry.h"
 #include "editor/editor_string_names.h"
 #include "editor/gui/window_wrapper.h"
 #include "editor/settings/editor_settings.h"
@@ -731,12 +732,73 @@ void EditorDockManager::focus_dock(EditorDock *p_dock) {
 	_make_dock_visible(p_dock, true);
 }
 
+StringName EditorDockManager::get_dock_panel_type_id(const EditorDock *p_dock) {
+	// The same name a saved layout uses for this dock, so an arrangement that
+	// says "the FileSystem, here" still means it next time the editor runs.
+	return StringName("dock_" + p_dock->get_effective_layout_key());
+}
+
+Control *EditorDockManager::_lend_dock_panel(EditorDock *p_dock) {
+	ERR_FAIL_NULL_V(p_dock, nullptr);
+	if (lent_docks.has(p_dock)) {
+		// There is one of each dock, so a second place cannot also show it. The
+		// registry takes nothing back as a refusal.
+		return nullptr;
+	}
+
+	lent_docks.insert(p_dock);
+	// Out of whatever was showing it. This also stops it counting as open, so
+	// the docks menu and the slots agree that it is elsewhere.
+	_move_dock(p_dock, nullptr);
+	if (p_dock->current_layout != EditorDock::DOCK_LAYOUT_VERTICAL) {
+		p_dock->update_layout(EditorDock::DOCK_LAYOUT_VERTICAL);
+		p_dock->current_layout = EditorDock::DOCK_LAYOUT_VERTICAL;
+	}
+	p_dock->show();
+	update_docks_menu();
+	_update_layout();
+	return p_dock;
+}
+
+void EditorDockManager::_return_dock_panel(Control *p_panel, EditorDock *p_dock) {
+	ERR_FAIL_NULL(p_dock);
+	lent_docks.erase(p_dock);
+
+	// Away from whoever was showing it, then back where it belongs. A dock with
+	// no slot to go back to is put away rather than made into a window nobody
+	// asked for.
+	_move_dock(p_dock, nullptr);
+	if (p_dock->dock_slot_index == EditorDock::DOCK_SLOT_NONE) {
+		_move_dock(p_dock, closed_dock_parent);
+		p_dock->hide();
+		update_docks_menu();
+		_update_layout();
+		return;
+	}
+	open_dock(p_dock, false);
+	update_docks_menu();
+}
+
 void EditorDockManager::add_dock(EditorDock *p_dock) {
 	ERR_FAIL_NULL(p_dock);
 	ERR_FAIL_COND_MSG(all_docks.has(p_dock), vformat("Cannot add dock '%s', already added.", p_dock->get_display_title()));
 
 	p_dock->dock_slot_index = p_dock->default_slot;
 	all_docks.push_back(p_dock);
+
+	{
+		// Named here so that anything arranging panels can show this dock
+		// without knowing what a dock is.
+		EditorPanelRegistry::PanelType type;
+		type.id = get_dock_panel_type_id(p_dock);
+		type.title = p_dock->get_title();
+		type.icon = p_dock->get_icon_name();
+		type.binding = EditorPanelRegistry::BINDING_GLOBAL;
+		type.lent = true;
+		type.create = callable_mp(this, &EditorDockManager::_lend_dock_panel).bind(p_dock);
+		type.release = callable_mp(this, &EditorDockManager::_return_dock_panel).bind(p_dock);
+		EditorPanelRegistry::register_type(type);
+	}
 	p_dock->connect("_tab_style_changed", callable_mp(this, &EditorDockManager::_queue_update_tab_style).bind(p_dock));
 	p_dock->connect("renamed", callable_mp(this, &EditorDockManager::_queue_update_tab_style).bind(p_dock));
 
@@ -753,6 +815,8 @@ void EditorDockManager::remove_dock(EditorDock *p_dock) {
 	ERR_FAIL_NULL(p_dock);
 	ERR_FAIL_COND_MSG(!all_docks.has(p_dock), vformat("Cannot remove unknown dock '%s'.", p_dock->get_display_title()));
 
+	EditorPanelRegistry::unregister_type(get_dock_panel_type_id(p_dock));
+	lent_docks.erase(p_dock);
 	_move_dock(p_dock, nullptr);
 
 	all_docks.erase(p_dock);
