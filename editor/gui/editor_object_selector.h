@@ -40,7 +40,9 @@ class EditorSelectionHistory;
 class EditorObjectSelector : public Button {
 	GDCLASS(EditorObjectSelector, Button);
 
-	EditorSelectionHistory *history = nullptr;
+	// Asked for whenever it is needed rather than kept: which history it shows
+	// changes with the document in context.
+	EditorSelectionHistory *_get_history() const;
 
 	TextureRect *current_object_icon = nullptr;
 	Label *current_object_label = nullptr;
@@ -64,5 +66,5 @@ public:
 	void clear_path();
 	void enable_path();
 
-	EditorObjectSelector(EditorSelectionHistory *p_history);
+	EditorObjectSelector();
 };

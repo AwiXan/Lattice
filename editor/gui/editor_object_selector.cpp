@@ -105,7 +105,7 @@ void EditorObjectSelector::_show_popup() {
 }
 
 void EditorObjectSelector::_about_to_show() {
-	Object *obj = ObjectDB::get_instance(history->get_path_object(history->get_path_size() - 1));
+	Object *obj = ObjectDB::get_instance(_get_history()->get_path_object(_get_history()->get_path_size() - 1));
 	if (!obj) {
 		return;
 	}
@@ -120,8 +120,8 @@ void EditorObjectSelector::_about_to_show() {
 }
 
 void EditorObjectSelector::update_path() {
-	for (int i = 0; i < history->get_path_size(); i++) {
-		Object *obj = ObjectDB::get_instance(history->get_path_object(i));
+	for (int i = 0; i < _get_history()->get_path_size(); i++) {
+		Object *obj = ObjectDB::get_instance(_get_history()->get_path_object(i));
 		if (!obj) {
 			continue;
 		}
@@ -131,7 +131,7 @@ void EditorObjectSelector::update_path() {
 			current_object_icon->set_texture(obj_icon);
 		}
 
-		if (i == history->get_path_size() - 1) {
+		if (i == _get_history()->get_path_size() - 1) {
 			String name;
 			if (obj->has_method("_get_editor_name")) {
 				name = obj->call("_get_editor_name");
@@ -206,8 +206,11 @@ void EditorObjectSelector::_notification(int p_what) {
 	}
 }
 
-EditorObjectSelector::EditorObjectSelector(EditorSelectionHistory *p_history) {
-	history = p_history;
+EditorSelectionHistory *EditorObjectSelector::_get_history() const {
+	return EditorNode::get_singleton()->get_editor_selection_history();
+}
+
+EditorObjectSelector::EditorObjectSelector() {
 
 	MarginContainer *main_mc = memnew(MarginContainer);
 	main_mc->set_theme_type_variation("ObjectSelectorMargin");

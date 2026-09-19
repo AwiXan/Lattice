@@ -512,6 +512,17 @@ Node *EditorData::get_document_root_for(const Node *p_node) {
 	return nullptr;
 }
 
+EditorSelectionHistory *EditorData::get_scene_selection_history(int p_idx) {
+	if (p_idx < 0) {
+		p_idx = current_edited_scene;
+	}
+	if (p_idx < 0 || p_idx >= edited_scene.size()) {
+		// Asked before the first document exists, or about one that is gone.
+		return nullptr;
+	}
+	return edited_scene[p_idx].history;
+}
+
 int EditorData::get_scene_index_by_history_id(int p_history_id) const {
 	for (int i = 0; i < edited_scene.size(); i++) {
 		if (edited_scene[i].history_id == p_history_id) {
@@ -685,7 +696,7 @@ int EditorData::add_edited_scene(int p_at_pos) {
 	es.root = nullptr;
 	es.path = String();
 	es.file_modified_time = 0;
-	es.history_current = -1;
+	es.history = memnew(EditorSelectionHistory);
 	es.live_edit_root = NodePath(String("/root"));
 	es.history_id = last_created_scene++;
 	es.time_opened = Time::get_singleton()->get_unix_time_from_system();
@@ -741,6 +752,11 @@ void EditorData::remove_scene(int p_idx) {
 	if (edited_scene[p_idx].root_viewport) {
 		memdelete(edited_scene[p_idx].root_viewport);
 		edited_scene.write[p_idx].root_viewport = nullptr;
+	}
+
+	if (edited_scene[p_idx].history) {
+		memdelete(edited_scene[p_idx].history);
+		edited_scene.write[p_idx].history = nullptr;
 	}
 
 	if (current_edited_scene > p_idx) {
@@ -1093,23 +1109,18 @@ NodePath EditorData::get_edited_scene_live_edit_root() {
 	return edited_scene[current_edited_scene].live_edit_root;
 }
 
-void EditorData::save_edited_scene_state(EditorSelection *p_selection, EditorSelectionHistory *p_history, const Dictionary &p_custom) {
+void EditorData::save_edited_scene_state(const Dictionary &p_custom) {
 	ERR_FAIL_INDEX(current_edited_scene, edited_scene.size());
 
 	EditedScene &es = edited_scene.write[current_edited_scene];
-	es.history_current = p_history->current_elem_idx;
-	es.history_stored = p_history->history;
 	es.editor_states = get_editor_plugin_states();
 	es.custom_state = p_custom;
 }
 
-Dictionary EditorData::restore_edited_scene_state(EditorSelection *p_selection, EditorSelectionHistory *p_history) {
+Dictionary EditorData::restore_edited_scene_state() {
 	ERR_FAIL_INDEX_V(current_edited_scene, edited_scene.size(), Dictionary());
 
 	const EditedScene &es = edited_scene.write[current_edited_scene];
-
-	p_history->current_elem_idx = es.history_current;
-	p_history->history = es.history_stored;
 
 	set_editor_plugin_states(es.editor_states);
 

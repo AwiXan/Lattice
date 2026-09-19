@@ -2874,7 +2874,7 @@ void EditorNode::_dialog_action(String p_file) {
 			save_resource_in_path(saving_resource, p_file);
 
 			saving_resource = Ref<Resource>();
-			ObjectID current_id = editor_history.get_current();
+			ObjectID current_id = get_editor_selection_history()->get_current();
 			Object *current_obj = current_id.is_valid() ? ObjectDB::get_instance(current_id) : nullptr;
 			ERR_FAIL_NULL(current_obj);
 			current_obj->notify_property_list_changed();
@@ -3091,7 +3091,7 @@ void EditorNode::push_item(Object *p_object, const String &p_property, bool p_in
 }
 
 void EditorNode::edit_previous_item() {
-	if (editor_history.previous()) {
+	if (get_editor_selection_history()->previous()) {
 		_edit_current();
 	}
 }
@@ -3156,7 +3156,7 @@ void EditorNode::hide_unused_editors(const Object *p_editing_owner) {
 
 void EditorNode::_add_to_history(const Object *p_object, const String &p_property, bool p_inspector_only) {
 	ObjectID id = p_object->get_instance_id();
-	ObjectID history_id = editor_history.get_current();
+	ObjectID history_id = get_editor_selection_history()->get_current();
 	if (id != history_id) {
 		const MultiNodeEdit *multi_node_edit = Object::cast_to<const MultiNodeEdit>(p_object);
 		const MultiNodeEdit *history_multi_node_edit = ObjectDB::get_instance<MultiNodeEdit>(history_id);
@@ -3164,17 +3164,17 @@ void EditorNode::_add_to_history(const Object *p_object, const String &p_propert
 			return;
 		}
 		if (p_inspector_only) {
-			editor_history.add_object(id, String(), true);
+			get_editor_selection_history()->add_object(id, String(), true);
 		} else if (p_property.is_empty()) {
-			editor_history.add_object(id);
+			get_editor_selection_history()->add_object(id);
 		} else {
-			editor_history.add_object(id, p_property);
+			get_editor_selection_history()->add_object(id, p_property);
 		}
 	}
 }
 
 void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update) {
-	ObjectID current_id = editor_history.get_current();
+	ObjectID current_id = get_editor_selection_history()->get_current();
 	Object *current_obj = current_id.is_valid() ? ObjectDB::get_instance(current_id) : nullptr;
 
 	Ref<Resource> res = Object::cast_to<Resource>(current_obj);
@@ -3186,7 +3186,7 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 		}
 	}
 
-	bool inspector_only = editor_history.is_current_inspector_only();
+	bool inspector_only = get_editor_selection_history()->is_current_inspector_only();
 
 	if (!current_obj) {
 		SceneTreeDock::get_singleton()->set_selected(nullptr);
@@ -4797,7 +4797,7 @@ void EditorNode::_set_current_scene_nocheck(int p_idx, bool p_ignore_state) {
 
 	changing_scene = true;
 	if (!p_ignore_state) {
-		editor_data.save_edited_scene_state(editor_selection, &editor_history, _get_main_scene_state());
+		editor_data.save_edited_scene_state(_get_main_scene_state());
 	}
 
 	Node *old_scene = get_editor_data().get_edited_scene_root();
@@ -4837,7 +4837,7 @@ void EditorNode::_set_current_scene_nocheck(int p_idx, bool p_ignore_state) {
 
 	_update_title();
 
-	const Dictionary state = editor_data.restore_edited_scene_state(editor_selection, &editor_history);
+	const Dictionary state = editor_data.restore_edited_scene_state();
 	_set_main_scene_state(state);
 	_update_undo_redo_allowed();
 	_update_unsaved_cache();
@@ -5081,8 +5081,8 @@ Error EditorNode::open_scene(const String &p_scene, bool p_ignore_broken_deps, b
 	if (restoring_scenes) {
 		// Initialize history for restored scenes.
 		ObjectID id = new_scene->get_instance_id();
-		if (id != editor_history.get_current()) {
-			editor_history.add_object(id);
+		if (id != get_editor_selection_history()->get_current()) {
+			get_editor_selection_history()->add_object(id);
 		}
 	}
 
@@ -5425,9 +5425,9 @@ void EditorNode::replace_history_reimported_nodes(Node *p_original_root_node, No
 	NodePath scene_path_to_node = p_original_root_node->get_path_to(p_node);
 	Node *new_node = p_new_root_node->get_node_or_null(scene_path_to_node);
 	if (new_node) {
-		editor_history.replace_object(p_node->get_instance_id(), new_node->get_instance_id());
+		get_editor_selection_history()->replace_object(p_node->get_instance_id(), new_node->get_instance_id());
 	} else {
-		editor_history.replace_object(p_node->get_instance_id(), ObjectID());
+		get_editor_selection_history()->replace_object(p_node->get_instance_id(), ObjectID());
 	}
 
 	for (int i = 0; i < p_node->get_child_count(); i++) {
@@ -7370,7 +7370,7 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 
 	// Save the current scene state/selection in case of lost.
 	Dictionary editor_state = _get_main_scene_state();
-	editor_data.save_edited_scene_state(editor_selection, &editor_history, editor_state);
+	editor_data.save_edited_scene_state(editor_state);
 	editor_selection->clear();
 
 	int original_edited_scene_idx = editor_data.get_edited_scene();
@@ -7392,7 +7392,7 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 		}
 
 		// Restore the state so that the selection can be updated.
-		editor_state = editor_data.restore_edited_scene_state(editor_selection, &editor_history);
+		editor_state = editor_data.restore_edited_scene_state();
 
 		int current_history_id = editor_data.get_current_edited_scene_history_id();
 		bool is_unsaved = EditorUndoRedoManager::get_singleton()->is_history_unsaved(current_history_id);
@@ -7683,11 +7683,11 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 		}
 
 		// Save the current handled scene state.
-		editor_data.save_edited_scene_state(editor_selection, &editor_history, editor_state);
+		editor_data.save_edited_scene_state(editor_state);
 		editor_selection->clear();
 
 		// Cleanup the history of the changes.
-		editor_history.cleanup_history();
+		get_editor_selection_history()->cleanup_history();
 
 		// A scene is not taken back out of its own document's viewport: it was
 		// not borrowed from another document to begin with. Only a root that
@@ -7710,7 +7710,7 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 
 	editor_data.set_edited_scene(original_edited_scene_idx);
 
-	editor_data.restore_edited_scene_state(editor_selection, &editor_history);
+	editor_data.restore_edited_scene_state();
 
 	progress.step(TTR("Reloading done."), editor_data.get_edited_scene_count());
 }

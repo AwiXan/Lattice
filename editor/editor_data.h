@@ -120,8 +120,10 @@ public:
 		String path;
 		uint64_t file_modified_time = 0;
 		Dictionary editor_states;
-		Vector<EditorSelectionHistory::HistoryElement> history_stored;
-		int history_current = 0;
+		// What is being inspected in this document, and how it was reached.
+		// Held rather than saved and restored on a tab switch: a pane showing
+		// this document needs it whether or not the document is in context.
+		EditorSelectionHistory *history = nullptr;
 		Dictionary custom_state;
 		NodePath live_edit_root;
 		int history_id = 0;
@@ -242,6 +244,9 @@ public:
 	int get_scene_history_id_from_path(const String &p_path) const;
 	int get_current_edited_scene_history_id() const;
 	int get_scene_history_id(int p_idx) const;
+	// What is being inspected in one open document. Panes holding an inspector
+	// of their own ask for theirs; -1 means whichever document is current.
+	EditorSelectionHistory *get_scene_selection_history(int p_idx = -1);
 	// Documents are addressed by history id rather than by tab index wherever a
 	// reference has to survive: closing or reordering a tab moves every index
 	// after it, and a binding kept as an index would quietly point elsewhere.
@@ -254,8 +259,10 @@ public:
 	void set_plugin_window_layout(Ref<ConfigFile> p_layout);
 	void get_plugin_window_layout(Ref<ConfigFile> p_layout);
 
-	void save_edited_scene_state(EditorSelection *p_selection, EditorSelectionHistory *p_history, const Dictionary &p_custom);
-	Dictionary restore_edited_scene_state(EditorSelection *p_selection, EditorSelectionHistory *p_history);
+	// The selection and the inspection history belong to the document itself and
+	// are live, so switching documents no longer hands them over.
+	void save_edited_scene_state(const Dictionary &p_custom);
+	Dictionary restore_edited_scene_state();
 	void notify_edited_scene_changed();
 	void notify_resource_saved(const Ref<Resource> &p_resource);
 	void notify_scene_saved(const String &p_path);

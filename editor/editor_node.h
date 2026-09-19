@@ -260,7 +260,9 @@ private:
 
 	EditorData editor_data;
 	EditorFolding editor_folding;
-	EditorSelectionHistory editor_history;
+	// Used only while no document exists, so that the accessor below never has
+	// to answer with null and no caller has to check.
+	EditorSelectionHistory fallback_history;
 
 	EditorCommandPalette *command_palette = nullptr;
 	EditorQuickOpenDialog *quick_open_dialog = nullptr;
@@ -799,7 +801,13 @@ public:
 	EditorPluginList *get_editor_plugins_force_over() { return editor_plugins_force_over; }
 	EditorPluginList *get_editor_plugins_over() { return editor_plugins_over; }
 	EditorSelection *get_editor_selection() { return editor_selection; }
-	EditorSelectionHistory *get_editor_selection_history() { return &editor_history; }
+	// What is being inspected in the document in context. Every caller that used
+	// to reach one history for the whole editor now reaches this, and a panel
+	// bound to another document asks EditorData for that document's instead.
+	EditorSelectionHistory *get_editor_selection_history() {
+		EditorSelectionHistory *history = editor_data.get_scene_selection_history();
+		return history ? history : &fallback_history;
+	}
 
 	ProjectSettingsEditor *get_project_settings() { return project_settings_editor; }
 
