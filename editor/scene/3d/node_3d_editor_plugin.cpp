@@ -10026,7 +10026,18 @@ void Node3DEditor::_notification(int p_what) {
 			// is built from the set that is already there.
 			_update_gizmos_menu();
 			_init_indicators();
-			update_all_gizmos();
+			// Every open document, not only the one this view shows: a document
+			// loaded before any view existed asked for gizmos when nothing was
+			// listening, and a pane can be pointed at it.
+			{
+				EditorData &editor_data = EditorNode::get_editor_data();
+				for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+					Node *document_root = editor_data.get_edited_scene_root(i);
+					if (document_root) {
+						update_all_gizmos(document_root);
+					}
+				}
+			}
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
@@ -10247,8 +10258,12 @@ void Node3DEditor::_request_gizmo(Object *p_obj) {
 
 	bool is_selected = (sp == selected);
 
-	Node *edited_scene = get_edited_scene();
-	if (edited_scene && (sp == edited_scene || (sp->get_owner() && edited_scene->is_ancestor_of(sp)))) {
+	// A gizmo belongs to the node, not to a view: one view builds them for
+	// everyone, so asking whether the node is in *its* document would leave
+	// every other open document without any - and a pane showing one of those
+	// with nothing to pick, select or drag.
+	Node *document_root = EditorNode::get_editor_data().get_document_root_for(sp);
+	if (document_root && (sp == document_root || sp->get_owner())) {
 		for (int i = 0; i < gizmo_plugins_by_priority.size(); ++i) {
 			Ref<EditorNode3DGizmo> seg = gizmo_plugins_by_priority.write[i]->get_gizmo(sp);
 
@@ -10380,7 +10395,10 @@ void Node3DEditor::_viewport_clicked(int p_viewport_idx) {
 	// selection to the document this view shows, which is not something to do
 	// because the mouse passed over it.
 	make_active();
-	EditorNode::get_singleton()->get_editor_main_screen()->view_activated(this);
+	EditorMainScreen *main_screen = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_editor_main_screen() : nullptr;
+	if (main_screen) {
+		main_screen->view_activated(this);
+	}
 }
 
 bool Node3DEditor::_is_preview_node_of_any_view(const Node *p_node) {
