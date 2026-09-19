@@ -573,6 +573,11 @@ protected:
 	static CanvasItemEditor *active_instance;
 	static Vector<CanvasItemEditor *> instances;
 
+	// The document this view edits, held as a history id because tab indices
+	// shift under it; -1 means it follows whichever document is current.
+	int bound_document_id = -1;
+	int _bound_document_index() const;
+
 	// The view renders the document's 2D world through a viewport of its own
 	// rather than displaying the document's viewport directly. A SubViewport has
 	// one parent, so adopting it would let only one view ever show a document,
@@ -619,6 +624,22 @@ public:
 	// once, before the view is shown.
 	void set_scene_root(SubViewport *p_scene_root);
 	SubViewport *get_view_viewport() const { return view_viewport; }
+
+	virtual void bind_document(int p_document_id) override;
+	virtual int get_bound_document() const override { return bound_document_id; }
+	virtual bool supports_document_binding() const override { return true; }
+
+	// The document this view edits, and its root. Everything goes through these
+	// rather than asking the editor what is current, so a second view can be
+	// looking at a different scene entirely.
+	Node *get_edited_scene() const;
+	SubViewport *get_scene_root() const;
+	// Called when the edited document changes: the view follows its world.
+	void update_editing_world();
+
+	// Whether a viewport holds something this view may edit. The document's own
+	// root counts; anything nested deeper still has to be on screen.
+	bool is_viewport_editable(const Viewport *p_viewport) const;
 
 	Dictionary get_state() const;
 	void set_state(const Dictionary &p_state);
@@ -676,12 +697,18 @@ protected:
 public:
 	virtual String get_plugin_name() const override { return TTRC("2D"); }
 	bool has_main_screen() const override { return true; }
+	virtual Control *create_main_screen_view() override;
+	virtual EditorDocumentView *get_main_screen_view() override { return canvas_item_editor; }
 	virtual void edit(Object *p_object) override;
 	virtual bool handles(Object *p_object) const override;
 	virtual void edited_scene_changed() override;
 	virtual void make_visible(bool p_visible) override;
 	virtual Dictionary get_state() const override;
 	virtual void set_state(const Dictionary &p_state) override;
+	// The view whose pan and zoom belong to the current document, if any. Only a
+	// view that follows the current document swaps scenes when the tab bar
+	// moves, so only that one has a view the document can claim.
+	CanvasItemEditor *_view_following_current_document() const;
 	virtual void clear() override;
 
 	CanvasItemEditor *get_canvas_item_editor() { return canvas_item_editor; }

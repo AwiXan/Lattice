@@ -457,7 +457,7 @@ Point2 CanvasItemEditor::snap_point(Point2 p_target, unsigned int p_modes, unsig
 				output, snap_target,
 				SNAP_TARGET_OTHER_NODE,
 				List<const CanvasItem *>(exceptions),
-				get_tree()->get_edited_scene_root());
+				get_edited_scene());
 	}
 
 	if (((is_snap_active && snap_guides && (p_modes & SNAP_GUIDES)) || (p_forced_modes & SNAP_GUIDES)) && std::fmod(rotation, (real_t)360.0) == 0.0) {
@@ -652,7 +652,7 @@ void CanvasItemEditor::find_canvas_items_at_pos(const Point2 &p_pos, Node *p_nod
 	if (CanvasLayer *cl = Object::cast_to<CanvasLayer>(p_node)) {
 		xform = cl->get_transform();
 	} else if (Viewport *vp = Object::cast_to<Viewport>(p_node)) {
-		if (!EditorNode::is_viewport_editable(vp)) {
+		if (!is_viewport_editable(vp)) {
 			return;
 		}
 		xform = vp->get_popup_base_transform();
@@ -701,7 +701,7 @@ void CanvasItemEditor::_get_canvas_items_at_pos(const Point2 &p_pos, Vector<Sele
 		Node *node = r_items[i].item;
 
 		// Make sure the selected node is in the current scene, or editable
-		if (node && node != get_tree()->get_edited_scene_root()) {
+		if (node && node != get_edited_scene()) {
 			node = scene->get_deepest_editable_node(node);
 		}
 
@@ -755,7 +755,7 @@ void CanvasItemEditor::_find_canvas_items_in_rect(const Rect2 &p_rect, Node *p_n
 	if (CanvasLayer *cl = Object::cast_to<CanvasLayer>(p_node)) {
 		xform = cl->get_transform();
 	} else if (Viewport *vp = Object::cast_to<Viewport>(p_node)) {
-		if (!EditorNode::is_viewport_editable(vp)) {
+		if (!is_viewport_editable(vp)) {
 			return;
 		}
 		xform = vp->get_popup_base_transform();
@@ -834,12 +834,14 @@ bool CanvasItemEditor::_select_click_on_item(CanvasItem *item, Point2 p_click_po
 
 List<CanvasItem *> CanvasItemEditor::_get_edited_canvas_items(bool p_retrieve_locked, bool p_remove_canvas_item_if_parent_in_selection, bool *r_has_locked_items) const {
 	List<CanvasItem *> selection;
-	for (const KeyValue<ObjectID, Object *> &E : editor_selection->get_selection()) {
+	// This view's document, not the one in context: a pane showing another scene
+	// works on what is selected in *that* scene, and both stay live.
+	for (const KeyValue<ObjectID, Object *> &E : editor_selection->get_selection_for(get_edited_scene())) {
 		CanvasItem *ci = ObjectDB::get_instance<CanvasItem>(E.key);
 		if (ci) {
 			if (ci->is_visible_in_tree() && (p_retrieve_locked || !_is_node_locked(ci))) {
 				Viewport *vp = ci->get_viewport();
-				if (vp && !EditorNode::is_viewport_editable(vp)) {
+				if (vp && !is_viewport_editable(vp)) {
 					continue;
 				}
 				CanvasItemEditorSelectedItem *se = editor_selection->get_node_editor_data<CanvasItemEditorSelectedItem>(ci);
@@ -2442,7 +2444,7 @@ bool CanvasItemEditor::_gui_input_select(const Ref<InputEvent> &p_event) {
 				// Sorts items according the their z-index
 				selection_results.sort();
 
-				NodePath root_path = get_tree()->get_edited_scene_root()->get_path();
+				NodePath root_path = get_edited_scene()->get_path();
 				StringName root_name = root_path.get_name(root_path.get_name_count() - 1);
 				int icon_max_width = EditorNode::get_singleton()->get_editor_theme()->get_constant(SNAME("class_icon_size"), EditorStringName(Editor));
 
@@ -2763,6 +2765,16 @@ void CanvasItemEditor::_gui_input_viewport(const Ref<InputEvent> &p_event) {
 	bool accepted = false;
 
 	Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid() && mb->is_pressed()) {
+		// Working in a pane makes it the one being worked in, which is what
+		// brings the docks and the selection to the document it shows. A click,
+		// never a hover: the mouse passing over a pane means nothing.
+		make_active();
+		EditorMainScreen *main_screen = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_editor_main_screen() : nullptr;
+		if (main_screen) {
+			main_screen->view_activated(this);
+		}
+	}
 	bool release_lmb = (mb.is_valid() && !mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT); // Required to properly release some stuff (e.g. selection box) while panning.
 
 	if (simple_panning || !pan_pressed || release_lmb) {
@@ -4107,7 +4119,7 @@ void CanvasItemEditor::_draw_invisible_nodes_positions(Node *p_node, const Trans
 		parent_xform = Transform2D();
 		canvas_xform = cl->get_transform();
 	} else if (Viewport *vp = Object::cast_to<Viewport>(p_node)) {
-		if (!EditorNode::is_viewport_editable(vp)) {
+		if (!is_viewport_editable(vp)) {
 			return;
 		}
 		parent_xform = Transform2D();
@@ -4250,7 +4262,7 @@ void CanvasItemEditor::_draw_locks_and_groups(Node *p_node, const Transform2D &p
 		parent_xform = Transform2D();
 		canvas_xform = cl->get_transform();
 	} else if (Viewport *vp = Object::cast_to<Viewport>(p_node)) {
-		if (!EditorNode::is_viewport_editable(vp)) {
+		if (!is_viewport_editable(vp)) {
 			return;
 		}
 		parent_xform = Transform2D();
@@ -4542,7 +4554,7 @@ void CanvasItemEditor::_selection_changed() {
 		}
 
 		Viewport *vp = ci->get_viewport();
-		if (vp && !EditorNode::is_viewport_editable(vp)) {
+		if (vp && !is_viewport_editable(vp)) {
 			continue;
 		}
 
@@ -5160,7 +5172,7 @@ void CanvasItemEditor::_popup_callback(int p_op) {
 		} break;
 		case SKELETON_MAKE_BONES: {
 			HashMap<ObjectID, Object *> &selection = editor_selection->get_selection();
-			Node *editor_root = get_tree()->get_edited_scene_root();
+			Node *editor_root = get_edited_scene();
 
 			if (!editor_root || selection.is_empty()) {
 				return;
@@ -6168,6 +6180,52 @@ Transform2D CanvasItemEditor::get_item_view_transform(const CanvasItem *p_item) 
 	return transform * p_item->get_global_transform();
 }
 
+int CanvasItemEditor::_bound_document_index() const {
+	if (bound_document_id < 0) {
+		return -1;
+	}
+	// A view whose document was closed follows the current one again rather
+	// than going blank, which is also what -1 asks for.
+	return EditorNode::get_editor_data().get_scene_index_by_history_id(bound_document_id);
+}
+
+Node *CanvasItemEditor::get_edited_scene() const {
+	return EditorNode::get_editor_data().get_edited_scene_root(_bound_document_index());
+}
+
+SubViewport *CanvasItemEditor::get_scene_root() const {
+	return EditorNode::get_editor_data().get_scene_root_viewport(_bound_document_index());
+}
+
+void CanvasItemEditor::bind_document(int p_document_id) {
+	if (bound_document_id == p_document_id) {
+		return;
+	}
+	bound_document_id = p_document_id;
+	update_editing_world();
+}
+
+void CanvasItemEditor::update_editing_world() {
+	SubViewport *scene_root = get_scene_root();
+	if (scene_root) {
+		set_scene_root(scene_root);
+	}
+	viewport->queue_redraw();
+}
+
+bool CanvasItemEditor::is_viewport_editable(const Viewport *p_viewport) const {
+	if (!p_viewport) {
+		return true;
+	}
+	// The root of the document *this* view edits, which is not necessarily the
+	// one the rest of the editor is on.
+	if (p_viewport == get_scene_root()) {
+		return true;
+	}
+	// Anything nested deeper still has to be on screen to be worth editing.
+	return p_viewport->is_visible_subviewport();
+}
+
 void CanvasItemEditor::set_scene_root(SubViewport *p_scene_root) {
 	ERR_FAIL_NULL(p_scene_root);
 	ERR_FAIL_NULL(view_viewport);
@@ -6196,12 +6254,23 @@ bool CanvasItemEditorPlugin::handles(Object *p_object) const {
 }
 
 void CanvasItemEditorPlugin::edited_scene_changed() {
-	// Follow the document: the view renders whichever scene is current, and
-	// there is no scene root at all while the editor is still being built.
-	SubViewport *scene_root = EditorNode::get_singleton()->get_scene_root();
-	if (scene_root) {
-		canvas_item_editor->set_scene_root(scene_root);
+	// Every open view has to be told, not just the one in the first pane: a view
+	// bound to a document of its own still follows it when tabs close and the
+	// scene it was pointed at is gone.
+	for (CanvasItemEditor *editor : CanvasItemEditor::get_instances()) {
+		editor->update_editing_world();
 	}
+}
+
+Control *CanvasItemEditorPlugin::create_main_screen_view() {
+	// Nothing is shared between 2D views the way the 3D gizmos and grid are:
+	// each keeps its own pan, zoom and overlays, and takes its world from the
+	// document it is pointed at.
+	CanvasItemEditor *view = memnew(CanvasItemEditor);
+	view->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	view->set_process(true);
+	view->set_physics_process(true);
+	return view;
 }
 
 void CanvasItemEditorPlugin::make_visible(bool p_visible) {
@@ -6219,12 +6288,42 @@ void CanvasItemEditorPlugin::make_visible(bool p_visible) {
 	}
 }
 
+CanvasItemEditor *CanvasItemEditorPlugin::_view_following_current_document() const {
+	for (CanvasItemEditor *editor : CanvasItemEditor::get_instances()) {
+		if (editor->get_bound_document() < 0) {
+			return editor;
+		}
+	}
+	return nullptr;
+}
+
 Dictionary CanvasItemEditorPlugin::get_state() const {
-	return canvas_item_editor->get_state();
+	CanvasItemEditor *view = _view_following_current_document();
+	if (view) {
+		return view->get_state();
+	}
+	// No view is following the current document, so none of them has anything to
+	// say about it. Repeat what was said last time rather than dropping the pan
+	// and zoom the document remembers.
+	EditorData &editor_data = EditorNode::get_editor_data();
+	const int idx = editor_data.get_edited_scene();
+	if (idx >= 0 && idx < editor_data.get_edited_scene_count()) {
+		const Dictionary states = editor_data.get_scene_editor_states(idx);
+		if (states.has(get_plugin_name())) {
+			return states[get_plugin_name()];
+		}
+	}
+	return Dictionary();
 }
 
 void CanvasItemEditorPlugin::set_state(const Dictionary &p_state) {
-	canvas_item_editor->set_state(p_state);
+	// A document's saved state carries where it was last looked at from. Handing
+	// it to a view held to a document of its own scrolls a view nobody touched,
+	// because some other pane changed which document is current.
+	CanvasItemEditor *view = _view_following_current_document();
+	if (view) {
+		view->set_state(p_state);
+	}
 }
 
 void CanvasItemEditorPlugin::clear() {
