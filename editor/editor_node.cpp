@@ -478,15 +478,6 @@ void EditorNode::set_current_scene_index(int p_idx) {
 	_set_current_scene(p_idx);
 }
 
-void EditorNode::update_split_view_menu_item() {
-	const int item = settings_menu->get_item_index(EDITOR_TOGGLE_SPLIT_VIEW);
-	if (item >= 0) {
-		// Reports what the layout actually is: a plugin can refuse to be shown
-		// twice, and the pane closes itself from its own header.
-		settings_menu->set_item_checked(item, editor_main_screen->is_split_view_enabled());
-	}
-}
-
 void EditorNode::apply_render_settings_to_document(SubViewport *p_document_root) {
 	if (!p_document_root) {
 		return;
@@ -3940,9 +3931,6 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 		} break;
 		case EDITOR_MANAGE_FEATURE_PROFILES: {
 			feature_profile_manager->popup_centered_clamped(Size2(900, 800) * EDSCALE, 0.8);
-		} break;
-		case EDITOR_TOGGLE_SPLIT_VIEW: {
-			editor_main_screen->set_split_view_enabled(!editor_main_screen->is_split_view_enabled());
 		} break;
 		case EDITOR_TOGGLE_FULLSCREEN: {
 			DisplayServerEnums::WindowMode mode = DisplayServer::get_singleton()->window_get_mode();
@@ -8207,8 +8195,6 @@ void EditorNode::_build_settings_menu() {
 		editor_layouts->connect(SceneStringName(id_pressed), callable_mp(this, &EditorNode::_layout_menu_option));
 	}
 	settings_menu->add_submenu_node_item(TTRC("Editor Layout"), editor_layouts);
-	settings_menu->add_check_item(TTRC("Split Editor View"), EDITOR_TOGGLE_SPLIT_VIEW);
-	settings_menu->set_item_tooltip(-1, TTRC("Show the current editor a second time next to itself, on another open scene."));
 	settings_menu->add_separator();
 
 	settings_menu->add_shortcut(ED_GET_SHORTCUT("editor/take_screenshot"), EDITOR_TAKE_SCREENSHOT);

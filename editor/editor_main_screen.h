@@ -130,7 +130,6 @@ public:
 	// what that panel is pointed at are the pane's own business from then on.
 	void set_split_view_enabled(bool p_enabled);
 	bool is_split_view_enabled() const;
-	bool can_split_view() const;
 
 	void add_main_plugin(EditorPlugin *p_editor);
 	void remove_main_plugin(EditorPlugin *p_editor);

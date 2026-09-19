@@ -36,6 +36,7 @@
 class Button;
 class Control;
 class EditorPaneTree;
+class HBoxContainer;
 class OptionButton;
 class TabBar;
 
@@ -83,7 +84,10 @@ private:
 
 	HBoxContainer *header = nullptr;
 	TabBar *tab_bar = nullptr;
-	OptionButton *add_button = nullptr;
+	// One button per kind of panel that can be added: press for one here, drag
+	// for one wherever it is let go.
+	HBoxContainer *palette = nullptr;
+	Vector<StringName> palette_types;
 	OptionButton *subject_button = nullptr;
 	Button *split_right_button = nullptr;
 	Button *split_down_button = nullptr;
@@ -100,12 +104,13 @@ private:
 	mutable DropZone drop_zone = DROP_NONE;
 
 	void _build_header();
+	void _update_theme();
+	void _update_palette();
 	void _update_tabs();
-	void _update_add_list();
 	void _update_subject_list();
 	void _tab_selected(int p_index);
 	void _tab_close_pressed(int p_index);
-	void _add_selected(int p_index);
+	void _palette_pressed(const StringName &p_type);
 	void _subject_selected(int p_index);
 	void _split_pressed(bool p_vertical);
 	void _close_pressed();
@@ -138,6 +143,7 @@ private:
 	};
 	PanelDrop _read_drop(const Variant &p_data) const;
 	StringName _type_for_subject(const Variant &p_subject) const;
+	Variant _subject_for_type(const StringName &p_type) const;
 	bool _accept_drop(const PanelDrop &p_drop, DropZone p_zone, int p_tab_index);
 
 	Variant _tab_get_drag_data_fw(const Point2 &p_point, Control *p_from);

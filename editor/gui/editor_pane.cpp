@@ -35,10 +35,12 @@
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/gui/editor_pane_tree.h"
+#include "editor/gui/editor_panel_button.h"
 #include "scene/gui/button.h"
 #include "scene/gui/label.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/panel.h"
+#include "scene/gui/separator.h"
 #include "scene/gui/tab_bar.h"
 
 void EditorPane::_bind_methods() {
@@ -64,16 +66,8 @@ void EditorPane::_build_header() {
 			callable_mp(this, &EditorPane::_tab_drop_data_fw).bind(tab_bar));
 	header->add_child(tab_bar);
 
-	add_button = memnew(OptionButton);
-	add_button->set_text(TTRC("Add"));
-	add_button->set_tooltip_text(TTRC("Add another panel to this pane."));
-	// Filled when opened rather than kept in step with the registry, so a type
-	// registered later needs to tell nobody.
-	add_button->get_popup()->connect(SNAME("about_to_popup"), callable_mp(this, &EditorPane::_update_add_list));
-	add_button->connect(SceneStringName(item_selected), callable_mp(this, &EditorPane::_add_selected));
-	header->add_child(add_button);
-
 	subject_button = memnew(OptionButton);
+	subject_button->set_flat(true);
 	subject_button->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 	subject_button->set_tooltip_text(TTRC("The scene this panel is showing. It does not have to be the one the tab bar has selected."));
 	subject_button->get_popup()->connect(SNAME("about_to_popup"), callable_mp(this, &EditorPane::_update_subject_list));
@@ -81,26 +75,107 @@ void EditorPane::_build_header() {
 	subject_button->hide();
 	header->add_child(subject_button);
 
+	header->add_child(memnew(VSeparator));
+
+	palette = memnew(HBoxContainer);
+	palette->add_theme_constant_override("separation", 0);
+	header->add_child(palette);
+
+	header->add_child(memnew(VSeparator));
+
 	split_right_button = memnew(Button);
 	split_right_button->set_flat(true);
-	split_right_button->set_text(TTRC("Split"));
+	split_right_button->set_focus_mode(FOCUS_NONE);
 	split_right_button->set_tooltip_text(TTRC("Put another pane beside this one."));
 	split_right_button->connect(SceneStringName(pressed), callable_mp(this, &EditorPane::_split_pressed).bind(false));
 	header->add_child(split_right_button);
 
 	split_down_button = memnew(Button);
 	split_down_button->set_flat(true);
-	split_down_button->set_text(TTRC("Split Down"));
+	split_down_button->set_focus_mode(FOCUS_NONE);
 	split_down_button->set_tooltip_text(TTRC("Put another pane below this one."));
 	split_down_button->connect(SceneStringName(pressed), callable_mp(this, &EditorPane::_split_pressed).bind(true));
 	header->add_child(split_down_button);
 
 	close_button = memnew(Button);
 	close_button->set_flat(true);
-	close_button->set_text(TTRC("Close Pane"));
+	close_button->set_focus_mode(FOCUS_NONE);
 	close_button->set_tooltip_text(TTRC("Close this pane."));
 	close_button->connect(SceneStringName(pressed), callable_mp(this, &EditorPane::_close_pressed));
 	header->add_child(close_button);
+}
+
+void EditorPane::_update_theme() {
+	if (!is_inside_tree()) {
+		return;
+	}
+	// From the editor's own base rather than from here: a pane is reparented
+	// whenever the arrangement changes, and between parents it has no theme of
+	// its own to ask.
+	Control *base = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_gui_base() : nullptr;
+	if (!base) {
+		return;
+	}
+	split_right_button->set_button_icon(base->get_editor_theme_icon(SNAME("Panels2")));
+	split_down_button->set_button_icon(base->get_editor_theme_icon(SNAME("Panels2Alt")));
+	close_button->set_button_icon(base->get_editor_theme_icon(SNAME("Close")));
+	_update_palette();
+}
+
+void EditorPane::_update_palette() {
+	Control *base = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_gui_base() : nullptr;
+	if (!base) {
+		return;
+	}
+
+	// Everything registered that can be asked for out of nowhere. A panel that
+	// shows a resource cannot: it is opened by dragging that resource here, so
+	// there is nothing for a button to stand for.
+	Vector<StringName> wanted;
+	for (const StringName &id : EditorPanelRegistry::get_type_ids()) {
+		const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(id);
+		if (type && type->binding != EditorPanelRegistry::BINDING_RESOURCE) {
+			wanted.push_back(id);
+		}
+	}
+	if (wanted == palette_types && palette->get_child_count() > 0) {
+		// Nothing new registered; only the icons need saying again.
+		for (int i = 0; i < palette->get_child_count(); i++) {
+			EditorPanelButton *button = Object::cast_to<EditorPanelButton>(palette->get_child(i));
+			const EditorPanelRegistry::PanelType *type = button ? EditorPanelRegistry::get_type(button->get_panel_type()) : nullptr;
+			if (type && type->icon != StringName()) {
+				button->set_button_icon(base->get_editor_theme_icon(type->icon));
+			}
+		}
+		return;
+	}
+
+	palette_types = wanted;
+	for (int i = palette->get_child_count() - 1; i >= 0; i--) {
+		memdelete(palette->get_child(i));
+	}
+
+	for (const StringName &id : palette_types) {
+		const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(id);
+		const String title = type->title.is_empty() ? String(id) : type->title;
+
+		EditorPanelButton *button = memnew(EditorPanelButton);
+		button->set_panel_type(id);
+		if (type->icon != StringName()) {
+			button->set_button_icon(base->get_editor_theme_icon(type->icon));
+		} else {
+			button->set_text(title);
+		}
+		button->set_tooltip_text(vformat(TTR("Add a %s panel here, or drag it onto a pane to put one there."), title));
+		button->connect(SceneStringName(pressed), callable_mp(this, &EditorPane::_palette_pressed).bind(id));
+		palette->add_child(button);
+	}
+}
+
+void EditorPane::_palette_pressed(const StringName &p_type) {
+	// Pressing is the same as dropping it here, so it goes the same way and
+	// gets the same answer about what to show.
+	add_panel(p_type, _subject_for_type(p_type));
 }
 
 String EditorPane::_title_of(const PanelEntry &p_entry) const {
@@ -132,6 +207,9 @@ void EditorPane::_update_tabs() {
 	if (panels.size() > 1) {
 		header->show();
 	}
+	// A type registered after this pane was built - an addon's - belongs in the
+	// header too, and this is the moment anything about the pane has changed.
+	_update_palette();
 	rebuilding_tabs = false;
 }
 
@@ -140,17 +218,6 @@ void EditorPane::_show_only_current() {
 		if (panels[i].control) {
 			panels[i].control->set_visible(i == current);
 		}
-	}
-}
-
-void EditorPane::_update_add_list() {
-	add_button->clear();
-	int index = 0;
-	for (const StringName &id : EditorPanelRegistry::get_type_ids()) {
-		const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(id);
-		add_button->add_item(type->title.is_empty() ? String(id) : type->title, index);
-		add_button->set_item_metadata(index, String(id));
-		index++;
 	}
 }
 
@@ -190,13 +257,6 @@ void EditorPane::_tab_selected(int p_index) {
 
 void EditorPane::_tab_close_pressed(int p_index) {
 	close_panel(p_index);
-}
-
-void EditorPane::_add_selected(int p_index) {
-	const StringName id = StringName(String(add_button->get_item_metadata(p_index)));
-	// A new panel starts on whatever this pane is already showing, so adding one
-	// is a way to look at the same scene differently.
-	add_panel(id, get_panel_subject());
 }
 
 void EditorPane::_subject_selected(int p_index) {
@@ -408,6 +468,21 @@ StringName EditorPane::_type_for_subject(const Variant &p_subject) const {
 	return EditorPanelRegistry::get_default_type_for(binding);
 }
 
+Variant EditorPane::_subject_for_type(const StringName &p_type) const {
+	const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(p_type);
+	if (!type || !EditorPanelRegistry::binding_takes_subject(type->binding)) {
+		return Variant();
+	}
+
+	// What this pane is already showing, so a view added to a pane on one scene
+	// is another view of that scene rather than of whatever is current.
+	const Variant here = get_panel_subject();
+	if (type->binding == EditorPanelRegistry::BINDING_DOCUMENT) {
+		return here.get_type() == Variant::INT ? here : Variant(-1);
+	}
+	return here.get_type() == Variant::STRING ? here : Variant(String());
+}
+
 EditorPane::PanelDrop EditorPane::_read_drop(const Variant &p_data) const {
 	PanelDrop drop;
 	if (p_data.get_type() != Variant::DICTIONARY) {
@@ -429,10 +504,16 @@ EditorPane::PanelDrop EditorPane::_read_drop(const Variant &p_data) const {
 		// Something else the editor drags about: a node, a file, a colour.
 		return drop;
 	}
-	drop.subject = data.get("editor_panel_subject", Variant());
-
 	const String named = data.get("editor_panel", String());
-	drop.type = named.is_empty() ? _type_for_subject(drop.subject) : StringName(named);
+	if (data.has("editor_panel_subject")) {
+		drop.subject = data.get("editor_panel_subject", Variant());
+		drop.type = named.is_empty() ? _type_for_subject(drop.subject) : StringName(named);
+	} else {
+		// A kind of panel and nothing to point it at - one of the buttons in a
+		// pane's header. Where it lands decides what it shows.
+		drop.type = StringName(named);
+		drop.subject = _subject_for_type(drop.type);
+	}
 	if (!EditorPanelRegistry::has_type(drop.type)) {
 		// Nothing registered can show it, so there is nothing to make.
 		drop.type = StringName();
@@ -575,6 +656,11 @@ bool EditorPane::_accept_drop(const PanelDrop &p_drop, DropZone p_zone, int p_ta
 
 void EditorPane::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE:
+		case NOTIFICATION_THEME_CHANGED: {
+			_update_theme();
+		} break;
+
 		case NOTIFICATION_DRAG_END: {
 			if (drop_zone != DROP_NONE) {
 				drop_zone = DROP_NONE;

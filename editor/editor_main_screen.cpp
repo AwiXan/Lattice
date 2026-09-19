@@ -291,10 +291,6 @@ VBoxContainer *EditorMainScreen::get_control() const {
 	return main_screen_vbox;
 }
 
-bool EditorMainScreen::can_split_view() const {
-	return selected_plugin != nullptr;
-}
-
 void EditorMainScreen::_panes_changed() {
 	// With more than one pane open, the main screen has to be held to a document
 	// or pointing another pane elsewhere - which makes that document current -
@@ -316,8 +312,6 @@ void EditorMainScreen::_panes_changed() {
 			active_view = nullptr;
 		}
 	}
-
-	EditorNode::get_singleton()->update_split_view_menu_item();
 }
 
 bool EditorMainScreen::is_split_view_enabled() const {

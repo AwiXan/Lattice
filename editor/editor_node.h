@@ -184,7 +184,6 @@ public:
 		VCS_SETTINGS,
 
 		// Editor menu.
-		EDITOR_TOGGLE_SPLIT_VIEW,
 		EDITOR_OPEN_SETTINGS,
 		EDITOR_COMMAND_PALETTE,
 		EDITOR_TAKE_SCREENSHOT,
@@ -987,7 +986,6 @@ public:
 	void show_save_accept(const String &p_text, const String &p_title);
 	// Keeps the Split Editor View check mark in step with the layout, which the
 	// pane's own close button changes too.
-	void update_split_view_menu_item();
 
 	// Makes an open document the current one. This is what the tab bar does, and
 	// what a pane asks for when it is clicked while showing another document.
