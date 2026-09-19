@@ -223,6 +223,9 @@ private:
 	Label *ruler_label_z = nullptr;
 
 	int index;
+	// Whether this view's own signals have been connected. Entering the tree is
+	// no longer a once-in-a-lifetime event: a pane that is split moves it.
+	bool wired = false;
 	// Which layer this view's manipulator instances are on, and the scenario it
 	// was taken from. Handed out per world: two views of one document have to
 	// differ or each draws the other's manipulator, while views of different

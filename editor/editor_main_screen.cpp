@@ -35,13 +35,13 @@
 #include "editor/editor_document_view.h"
 #include "editor/editor_node.h"
 #include "editor/editor_panel_registry.h"
+#include "editor/gui/editor_pane.h"
+#include "editor/gui/editor_pane_tree.h"
 #include "editor/editor_string_names.h"
 #include "editor/plugins/editor_plugin.h"
 #include "editor/settings/editor_settings.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
-#include "scene/gui/option_button.h"
-#include "scene/gui/split_container.h"
 
 void EditorMainScreen::_notification(int p_what) {
 	switch (p_what) {
@@ -263,8 +263,64 @@ VBoxContainer *EditorMainScreen::get_control() const {
 	return main_screen_vbox;
 }
 
-VBoxContainer *EditorMainScreen::get_secondary_control() const {
-	return secondary_screen_vbox;
+bool EditorMainScreen::can_split_view() const {
+	return selected_plugin != nullptr;
+}
+
+void EditorMainScreen::_panes_changed() {
+	// With more than one pane open, the main screen has to be held to a document
+	// or pointing another pane elsewhere - which makes that document current -
+	// would drag the main screen along and leave both showing the same scene.
+	EditorDocumentView *primary_view = selected_plugin ? selected_plugin->get_main_screen_view() : nullptr;
+	const bool several = is_split_view_enabled();
+
+	if (primary_view && primary_view->supports_document_binding()) {
+		EditorData &editor_data = EditorNode::get_editor_data();
+		if (several && primary_view->get_bound_document() < 0 && editor_data.get_edited_scene_count() > 0) {
+			primary_view->bind_document(editor_data.get_scene_history_id(editor_data.get_edited_scene()));
+			pinned_primary_view = primary_view;
+			// Something has to be what the tab bar acts on, and until the user
+			// works in a pane it is the one that was there first.
+			active_view = primary_view;
+		} else if (!several && pinned_primary_view) {
+			pinned_primary_view->bind_document(-1);
+			pinned_primary_view = nullptr;
+			active_view = nullptr;
+		}
+	}
+
+	EditorNode::get_singleton()->update_split_view_menu_item();
+}
+
+bool EditorMainScreen::is_split_view_enabled() const {
+	return pane_tree && pane_tree->get_panes().size() > 1;
+}
+
+void EditorMainScreen::set_split_view_enabled(bool p_enabled) {
+	if (!pane_tree || p_enabled == is_split_view_enabled()) {
+		return;
+	}
+
+	if (p_enabled) {
+		EditorPane *pane = pane_tree->split_pane(pane_tree->get_first_pane(), false);
+		// The menu means "another of what I am looking at", so the new pane
+		// starts on the selected plugin's panel, pointed at the scene being
+		// worked on. The tree itself knows nothing about main screen plugins;
+		// this is the one place that does.
+		const StringName type = selected_plugin ? selected_plugin->get_main_screen_panel_type() : StringName();
+		if (pane && type != StringName()) {
+			EditorData &editor_data = EditorNode::get_editor_data();
+			const Variant subject = editor_data.get_edited_scene_count() > 0 ? Variant(editor_data.get_scene_history_id(editor_data.get_edited_scene())) : Variant(-1);
+			pane->set_panel_type(type, subject);
+		}
+		return;
+	}
+
+	// Back to one: every pane but the one holding the main screen goes.
+	Vector<EditorPane *> panes = pane_tree->get_panes();
+	for (int i = panes.size() - 1; i >= 1; i--) {
+		pane_tree->close_pane(panes[i]);
+	}
 }
 
 void EditorMainScreen::view_activated(EditorDocumentView *p_view) {
@@ -307,152 +363,6 @@ void EditorMainScreen::current_document_changed() {
 	if (editor_data.get_edited_scene_count() > 0) {
 		active_view->bind_document(editor_data.get_scene_history_id(editor_data.get_edited_scene()));
 	}
-	// The header names the document its pane shows, so it has to be told when
-	// something other than the header itself changed which one that is.
-	_update_secondary_document_list();
-}
-
-bool EditorMainScreen::can_split_view() const {
-	return selected_plugin != nullptr;
-}
-
-int EditorMainScreen::_pick_document_for_second_pane() const {
-	// The scene being worked on, so that splitting gives two views of it and
-	// nothing appears to have gone wrong. Showing a different document is what
-	// the header's picker is for, and it is the more interesting half of the
-	// feature, but it is not what someone asking for a split expects to get.
-	//
-	// Returned as a history id: the pane keeps pointing at that document however
-	// its tab moves, and follows the current one again once it is closed.
-	EditorData &editor_data = EditorNode::get_editor_data();
-	const int count = editor_data.get_edited_scene_count();
-	if (count < 1) {
-		return -1;
-	}
-	return editor_data.get_scene_history_id(editor_data.get_edited_scene());
-}
-
-void EditorMainScreen::_build_secondary_header() {
-	if (secondary_header) {
-		return;
-	}
-
-	secondary_header = memnew(HBoxContainer);
-	secondary_screen_vbox->add_child(secondary_header);
-
-	secondary_document = memnew(OptionButton);
-	secondary_document->set_tooltip_text(TTRC("The scene this pane is showing. It does not have to be the one the tab bar has selected."));
-	secondary_document->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	secondary_document->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
-	// Filled when it is opened rather than kept in step with the tab bar, so
-	// that opening and closing scenes needs no notification to reach here.
-	secondary_document->get_popup()->connect(SNAME("about_to_popup"), callable_mp(this, &EditorMainScreen::_update_secondary_document_list));
-	secondary_document->connect(SceneStringName(item_selected), callable_mp(this, &EditorMainScreen::_secondary_document_selected));
-	secondary_header->add_child(secondary_document);
-
-	Button *close_button = memnew(Button);
-	close_button->set_flat(true);
-	close_button->set_tooltip_text(TTRC("Close this pane."));
-	close_button->set_text(TTRC("Close"));
-	close_button->connect(SceneStringName(pressed), callable_mp(this, &EditorMainScreen::set_split_view_enabled).bind(false));
-	secondary_header->add_child(close_button);
-}
-
-void EditorMainScreen::_update_secondary_document_list() {
-	if (!secondary_document) {
-		return;
-	}
-
-	const int bound = secondary_view ? secondary_view->get_bound_document() : -1;
-	secondary_document->clear();
-
-	EditorData &editor_data = EditorNode::get_editor_data();
-	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
-		const int history_id = editor_data.get_scene_history_id(i);
-		String title = editor_data.get_scene_title(i);
-		if (title.is_empty()) {
-			title = TTR("[unsaved]");
-		}
-		secondary_document->add_item(title, history_id);
-		if (history_id == bound) {
-			secondary_document->select(secondary_document->get_item_count() - 1);
-		}
-	}
-}
-
-void EditorMainScreen::_secondary_document_selected(int p_index) {
-	if (!secondary_view) {
-		return;
-	}
-	secondary_view->bind_document(secondary_document->get_item_id(p_index));
-}
-
-void EditorMainScreen::set_split_view_enabled(bool p_enabled) {
-	if (p_enabled == is_split_view_enabled()) {
-		return;
-	}
-
-	if (!p_enabled) {
-		memdelete(secondary_view);
-		secondary_view = nullptr;
-		secondary_panel_type = StringName();
-		secondary_screen_vbox->hide();
-		// One pane follows the current document again, as it did before there
-		// was anything to hold still for.
-		if (pinned_primary_view) {
-			pinned_primary_view->bind_document(-1);
-			pinned_primary_view = nullptr;
-		}
-		active_view = nullptr;
-		EditorNode::get_singleton()->update_split_view_menu_item();
-		return;
-	}
-
-	ERR_FAIL_NULL_MSG(selected_plugin, "No main screen editor is selected, so there is nothing to show in a second pane.");
-
-	// Through the registry rather than straight to the plugin: a pane asks for a
-	// panel of a named type, and knows nothing about what class answers.
-	secondary_panel_type = selected_plugin->get_main_screen_panel_type();
-	Control *view = secondary_panel_type != StringName() ? EditorPanelRegistry::create_panel(secondary_panel_type) : nullptr;
-	if (!view) {
-		secondary_panel_type = StringName();
-		EditorNode::get_singleton()->show_warning(vformat(TTR("The %s editor cannot be opened a second time yet."), selected_plugin->get_plugin_name()));
-		return;
-	}
-
-	secondary_view = Object::cast_to<EditorDocumentView>(view);
-	if (!secondary_view) {
-		memdelete(view);
-		ERR_FAIL_MSG(vformat("The %s editor returned a second view that is not an EditorDocumentView.", selected_plugin->get_plugin_name()));
-	}
-
-	_build_secondary_header();
-	secondary_screen_vbox->add_child(secondary_view);
-	secondary_screen_vbox->show();
-
-	const EditorPanelRegistry::PanelType *panel_type = EditorPanelRegistry::get_type(secondary_panel_type);
-	if (panel_type && panel_type->binding == EditorPanelRegistry::BINDING_DOCUMENT) {
-		const int document_id = _pick_document_for_second_pane();
-		// The first pane stops following the current document and holds the one
-		// it is showing, or pointing the second pane elsewhere - which makes
-		// that document current - would drag the first pane along with it and
-		// leave both panes showing the same scene.
-		EditorDocumentView *primary_view = selected_plugin->get_main_screen_view();
-		if (primary_view && primary_view->supports_document_binding()) {
-			primary_view->bind_document(document_id);
-			pinned_primary_view = primary_view;
-			// Something has to be what the tab bar acts on, and until the user
-			// works in a pane it is the one that was there first.
-			active_view = primary_view;
-		}
-		EditorPanelRegistry::bind_panel(secondary_panel_type, secondary_view, document_id);
-		secondary_header->show();
-	} else {
-		// Nothing to choose: this view always shows the current scene.
-		secondary_header->hide();
-	}
-	_update_secondary_document_list();
-	EditorNode::get_singleton()->update_split_view_menu_item();
 }
 
 void EditorMainScreen::add_main_plugin(EditorPlugin *p_editor) {
@@ -513,23 +423,17 @@ void EditorMainScreen::remove_main_plugin(EditorPlugin *p_editor) {
 }
 
 EditorMainScreen::EditorMainScreen() {
-	pane_split = memnew(HSplitContainer);
-	pane_split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	add_child(pane_split);
+	pane_tree = memnew(EditorPaneTree);
+	add_child(pane_tree);
+	pane_tree->connect(SNAME("layout_changed"), callable_mp(this, &EditorMainScreen::_panes_changed));
 
 	main_screen_vbox = memnew(VBoxContainer);
 	main_screen_vbox->set_name("MainScreen");
 	main_screen_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	main_screen_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	main_screen_vbox->add_theme_constant_override("separation", 0);
-	pane_split->add_child(main_screen_vbox);
-
-	// Stays hidden, and with it the split dragger, until split view is enabled.
-	secondary_screen_vbox = memnew(VBoxContainer);
-	secondary_screen_vbox->set_name("SecondaryMainScreen");
-	secondary_screen_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	secondary_screen_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	secondary_screen_vbox->add_theme_constant_override("separation", 0);
-	secondary_screen_vbox->hide();
-	pane_split->add_child(secondary_screen_vbox);
+	// The first pane shows it rather than owning it: plugins parent their views
+	// into this Control and addons reach it through EditorInterface, so it is
+	// the same Control it has always been.
+	pane_tree->adopt_main_screen(main_screen_vbox, TTRC("Main Screen"));
 }

@@ -576,6 +576,8 @@ protected:
 	// The document this view edits, held as a history id because tab indices
 	// shift under it; -1 means it follows whichever document is current.
 	int bound_document_id = -1;
+	// Whether this view's own signals have been connected; see the 3D view.
+	bool wired = false;
 	int _bound_document_index() const;
 
 	// The view renders the document's 2D world through a viewport of its own

@@ -35,8 +35,9 @@
 class Button;
 class ConfigFile;
 class EditorDocumentView;
+class EditorPane;
+class EditorPaneTree;
 class EditorPlugin;
-class OptionButton;
 class HBoxContainer;
 class HSplitContainer;
 class VBoxContainer;
@@ -54,26 +55,15 @@ public:
 	};
 
 private:
-	// Main screen views live in panes side by side. Only the first one is
-	// populated until split view is turned on, and the split container then
-	// reveals the second, so a single-pane layout is unaffected.
-	HSplitContainer *pane_split = nullptr;
+	// Panes, arranged by splitting, with no fixed number of them. The first one
+	// holds the main screen itself, which plugins parent their views into and
+	// addons reach through EditorInterface, so that Control is unchanged and
+	// simply lives in a pane like anything else.
+	EditorPaneTree *pane_tree = nullptr;
 	VBoxContainer *main_screen_vbox = nullptr;
-	VBoxContainer *secondary_screen_vbox = nullptr;
 
 	EditorPlugin *selected_plugin = nullptr;
 
-	// The view filling the second pane, owned here. Null whenever the layout is
-	// a single pane, which is what keeps that case exactly as it was.
-	EditorDocumentView *secondary_view = nullptr;
-	// Which registered type it is, which is what points it at a document and
-	// what a saved layout would record instead of a class.
-	StringName secondary_panel_type;
-	// The beginnings of the pane header: it says which document the pane is
-	// showing, which a pane that can show something other than the current
-	// scene has to, and lets that be changed.
-	HBoxContainer *secondary_header = nullptr;
-	OptionButton *secondary_document = nullptr;
 
 	// The pane the user last worked in. It is what the Scene tree, the Inspector
 	// and the selection follow, by way of the document it is bound to becoming
@@ -88,10 +78,7 @@ private:
 	// rather than looked up: which plugin is selected can change under it.
 	EditorDocumentView *pinned_primary_view = nullptr;
 
-	int _pick_document_for_second_pane() const;
-	void _build_secondary_header();
-	void _update_secondary_document_list();
-	void _secondary_document_selected(int p_index);
+	void _panes_changed();
 
 	HBoxContainer *button_hb = nullptr;
 	Vector<Button *> buttons;
@@ -125,7 +112,7 @@ public:
 	// The container main screen plugins parent their view into. This is the
 	// first pane; addons keep reaching it through EditorInterface unchanged.
 	VBoxContainer *get_control() const;
-	VBoxContainer *get_secondary_control() const;
+	EditorPaneTree *get_pane_tree() const { return pane_tree; }
 
 	// Splitting shows a second view of the plugin currently selected, pointed
 	// at another open scene, so two documents are edited side by side. Plugins
@@ -138,8 +125,10 @@ public:
 	// above all: the pane being worked in follows it.
 	void current_document_changed();
 
+	// Splitting puts a second pane beside the first. Which panel it shows and
+	// what that panel is pointed at are the pane's own business from then on.
 	void set_split_view_enabled(bool p_enabled);
-	bool is_split_view_enabled() const { return secondary_view != nullptr; }
+	bool is_split_view_enabled() const;
 	bool can_split_view() const;
 
 	void add_main_plugin(EditorPlugin *p_editor);
