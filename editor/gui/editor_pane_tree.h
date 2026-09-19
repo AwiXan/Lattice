@@ -69,10 +69,19 @@ public:
 	Vector<EditorPane *> get_panes() const;
 
 	// Splits a pane in two, side by side or one above the other, and returns the
-	// pane that appeared. The new pane starts on the same panel as the one it
-	// was split from, which is what makes splitting a way to compare rather than
-	// a way to lose your place.
-	EditorPane *split_pane(EditorPane *p_pane, bool p_vertical);
+	// pane that appeared. p_before puts the new pane first, which is what a drop
+	// on the left or top edge means. Filled, it starts on the same panel as the
+	// pane it was split from, so splitting is a way to compare rather than a way
+	// to lose your place; empty, it is about to be given something.
+	EditorPane *split_pane(EditorPane *p_pane, bool p_vertical, bool p_before = false, bool p_fill = true);
+
+	// Splits p_target and moves a panel of p_source into the pane that appears.
+	// This is what dropping a tab on the edge of a pane does.
+	EditorPane *split_with_panel(EditorPane *p_target, bool p_vertical, bool p_before, EditorPane *p_source, int p_panel_index);
+
+	// Closes any pane left holding nothing. A pane that has just given its last
+	// panel away has no reason to take up room.
+	void drop_empty_panes();
 	// Closes a pane; its sibling takes the space back. Refuses to close the last.
 	void close_pane(EditorPane *p_pane);
 

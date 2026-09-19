@@ -33,8 +33,12 @@
 #include "core/object/callable_mp.h"
 #include "editor/editor_data.h"
 #include "editor/editor_node.h"
+#include "editor/editor_string_names.h"
+#include "editor/gui/editor_pane_tree.h"
 #include "scene/gui/button.h"
+#include "scene/gui/label.h"
 #include "scene/gui/option_button.h"
+#include "scene/gui/panel.h"
 #include "scene/gui/tab_bar.h"
 
 void EditorPane::_bind_methods() {
@@ -52,6 +56,12 @@ void EditorPane::_build_header() {
 	tab_bar->set_tab_close_display_policy(TabBar::CLOSE_BUTTON_SHOW_ACTIVE_ONLY);
 	tab_bar->connect(SNAME("tab_selected"), callable_mp(this, &EditorPane::_tab_selected));
 	tab_bar->connect(SNAME("tab_close_pressed"), callable_mp(this, &EditorPane::_tab_close_pressed));
+	// Dragging a tab is how a panel is moved, split off or torn out. The bar
+	// forwards to this pane, which is the thing that knows what a tab means.
+	tab_bar->set_drag_forwarding(
+			callable_mp(this, &EditorPane::_tab_get_drag_data_fw).bind(tab_bar),
+			callable_mp(this, &EditorPane::_tab_can_drop_data_fw).bind(tab_bar),
+			callable_mp(this, &EditorPane::_tab_drop_data_fw).bind(tab_bar));
 	header->add_child(tab_bar);
 
 	add_button = memnew(OptionButton);
@@ -367,6 +377,256 @@ Control *EditorPane::release_adopted_panel() {
 		return released;
 	}
 	return nullptr;
+}
+
+EditorPaneTree *EditorPane::_get_pane_tree() const {
+	for (Node *n = get_parent(); n; n = n->get_parent()) {
+		EditorPaneTree *tree = Object::cast_to<EditorPaneTree>(n);
+		if (tree) {
+			return tree;
+		}
+	}
+	return nullptr;
+}
+
+EditorPane *EditorPane::_dragged_panel(const Variant &p_data, int *r_index) {
+	if (p_data.get_type() != Variant::DICTIONARY) {
+		return nullptr;
+	}
+	const Dictionary data = p_data;
+	if (String(data.get("type", "")) != "editor_pane_panel") {
+		return nullptr;
+	}
+	EditorPane *pane = ObjectDB::get_instance<EditorPane>(ObjectID((uint64_t)(int64_t)data.get("pane", 0)));
+	if (!pane) {
+		return nullptr;
+	}
+	const int index = data.get("index", -1);
+	if (index < 0 || index >= pane->get_panel_count()) {
+		return nullptr;
+	}
+	if (r_index) {
+		*r_index = index;
+	}
+	return pane;
+}
+
+EditorPane::DropZone EditorPane::get_drop_zone_at(const Point2 &p_point) const {
+	const Size2 size = get_size();
+	if (size.x <= 0 || size.y <= 0) {
+		return DROP_INTO;
+	}
+	// A quarter of each side, and no more than a comfortable band, so that a
+	// large pane does not become mostly edge.
+	const real_t band_x = MIN(size.x * 0.25, 120.0);
+	const real_t band_y = MIN(size.y * 0.25, 120.0);
+
+	// Whichever edge is nearest, if any is near enough.
+	const real_t left = p_point.x;
+	const real_t right = size.x - p_point.x;
+	const real_t top = p_point.y;
+	const real_t bottom = size.y - p_point.y;
+
+	real_t best = MIN(MIN(left, right), MIN(top, bottom));
+	if (best == left && left < band_x) {
+		return DROP_LEFT;
+	}
+	if (best == right && right < band_x) {
+		return DROP_RIGHT;
+	}
+	if (best == top && top < band_y) {
+		return DROP_TOP;
+	}
+	if (best == bottom && bottom < band_y) {
+		return DROP_BOTTOM;
+	}
+	return DROP_INTO;
+}
+
+Variant EditorPane::_tab_get_drag_data_fw(const Point2 &p_point, Control *p_from) {
+	const int index = tab_bar->get_tab_idx_at_point(p_point);
+	if (index < 0 || index >= panels.size() || panels[index].adopted) {
+		// The editor's main screen stays where it is.
+		return Variant();
+	}
+
+	Dictionary data;
+	data["type"] = "editor_pane_panel";
+	data["pane"] = (int64_t)get_instance_id();
+	data["index"] = index;
+
+	// Something to see while it is in the air.
+	Panel *preview = memnew(Panel);
+	Label *label = memnew(Label);
+	label->set_text(_title_of(panels[index]));
+	preview->add_child(label);
+	label->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+	set_drag_preview(preview);
+
+	return data;
+}
+
+bool EditorPane::_tab_can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const {
+	int index = -1;
+	EditorPane *source = _dragged_panel(p_data, &index);
+	return source && !(source == this && tab_bar->get_tab_idx_at_point(p_point) == index);
+}
+
+void EditorPane::_tab_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) {
+	int index = -1;
+	EditorPane *source = _dragged_panel(p_data, &index);
+	if (!source) {
+		return;
+	}
+	// Where along the bar it was let go, so a tab can be put in order rather
+	// than only appended.
+	int at = tab_bar->get_tab_idx_at_point(p_point);
+	if (at < 0) {
+		at = panels.size();
+	}
+	_accept_drop(p_data, DROP_INTO, at);
+}
+
+bool EditorPane::can_drop_data(const Point2 &p_point, const Variant &p_data) const {
+	int index = -1;
+	EditorPane *source = _dragged_panel(p_data, &index);
+	if (!source) {
+		drop_zone = DROP_NONE;
+		return false;
+	}
+	const DropZone zone = get_drop_zone_at(p_point);
+	// Dropping a pane's only panel back into the same pane changes nothing.
+	if (source == this && zone == DROP_INTO) {
+		drop_zone = DROP_NONE;
+		return false;
+	}
+	if (zone != drop_zone) {
+		drop_zone = zone;
+		const_cast<EditorPane *>(this)->queue_redraw();
+	}
+	return true;
+}
+
+void EditorPane::drop_data(const Point2 &p_point, const Variant &p_data) {
+	int index = -1;
+	EditorPane *source = _dragged_panel(p_data, &index);
+	const DropZone zone = get_drop_zone_at(p_point);
+	drop_zone = DROP_NONE;
+	queue_redraw();
+	if (!source) {
+		return;
+	}
+	_accept_drop(p_data, zone, -1);
+}
+
+bool EditorPane::_accept_drop(const Variant &p_data, DropZone p_zone, int p_tab_index) {
+	int index = -1;
+	EditorPane *source = _dragged_panel(p_data, &index);
+	if (!source) {
+		return false;
+	}
+
+	if (p_zone == DROP_INTO) {
+		const bool moved = source->transfer_panel_to(this, index, p_tab_index);
+		EditorPaneTree *tree = _get_pane_tree();
+		if (tree) {
+			tree->drop_empty_panes();
+		}
+		return moved;
+	}
+
+	EditorPaneTree *tree = _get_pane_tree();
+	if (!tree) {
+		return false;
+	}
+	const bool vertical = p_zone == DROP_TOP || p_zone == DROP_BOTTOM;
+	const bool before = p_zone == DROP_LEFT || p_zone == DROP_TOP;
+	return tree->split_with_panel(this, vertical, before, source, index) != nullptr;
+}
+
+void EditorPane::_notification(int p_what) {
+	switch (p_what) {
+		case NOTIFICATION_DRAG_END: {
+			if (drop_zone != DROP_NONE) {
+				drop_zone = DROP_NONE;
+				queue_redraw();
+			}
+		} break;
+
+		case NOTIFICATION_DRAW: {
+			if (drop_zone == DROP_NONE) {
+				break;
+			}
+			const Size2 size = get_size();
+			Rect2 hint(Vector2(), size);
+			switch (drop_zone) {
+				case DROP_LEFT:
+					hint.size.x *= 0.5;
+					break;
+				case DROP_RIGHT:
+					hint.position.x = size.x * 0.5;
+					hint.size.x *= 0.5;
+					break;
+				case DROP_TOP:
+					hint.size.y *= 0.5;
+					break;
+				case DROP_BOTTOM:
+					hint.position.y = size.y * 0.5;
+					hint.size.y *= 0.5;
+					break;
+				default:
+					break;
+			}
+			// From the editor's own base: a colour looked up here would be wrong
+			// for a pane that is between parents.
+			Color accent = EditorNode::get_singleton()->get_gui_base()->get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
+			accent.a = 0.25;
+			draw_rect(hint, accent);
+			accent.a = 0.8;
+			draw_rect(hint, accent, false, 2.0);
+		} break;
+	}
+}
+
+bool EditorPane::transfer_panel_to(EditorPane *p_target, int p_index, int p_target_index) {
+	ERR_FAIL_NULL_V(p_target, false);
+	ERR_FAIL_INDEX_V(p_index, panels.size(), false);
+	if (p_target == this && (p_target_index == p_index || p_target_index < 0)) {
+		return false;
+	}
+	// The editor's main screen stays where it is: too much reaches it by name
+	// for it to wander.
+	if (panels[p_index].adopted) {
+		return false;
+	}
+
+	PanelEntry entry = panels[p_index];
+	panels.remove_at(p_index);
+	if (entry.control && entry.control->get_parent() == this) {
+		remove_child(entry.control);
+	}
+	if (panels.is_empty()) {
+		current = -1;
+	} else {
+		current = CLAMP(current >= p_index ? current - 1 : current, 0, panels.size() - 1);
+	}
+	_show_only_current();
+	_update_tabs();
+
+	const int at = (p_target_index < 0 || p_target_index > p_target->panels.size()) ? p_target->panels.size() : p_target_index;
+	if (entry.control) {
+		p_target->add_child(entry.control);
+	}
+	p_target->panels.insert(at, entry);
+	p_target->current = at;
+	p_target->_show_only_current();
+	p_target->_update_tabs();
+
+	emit_signal(SNAME("panels_changed"));
+	if (p_target != this) {
+		p_target->emit_signal(SNAME("panels_changed"));
+	}
+	return true;
 }
 
 void EditorPane::set_closable(bool p_closable) {

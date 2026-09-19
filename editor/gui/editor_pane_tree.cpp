@@ -77,7 +77,7 @@ void EditorPaneTree::_update_closable() {
 	}
 }
 
-EditorPane *EditorPaneTree::split_pane(EditorPane *p_pane, bool p_vertical) {
+EditorPane *EditorPaneTree::split_pane(EditorPane *p_pane, bool p_vertical, bool p_before, bool p_fill) {
 	ERR_FAIL_NULL_V(p_pane, nullptr);
 
 	Node *parent = p_pane->get_parent();
@@ -96,20 +96,27 @@ EditorPane *EditorPaneTree::split_pane(EditorPane *p_pane, bool p_vertical) {
 	parent->remove_child(p_pane);
 	parent->add_child(split);
 	parent->move_child(split, index);
-	split->add_child(p_pane);
-	split->add_child(new_pane);
+	if (p_before) {
+		split->add_child(new_pane);
+		split->add_child(p_pane);
+	} else {
+		split->add_child(p_pane);
+		split->add_child(new_pane);
+	}
 
 	if (root == p_pane) {
 		root = split;
 	}
 
-	// Starting on whatever it was split from, so splitting is a way to compare
-	// rather than a way to lose your place. A pane showing something the editor
-	// owns cannot be copied, so the new one starts on the scene tree.
-	if (p_pane->get_panel_type() != StringName()) {
-		new_pane->set_panel_type(p_pane->get_panel_type(), p_pane->get_panel_subject());
-	} else if (EditorPanelRegistry::has_type("scene_tree")) {
-		new_pane->set_panel_type("scene_tree");
+	if (p_fill) {
+		// Starting on whatever it was split from, so splitting is a way to
+		// compare rather than a way to lose your place. A pane showing something
+		// the editor owns cannot be copied, so the new one starts on the tree.
+		if (p_pane->get_panel_type() != StringName()) {
+			new_pane->set_panel_type(p_pane->get_panel_type(), p_pane->get_panel_subject());
+		} else if (EditorPanelRegistry::has_type("scene_tree")) {
+			new_pane->set_panel_type("scene_tree");
+		}
 	}
 
 	_update_closable();
@@ -126,6 +133,41 @@ void EditorPaneTree::_wire_pane(EditorPane *p_pane) {
 
 void EditorPaneTree::_pane_split_requested(bool p_vertical, EditorPane *p_pane) {
 	split_pane(p_pane, p_vertical);
+}
+
+EditorPane *EditorPaneTree::split_with_panel(EditorPane *p_target, bool p_vertical, bool p_before, EditorPane *p_source, int p_panel_index) {
+	ERR_FAIL_NULL_V(p_target, nullptr);
+	ERR_FAIL_NULL_V(p_source, nullptr);
+
+	EditorPane *fresh = split_pane(p_target, p_vertical, p_before, false);
+	if (!fresh) {
+		return nullptr;
+	}
+	if (!p_source->transfer_panel_to(fresh, p_panel_index)) {
+		// Nothing moved - the main screen refuses to wander - so the pane that
+		// was made for it goes again.
+		close_pane(fresh);
+		return nullptr;
+	}
+	drop_empty_panes();
+	emit_signal(SNAME("layout_changed"));
+	return fresh;
+}
+
+void EditorPaneTree::drop_empty_panes() {
+	// Repeated, because closing one collapses a split and can leave the next
+	// one somewhere else in the tree.
+	bool again = true;
+	while (again) {
+		again = false;
+		for (EditorPane *pane : get_panes()) {
+			if (pane->get_panel_count() == 0 && get_panes().size() > 1) {
+				close_pane(pane);
+				again = true;
+				break;
+			}
+		}
+	}
 }
 
 void EditorPaneTree::_collapse_split(SplitContainer *p_split, Control *p_survivor) {

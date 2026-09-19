@@ -35,6 +35,7 @@
 
 class Button;
 class Control;
+class EditorPaneTree;
 class OptionButton;
 class TabBar;
 
@@ -53,6 +54,23 @@ class TabBar;
 // lives in a pane like everything else.
 class EditorPane : public VBoxContainer {
 	GDCLASS(EditorPane, VBoxContainer);
+
+public:
+	// Where a tab being dragged would land if it were let go at a point. Which
+	// one it is decides between moving the panel into this pane and splitting
+	// this pane to make room for it.
+	enum DropZone {
+		DROP_NONE,
+		DROP_INTO,
+		DROP_LEFT,
+		DROP_RIGHT,
+		DROP_TOP,
+		DROP_BOTTOM,
+	};
+
+	DropZone get_drop_zone_at(const Point2 &p_point) const;
+
+private:
 
 	struct PanelEntry {
 		StringName type;
@@ -77,6 +95,10 @@ class EditorPane : public VBoxContainer {
 	// first tab selects it - which would overwrite the panel actually chosen.
 	bool rebuilding_tabs = false;
 
+	// Written while answering whether a drop is possible, which is the only
+	// moment the position is known, and read while drawing the hint.
+	mutable DropZone drop_zone = DROP_NONE;
+
 	void _build_header();
 	void _update_tabs();
 	void _update_add_list();
@@ -90,8 +112,24 @@ class EditorPane : public VBoxContainer {
 	String _title_of(const PanelEntry &p_entry) const;
 	void _show_only_current();
 
+	EditorPaneTree *_get_pane_tree() const;
+	// The pane and panel a drag is carrying, or null if it is carrying something
+	// else entirely - a node, a file, anything the editor drags about.
+	static EditorPane *_dragged_panel(const Variant &p_data, int *r_index);
+	bool _accept_drop(const Variant &p_data, DropZone p_zone, int p_tab_index);
+
+	Variant _tab_get_drag_data_fw(const Point2 &p_point, Control *p_from);
+	bool _tab_can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const;
+	void _tab_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from);
+
 protected:
+	void _notification(int p_what);
 	static void _bind_methods();
+
+	// A tab dropped on the body of a pane: into it, or beside it if let go near
+	// an edge. The tab bar has its own, which inserts at a position instead.
+	virtual bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override;
+	virtual void drop_data(const Point2 &p_point, const Variant &p_data) override;
 
 public:
 	// Adds a panel of a registered type, pointed at p_subject - a document's
@@ -130,6 +168,11 @@ public:
 	// Hands the adopted Control back, so that replacing the whole arrangement
 	// does not destroy the editor's main screen along with it.
 	Control *release_adopted_panel();
+
+	// Hands a panel over to another pane, Control and all. Nothing is rebuilt,
+	// so what moves keeps its camera, its scroll and what it had selected - the
+	// difference between moving a thing and making another one like it.
+	bool transfer_panel_to(EditorPane *p_target, int p_index, int p_target_index = -1);
 
 	// Whether this pane offers to be closed. The last one does not.
 	void set_closable(bool p_closable);
