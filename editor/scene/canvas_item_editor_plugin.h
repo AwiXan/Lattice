@@ -702,6 +702,7 @@ public:
 	virtual String get_plugin_name() const override { return TTRC("2D"); }
 	bool has_main_screen() const override { return true; }
 	virtual Control *create_main_screen_view() override;
+	virtual StringName get_main_screen_panel_type() const override { return "view_2d"; }
 	virtual EditorDocumentView *get_main_screen_view() override { return canvas_item_editor; }
 	virtual void edit(Object *p_object) override;
 	virtual bool handles(Object *p_object) const override;

@@ -261,6 +261,11 @@ public:
 	// The root of the document this tree shows.
 	Node *get_scene_node() const;
 
+	// What the panel type registers: a tree wired to the editor's selection,
+	// and the way to point one at a document.
+	static Control *create_panel();
+	static void bind_panel(Control *p_panel, int p_document_id);
+
 	void set_show_enabled_subscene(bool p_show) { show_enabled_subscene = p_show; }
 	void set_valid_types(const Vector<StringName> &p_valid);
 	void clear_cache();

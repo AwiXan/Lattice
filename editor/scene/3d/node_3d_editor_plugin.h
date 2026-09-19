@@ -1182,6 +1182,7 @@ public:
 	virtual String get_plugin_name() const override { return TTRC("3D"); }
 	bool has_main_screen() const override { return true; }
 	virtual Control *create_main_screen_view() override;
+	virtual StringName get_main_screen_panel_type() const override { return "view_3d"; }
 	virtual EditorDocumentView *get_main_screen_view() override { return spatial_editor; }
 	virtual void make_visible(bool p_visible) override;
 	virtual void edit(Object *p_object) override;

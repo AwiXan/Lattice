@@ -66,6 +66,9 @@ private:
 	// The view filling the second pane, owned here. Null whenever the layout is
 	// a single pane, which is what keeps that case exactly as it was.
 	EditorDocumentView *secondary_view = nullptr;
+	// Which registered type it is, which is what points it at a document and
+	// what a saved layout would record instead of a class.
+	StringName secondary_panel_type;
 	// The beginnings of the pane header: it says which document the pane is
 	// showing, which a pane that can show something other than the current
 	// scene has to, and lets that be changed.

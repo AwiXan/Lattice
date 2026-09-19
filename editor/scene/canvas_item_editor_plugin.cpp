@@ -42,6 +42,7 @@
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_main_screen.h"
+#include "editor/editor_panel_registry.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
@@ -6359,6 +6360,17 @@ void CanvasItemEditorPlugin::_notification(int p_what) {
 }
 
 CanvasItemEditorPlugin::CanvasItemEditorPlugin() {
+	{
+		EditorPanelRegistry::PanelType type;
+		type.id = "view_2d";
+		type.title = TTRC("2D");
+		type.icon = "Node2D";
+		type.binding = EditorPanelRegistry::BINDING_DOCUMENT;
+		type.create = callable_mp(this, &CanvasItemEditorPlugin::create_main_screen_view);
+		type.bind = callable_mp_static(&EditorDocumentView::bind_panel);
+		EditorPanelRegistry::register_type(type);
+	}
+
 	canvas_item_editor = memnew(CanvasItemEditor);
 	canvas_item_editor->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	EditorNode::get_singleton()->get_editor_main_screen()->get_control()->add_child(canvas_item_editor);

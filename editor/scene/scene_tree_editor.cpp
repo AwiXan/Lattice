@@ -71,6 +71,19 @@ Node *SceneTreeEditor::get_scene_node() const {
 	return editor_data.get_edited_scene_root(editor_data.get_scene_index_by_history_id(bound_document_id));
 }
 
+Control *SceneTreeEditor::create_panel() {
+	SceneTreeEditor *tree = memnew(SceneTreeEditor(false, true, true));
+	tree->set_editor_selection(EditorNode::get_singleton()->get_editor_selection());
+	return tree;
+}
+
+void SceneTreeEditor::bind_panel(Control *p_panel, int p_document_id) {
+	SceneTreeEditor *tree = Object::cast_to<SceneTreeEditor>(p_panel);
+	if (tree) {
+		tree->bind_document(p_document_id);
+	}
+}
+
 void SceneTreeEditor::bind_document(int p_document_id) {
 	if (bound_document_id == p_document_id) {
 		return;

@@ -64,6 +64,8 @@
 #include "editor/docks/import_dock.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
+#include "editor/editor_panel_registry.h"
+#include "editor/scene/scene_tree_editor.h"
 #include "editor/docks/signals_dock.h"
 #include "editor/editor_data.h"
 #include "editor/editor_interface.h"
@@ -8957,6 +8959,19 @@ EditorNode::EditorNode() {
 	// them and parents them under the editor. The first one is opened right
 	// away: plugins are built below and they ask for the scene root, which only
 	// exists once a document does.
+	{
+		// The Scene tree is a panel like any other, and nothing that places one
+		// needs to know which class it is.
+		EditorPanelRegistry::PanelType type;
+		type.id = "scene_tree";
+		type.title = TTRC("Scene");
+		type.icon = "PackedScene";
+		type.binding = EditorPanelRegistry::BINDING_DOCUMENT;
+		type.create = callable_mp_static(&SceneTreeEditor::create_panel);
+		type.bind = callable_mp_static(&SceneTreeEditor::bind_panel);
+		EditorPanelRegistry::register_type(type);
+	}
+
 	editor_data.set_scene_root_host(this);
 	editor_data.add_edited_scene(-1);
 	editor_data.set_edited_scene(0);
@@ -9719,6 +9734,9 @@ EditorNode::EditorNode() {
 }
 
 EditorNode::~EditorNode() {
+	// The types hold callables that hold the plugins, and those are going away.
+	EditorPanelRegistry::cleanup();
+
 	EditorInspector::cleanup_plugins();
 	EditorTranslationParser::get_singleton()->clean_parsers();
 	ResourceImporterScene::clean_up_importer_plugins();

@@ -34,6 +34,7 @@
 #include "core/object/callable_mp.h"
 #include "editor/editor_document_view.h"
 #include "editor/editor_node.h"
+#include "editor/editor_panel_registry.h"
 #include "editor/editor_string_names.h"
 #include "editor/plugins/editor_plugin.h"
 #include "editor/settings/editor_settings.h"
@@ -394,6 +395,7 @@ void EditorMainScreen::set_split_view_enabled(bool p_enabled) {
 	if (!p_enabled) {
 		memdelete(secondary_view);
 		secondary_view = nullptr;
+		secondary_panel_type = StringName();
 		secondary_screen_vbox->hide();
 		// One pane follows the current document again, as it did before there
 		// was anything to hold still for.
@@ -408,8 +410,12 @@ void EditorMainScreen::set_split_view_enabled(bool p_enabled) {
 
 	ERR_FAIL_NULL_MSG(selected_plugin, "No main screen editor is selected, so there is nothing to show in a second pane.");
 
-	Control *view = selected_plugin->create_main_screen_view();
+	// Through the registry rather than straight to the plugin: a pane asks for a
+	// panel of a named type, and knows nothing about what class answers.
+	secondary_panel_type = selected_plugin->get_main_screen_panel_type();
+	Control *view = secondary_panel_type != StringName() ? EditorPanelRegistry::create_panel(secondary_panel_type) : nullptr;
 	if (!view) {
+		secondary_panel_type = StringName();
 		EditorNode::get_singleton()->show_warning(vformat(TTR("The %s editor cannot be opened a second time yet."), selected_plugin->get_plugin_name()));
 		return;
 	}
@@ -424,7 +430,8 @@ void EditorMainScreen::set_split_view_enabled(bool p_enabled) {
 	secondary_screen_vbox->add_child(secondary_view);
 	secondary_screen_vbox->show();
 
-	if (secondary_view->supports_document_binding()) {
+	const EditorPanelRegistry::PanelType *panel_type = EditorPanelRegistry::get_type(secondary_panel_type);
+	if (panel_type && panel_type->binding == EditorPanelRegistry::BINDING_DOCUMENT) {
 		const int document_id = _pick_document_for_second_pane();
 		// The first pane stops following the current document and holds the one
 		// it is showing, or pointing the second pane elsewhere - which makes
@@ -438,7 +445,7 @@ void EditorMainScreen::set_split_view_enabled(bool p_enabled) {
 			// works in a pane it is the one that was there first.
 			active_view = primary_view;
 		}
-		secondary_view->bind_document(document_id);
+		EditorPanelRegistry::bind_panel(secondary_panel_type, secondary_view, document_id);
 		secondary_header->show();
 	} else {
 		// Nothing to choose: this view always shows the current scene.

@@ -204,6 +204,9 @@ public:
 	// owns it from then on. Plugins that can only exist once return nullptr,
 	// which is what leaves a single-pane layout and existing addons untouched.
 	virtual Control *create_main_screen_view() { return nullptr; }
+	// The registered panel type this plugin's main screen is, so that whatever
+	// arranges panels can ask for another one without knowing the plugin.
+	virtual StringName get_main_screen_panel_type() const { return StringName(); }
 	// The view this plugin put in the first pane, when it is one that can be
 	// bound to a document. Null for plugins whose main screen is not.
 	virtual EditorDocumentView *get_main_screen_view() { return nullptr; }

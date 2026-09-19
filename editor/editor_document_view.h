@@ -51,4 +51,13 @@ public:
 	// Whether this view can be pointed at a document other than the current
 	// one. A view that says no still works in a pane; it just follows along.
 	virtual bool supports_document_binding() const { return false; }
+
+	// What a panel type registers as its binder: every view of this kind is
+	// pointed at a document the same way, so none of them has to say how.
+	static void bind_panel(Control *p_panel, int p_document_id) {
+		EditorDocumentView *view = Object::cast_to<EditorDocumentView>(p_panel);
+		if (view) {
+			view->bind_document(p_document_id);
+		}
+	}
 };

@@ -47,6 +47,7 @@
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
+#include "editor/editor_panel_registry.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/gui/editor_spin_slider.h"
@@ -5103,6 +5104,12 @@ void Node3DEditorViewport::switch_preview_camera(Camera3D *p_new_camera) {
 
 void Node3DEditorViewport::update_transform_gizmo_view() {
 	if (!is_visible_in_tree()) {
+		return;
+	}
+	// A view built this frame has not finished entering the tree: its camera
+	// cannot unproject yet and its manipulator instances do not exist. Panels
+	// are built on demand now, so this is reachable rather than theoretical.
+	if (!camera->is_inside_tree() || !move_gizmo_instance[0].is_valid()) {
 		return;
 	}
 
@@ -11959,6 +11966,19 @@ Vector<Node3D *> Node3DEditor::gizmo_bvh_frustum_query(const Vector<Plane> &p_fr
 }
 
 Node3DEditorPlugin::Node3DEditorPlugin() {
+	{
+		// Named once here, built by anything that arranges panels. Nothing that
+		// places a 3D view has to know this class exists.
+		EditorPanelRegistry::PanelType type;
+		type.id = "view_3d";
+		type.title = TTRC("3D");
+		type.icon = "Node3D";
+		type.binding = EditorPanelRegistry::BINDING_DOCUMENT;
+		type.create = callable_mp(this, &Node3DEditorPlugin::create_main_screen_view);
+		type.bind = callable_mp_static(&EditorDocumentView::bind_panel);
+		EditorPanelRegistry::register_type(type);
+	}
+
 	spatial_editor = memnew(Node3DEditor);
 	spatial_editor->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	EditorNode::get_singleton()->get_editor_main_screen()->get_control()->add_child(spatial_editor);
