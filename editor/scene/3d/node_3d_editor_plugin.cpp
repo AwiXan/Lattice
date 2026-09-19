@@ -11689,11 +11689,42 @@ bool Node3DEditorPlugin::handles(Object *p_object) const {
 }
 
 Dictionary Node3DEditorPlugin::get_state() const {
-	return spatial_editor->get_state();
+	Node3DEditor *view = _view_following_current_document();
+	if (view) {
+		return view->get_state();
+	}
+	// No view is following the current document, so none of them has anything to
+	// say about it. Repeat what was said last time rather than dropping the
+	// camera positions the document remembers.
+	EditorData &editor_data = EditorNode::get_editor_data();
+	const int idx = editor_data.get_edited_scene();
+	if (idx >= 0 && idx < editor_data.get_edited_scene_count()) {
+		const Dictionary states = editor_data.get_scene_editor_states(idx);
+		if (states.has(get_plugin_name())) {
+			return states[get_plugin_name()];
+		}
+	}
+	return Dictionary();
+}
+
+Node3DEditor *Node3DEditorPlugin::_view_following_current_document() const {
+	for (Node3DEditor *editor : Node3DEditor::get_instances()) {
+		if (editor->get_bound_document() < 0) {
+			return editor;
+		}
+	}
+	return nullptr;
 }
 
 void Node3DEditorPlugin::set_state(const Dictionary &p_state) {
-	spatial_editor->set_state(p_state);
+	// A document's saved state carries the camera positions it was last looked
+	// at from. Handing them to a view that is held to a document of its own
+	// moves a camera nobody touched, because some other pane changed which
+	// document is current - which is what made the first pane's camera jump.
+	Node3DEditor *view = _view_following_current_document();
+	if (view) {
+		view->set_state(p_state);
+	}
 }
 
 Size2i Node3DEditor::get_camera_viewport_size(Camera3D *p_camera) {

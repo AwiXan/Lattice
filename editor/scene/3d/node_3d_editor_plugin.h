@@ -1187,6 +1187,10 @@ public:
 
 	virtual Dictionary get_state() const override;
 	virtual void set_state(const Dictionary &p_state) override;
+	// The view whose camera belongs to the current document, if any. Only a view
+	// that follows the current document swaps scenes when the tab bar moves, so
+	// only that one has a camera the document can claim.
+	Node3DEditor *_view_following_current_document() const;
 	virtual void clear() override { spatial_editor->clear(); }
 
 	virtual void edited_scene_changed() override;
