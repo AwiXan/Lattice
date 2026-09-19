@@ -325,6 +325,7 @@ class EditorSelection : public Object {
 	DocumentSelection *_find_document_of(const Node *p_node);
 	Object *_get_node_meta(Node *p_node);
 	List<Node *> _top_selected_of(DocumentSelection &p_document);
+	void _clear_document(DocumentSelection &p_document);
 	void _update_node_list(DocumentSelection &p_document);
 	void _emit_change();
 
@@ -364,6 +365,9 @@ public:
 	// lets two panes show their own selections at once.
 	HashMap<ObjectID, Object *> &get_selection_for(const Node *p_document_root);
 	List<Node *> get_top_selected_node_list_for(const Node *p_document_root);
+	// Clears what is selected in one document, leaving the others alone. A view
+	// of a document clears what it shows, not what some other pane shows.
+	void clear_for(const Node *p_document_root);
 	// Everything selected in one document, dropped when it is closed.
 	void clear_document(const Node *p_document_root);
 

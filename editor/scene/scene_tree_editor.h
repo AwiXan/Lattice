@@ -46,6 +46,11 @@ class SceneTreeEditor : public Control {
 
 	EditorSelection *editor_selection = nullptr;
 
+	// The document this tree shows, held as a history id because tab indices
+	// shift under it; -1 means it follows whichever document is current, which
+	// is what the Scene dock has always done.
+	int bound_document_id = -1;
+
 	enum SceneTreeEditorButton {
 		BUTTON_SUBSCENE = 0,
 		BUTTON_VISIBILITY = 1,
@@ -205,7 +210,7 @@ class SceneTreeEditor : public Control {
 	void _tree_scroll_to_item(ObjectID p_item_id);
 
 	void _selection_changed();
-	Node *get_scene_node() const;
+
 
 	Variant get_drag_data_fw(const Point2 &p_point, Control *p_from);
 	bool can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const;
@@ -248,6 +253,13 @@ public:
 	Node *get_selected();
 	void set_can_rename(bool p_can_rename) { can_rename = p_can_rename; }
 	void set_editor_selection(EditorSelection *p_selection);
+
+	// Points this tree at one open document instead of at whichever is current,
+	// which is what a pane holding a tree of its own sets.
+	void bind_document(int p_document_id);
+	int get_bound_document() const { return bound_document_id; }
+	// The root of the document this tree shows.
+	Node *get_scene_node() const;
 
 	void set_show_enabled_subscene(bool p_show) { show_enabled_subscene = p_show; }
 	void set_valid_types(const Vector<StringName> &p_valid);

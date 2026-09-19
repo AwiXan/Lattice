@@ -62,7 +62,23 @@
 Node *SceneTreeEditor::get_scene_node() const {
 	ERR_FAIL_COND_V(!is_inside_tree(), nullptr);
 
-	return get_tree()->get_edited_scene_root();
+	if (bound_document_id < 0) {
+		return get_tree()->get_edited_scene_root();
+	}
+	// A tree whose document was closed shows the current one again rather than
+	// going blank: get_edited_scene_root(-1) is exactly that.
+	EditorData &editor_data = EditorNode::get_editor_data();
+	return editor_data.get_edited_scene_root(editor_data.get_scene_index_by_history_id(bound_document_id));
+}
+
+void SceneTreeEditor::bind_document(int p_document_id) {
+	if (bound_document_id == p_document_id) {
+		return;
+	}
+	bound_document_id = p_document_id;
+	if (is_inside_tree()) {
+		update_tree();
+	}
 }
 
 PackedStringArray SceneTreeEditor::_get_node_configuration_warnings(Node *p_node) {
@@ -127,7 +143,7 @@ void SceneTreeEditor::_cell_button_pressed(Object *p_item, int p_column, int p_i
 	} else if (p_id == BUTTON_VISIBILITY) {
 		undo_redo->create_action(TTR("Toggle Visible"));
 		_toggle_visible(n);
-		List<Node *> selection = editor_selection->get_top_selected_node_list();
+		List<Node *> selection = editor_selection->get_top_selected_node_list_for(get_scene_node());
 		if (selection.size() > 1 && selection.find(n) != nullptr) {
 			for (Node *nv : selection) {
 				ERR_FAIL_NULL(nv);
@@ -198,14 +214,14 @@ void SceneTreeEditor::_cell_button_pressed(Object *p_item, int p_column, int p_i
 		warning->popup_centered();
 
 	} else if (p_id == BUTTON_SIGNALS) {
-		editor_selection->clear();
+		editor_selection->clear_for(get_scene_node());
 		editor_selection->add_node(n);
 
 		set_selected(n);
 
 		EditorDockManager::get_singleton()->focus_dock(SignalsDock::get_singleton());
 	} else if (p_id == BUTTON_GROUPS) {
-		editor_selection->clear();
+		editor_selection->clear_for(get_scene_node());
 		editor_selection->add_node(n);
 
 		set_selected(n);
@@ -1316,7 +1332,7 @@ void SceneTreeEditor::_selected_changed() {
 void SceneTreeEditor::_deselect_items() {
 	// Clear currently selected items in scene tree dock.
 	if (editor_selection) {
-		editor_selection->clear();
+		editor_selection->clear_for(get_scene_node());
 		emit_signal(SNAME("node_changed"));
 	}
 }
@@ -1349,7 +1365,7 @@ void SceneTreeEditor::_cell_multi_selected(Object *p_object, int p_cell, bool p_
 	}
 
 	// Emitted "selected" in _selected_changed() when select single node, so select multiple node emit "changed".
-	if (editor_selection->get_selection().size() > 1 && !pending_selection_update) {
+	if (editor_selection->get_selection_for(get_scene_node()).size() > 1 && !pending_selection_update) {
 		pending_selection_update = true;
 		callable_mp(this, &SceneTreeEditor::_process_selection_update).call_deferred();
 	}
@@ -1525,7 +1541,7 @@ void SceneTreeEditor::rename_node(Node *p_node, const String &p_name, TreeItem *
 		if (p_node->is_unique_name_in_owner()) {
 			check_for_unique_name_token = false;
 			// Do not set scene root as unique.
-		} else if (get_tree()->get_edited_scene_root() == p_node) {
+		} else if (get_scene_node() == p_node) {
 			check_for_unique_name_token = false;
 			String text = TTR("Root nodes cannot be accessed as unique names in their own scene. Instantiate in another scene and set as unique name there.");
 			if (error->is_visible()) {
@@ -1589,7 +1605,7 @@ void SceneTreeEditor::rename_node(Node *p_node, const String &p_name, TreeItem *
 
 	// We previously made sure name is not the same as current name
 	// so that it won't complain about already used unique name when not changing name.
-	if ((check_for_unique_name_token || p_node->is_unique_name_in_owner()) && get_tree()->get_edited_scene_root()->get_node_or_null("%" + new_name)) {
+	if ((check_for_unique_name_token || p_node->is_unique_name_in_owner()) && get_scene_node()->get_node_or_null("%" + new_name)) {
 		check_for_unique_name_token = false;
 		String text = vformat(TTR("A node with the unique name %s already exists in this scene."), new_name);
 		if (error->is_visible()) {
@@ -1902,7 +1918,7 @@ Variant SceneTreeEditor::get_drag_data_fw(const Point2 &p_point, Control *p_from
 	Dictionary drag_data;
 	drag_data["type"] = "nodes";
 	drag_data["nodes"] = objs;
-	drag_data["scene_root"] = get_tree()->get_edited_scene_root();
+	drag_data["scene_root"] = get_scene_node();
 
 	tree->set_drop_mode_flags(Tree::DROP_MODE_INBETWEEN | Tree::DROP_MODE_ON_ITEM);
 	emit_signal(SNAME("nodes_dragged"));
@@ -1930,7 +1946,7 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 	}
 
 	Object *data_root = d.get("scene_root", (Object *)nullptr);
-	if (data_root && get_tree()->get_edited_scene_root() != data_root) {
+	if (data_root && get_scene_node() != data_root) {
 		return false;
 	}
 

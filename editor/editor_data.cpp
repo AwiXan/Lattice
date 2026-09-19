@@ -1619,10 +1619,8 @@ List<Node *> EditorSelection::get_full_selected_node_list() {
 	return node_list;
 }
 
-void EditorSelection::clear() {
-	// Only what is selected in the document in context: another pane showing a
-	// different scene keeps its own, which is the point of having them apart.
-	DocumentSelection &document = _context_document();
+void EditorSelection::_clear_document(DocumentSelection &p_document) {
+	DocumentSelection &document = p_document;
 	while (!document.selection.is_empty()) {
 		Node *node = ObjectDB::get_instance<Node>(document.selection.begin()->key);
 		if (node) {
@@ -1635,6 +1633,20 @@ void EditorSelection::clear() {
 
 	changed = true;
 	document.node_list_changed = true;
+}
+
+void EditorSelection::clear() {
+	// Only what is selected in the document in context: another pane showing a
+	// different scene keeps its own, which is the point of having them apart.
+	_clear_document(_context_document());
+}
+
+void EditorSelection::clear_for(const Node *p_document_root) {
+	if (!p_document_root) {
+		clear();
+		return;
+	}
+	_clear_document(documents[p_document_root->get_instance_id()]);
 }
 
 void EditorSelection::clear_document(const Node *p_document_root) {
