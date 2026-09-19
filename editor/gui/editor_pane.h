@@ -172,6 +172,10 @@ public:
 	// somewhere.
 	void close_panel(int p_index);
 
+	// Brings the tab showing this Control to the front. False if this pane is
+	// not the one holding it.
+	bool show_panel(Control *p_panel);
+
 	int get_panel_count() const { return panels.size(); }
 	int get_current_panel() const { return current; }
 	void set_current_panel(int p_index);

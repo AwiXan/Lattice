@@ -35,6 +35,7 @@
 #include "editor/docks/editor_dock.h"
 #include "editor/editor_node.h"
 #include "editor/editor_panel_registry.h"
+#include "editor/gui/editor_pane.h"
 #include "editor/editor_string_names.h"
 #include "editor/gui/window_wrapper.h"
 #include "editor/settings/editor_settings.h"
@@ -638,7 +639,9 @@ void EditorDockManager::close_dock(EditorDock *p_dock) {
 	ERR_FAIL_NULL(p_dock);
 	ERR_FAIL_COND_MSG(!all_docks.has(p_dock), vformat("Cannot close unknown dock '%s'.", p_dock->get_display_title()));
 
-	if (!p_dock->is_open) {
+	if (!p_dock->is_open || lent_docks.has(p_dock)) {
+		// While something else is showing this dock, that is where it lives and
+		// that is what closes it.
 		return;
 	}
 
@@ -688,12 +691,28 @@ void EditorDockManager::make_dock_floating(EditorDock *p_dock) {
 	ERR_FAIL_NULL(p_dock);
 	ERR_FAIL_COND_MSG(!all_docks.has(p_dock), vformat("Cannot make unknown dock '%s' floating.", p_dock->get_display_title()));
 
+	if (lent_docks.has(p_dock)) {
+		// A pane is showing it. Taking it out from under that pane would leave
+		// the pane with an empty tab; the pane's own close is the way back.
+		return;
+	}
+
 	if (!p_dock->dock_window) {
 		_open_dock_in_window(p_dock);
 	}
 }
 
 void EditorDockManager::_make_dock_visible(EditorDock *p_dock, bool p_grab_focus) {
+	if (lent_docks.has(p_dock)) {
+		// Somewhere that is not a dock slot: whatever is showing it knows how to
+		// bring it to the front, and the slots no longer do.
+		EditorPane *pane = Object::cast_to<EditorPane>(p_dock->get_parent());
+		if (pane) {
+			pane->show_panel(p_dock);
+		}
+		return;
+	}
+
 	if (p_dock->dock_window) {
 		if (p_grab_focus) {
 			p_dock->get_window()->grab_focus();
@@ -747,9 +766,10 @@ Control *EditorDockManager::_lend_dock_panel(EditorDock *p_dock) {
 	}
 
 	lent_docks.insert(p_dock);
-	// Out of whatever was showing it. This also stops it counting as open, so
-	// the docks menu and the slots agree that it is elsewhere.
+	// Out of whatever was showing it. It is still open - a pane is showing it -
+	// which is why being taken out is not the same as being closed.
 	_move_dock(p_dock, nullptr);
+	p_dock->is_open = true;
 	if (p_dock->current_layout != EditorDock::DOCK_LAYOUT_VERTICAL) {
 		p_dock->update_layout(EditorDock::DOCK_LAYOUT_VERTICAL);
 		p_dock->current_layout = EditorDock::DOCK_LAYOUT_VERTICAL;
@@ -763,6 +783,7 @@ Control *EditorDockManager::_lend_dock_panel(EditorDock *p_dock) {
 void EditorDockManager::_return_dock_panel(Control *p_panel, EditorDock *p_dock) {
 	ERR_FAIL_NULL(p_dock);
 	lent_docks.erase(p_dock);
+	p_dock->is_open = false;
 
 	// Away from whoever was showing it, then back where it belongs. A dock with
 	// no slot to go back to is put away rather than made into a window nobody
@@ -791,7 +812,7 @@ void EditorDockManager::add_dock(EditorDock *p_dock) {
 		// without knowing what a dock is.
 		EditorPanelRegistry::PanelType type;
 		type.id = get_dock_panel_type_id(p_dock);
-		type.title = p_dock->get_title();
+		type.title = p_dock->get_display_title();
 		type.icon = p_dock->get_icon_name();
 		type.binding = EditorPanelRegistry::BINDING_GLOBAL;
 		type.lent = true;

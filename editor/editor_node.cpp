@@ -1020,6 +1020,14 @@ void EditorNode::_notification(int p_what) {
 			/* DO NOT LOAD SCENES HERE, WAIT FOR FILE SCANNING AND REIMPORT TO COMPLETE */
 		} break;
 
+		case NOTIFICATION_PREDELETE: {
+			// The editor is going, and with it every slot, dock and pane at once.
+			// Forgetting the panel types here - before Node frees the children -
+			// means nothing tries to give a lent panel back to a place that is
+			// also on its way out; whoever is holding it simply takes it down.
+			EditorPanelRegistry::cleanup();
+		} break;
+
 		case NOTIFICATION_EXIT_TREE: {
 			singleton->active_plugins.clear();
 
@@ -9746,9 +9754,6 @@ EditorNode::EditorNode() {
 }
 
 EditorNode::~EditorNode() {
-	// The types hold callables that hold the plugins, and those are going away.
-	EditorPanelRegistry::cleanup();
-
 	EditorInspector::cleanup_plugins();
 	EditorTranslationParser::get_singleton()->clean_parsers();
 	ResourceImporterScene::clean_up_importer_plugins();

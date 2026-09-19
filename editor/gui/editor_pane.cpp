@@ -128,13 +128,15 @@ void EditorPane::_update_palette() {
 		return;
 	}
 
-	// Everything registered that can be asked for out of nowhere. A panel that
-	// shows a resource cannot: it is opened by dragging that resource here, so
-	// there is nothing for a button to stand for.
+	// Everything the editor can make another of. A panel showing a resource is
+	// not one: it is opened by dragging that resource here. Nor is a dock: there
+	// is one of each, it is already somewhere, and its own tab is how it is
+	// moved - a button offering a second FileSystem would be offering a thing
+	// that cannot exist.
 	Vector<StringName> wanted;
 	for (const StringName &id : EditorPanelRegistry::get_type_ids()) {
 		const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(id);
-		if (type && type->binding != EditorPanelRegistry::BINDING_RESOURCE) {
+		if (type && !type->lent && type->binding != EditorPanelRegistry::BINDING_RESOURCE) {
 			wanted.push_back(id);
 		}
 	}
@@ -323,6 +325,16 @@ void EditorPane::set_current_panel(int p_index) {
 	current = p_index;
 	_show_only_current();
 	_update_tabs();
+}
+
+bool EditorPane::show_panel(Control *p_panel) {
+	for (int i = 0; i < panels.size(); i++) {
+		if (panels[i].control == p_panel) {
+			set_current_panel(i);
+			return true;
+		}
+	}
+	return false;
 }
 
 StringName EditorPane::get_panel_type_at(int p_index) const {
