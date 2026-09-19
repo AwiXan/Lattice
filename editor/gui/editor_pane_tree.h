@@ -48,6 +48,8 @@ class EditorPaneTree : public MarginContainer {
 	// The single Control under this one: a pane, or a split of panes.
 	Control *root = nullptr;
 
+	void _wire_pane(EditorPane *p_pane);
+	void _pane_split_requested(bool p_vertical, EditorPane *p_pane);
 	void _collapse_split(SplitContainer *p_split, Control *p_survivor);
 	Dictionary _save_node(Control *p_node) const;
 	Control *_load_node(const Dictionary &p_data);

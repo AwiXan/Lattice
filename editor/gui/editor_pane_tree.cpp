@@ -89,8 +89,7 @@ EditorPane *EditorPaneTree::split_pane(EditorPane *p_pane, bool p_vertical) {
 	split->set_h_size_flags(SIZE_EXPAND_FILL);
 
 	EditorPane *new_pane = memnew(EditorPane);
-	new_pane->connect(SNAME("split_requested"), callable_mp(this, &EditorPaneTree::split_pane).bind(new_pane).unbind(1), CONNECT_DEFERRED);
-	new_pane->connect(SNAME("close_requested"), callable_mp(this, &EditorPaneTree::close_pane).bind(new_pane), CONNECT_DEFERRED);
+	_wire_pane(new_pane);
 
 	// The pane takes the place of the one it was split from, which then moves
 	// inside it beside its new neighbour.
@@ -116,6 +115,17 @@ EditorPane *EditorPaneTree::split_pane(EditorPane *p_pane, bool p_vertical) {
 	_update_closable();
 	emit_signal(SNAME("layout_changed"));
 	return new_pane;
+}
+
+void EditorPaneTree::_wire_pane(EditorPane *p_pane) {
+	// The signal hands over "vertical" and bind() appends, so the forwarder
+	// takes them in that order and calls split_pane the way it reads.
+	p_pane->connect(SNAME("split_requested"), callable_mp(this, &EditorPaneTree::_pane_split_requested).bind(p_pane), CONNECT_DEFERRED);
+	p_pane->connect(SNAME("close_requested"), callable_mp(this, &EditorPaneTree::close_pane).bind(p_pane), CONNECT_DEFERRED);
+}
+
+void EditorPaneTree::_pane_split_requested(bool p_vertical, EditorPane *p_pane) {
+	split_pane(p_pane, p_vertical);
 }
 
 void EditorPaneTree::_collapse_split(SplitContainer *p_split, Control *p_survivor) {
@@ -239,8 +249,7 @@ Control *EditorPaneTree::_load_node(const Dictionary &p_data) {
 
 	if (kind == "pane") {
 		EditorPane *pane = memnew(EditorPane);
-		pane->connect(SNAME("split_requested"), callable_mp(this, &EditorPaneTree::split_pane).bind(pane).unbind(1), CONNECT_DEFERRED);
-		pane->connect(SNAME("close_requested"), callable_mp(this, &EditorPaneTree::close_pane).bind(pane), CONNECT_DEFERRED);
+		_wire_pane(pane);
 
 		const Array saved_panels = p_data.get("panels", Array());
 		for (int i = 0; i < saved_panels.size(); i++) {
@@ -318,8 +327,7 @@ EditorPaneTree::EditorPaneTree() {
 	set_h_size_flags(SIZE_EXPAND_FILL);
 
 	EditorPane *first = memnew(EditorPane);
-	first->connect(SNAME("split_requested"), callable_mp(this, &EditorPaneTree::split_pane).bind(first).unbind(1), CONNECT_DEFERRED);
-	first->connect(SNAME("close_requested"), callable_mp(this, &EditorPaneTree::close_pane).bind(first), CONNECT_DEFERRED);
+	_wire_pane(first);
 	root = first;
 	add_child(root);
 	_update_closable();
