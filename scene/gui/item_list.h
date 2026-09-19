@@ -32,6 +32,7 @@
 
 #include "scene/gui/control.h"
 #include "scene/gui/scroll_bar.h"
+#include "scene/gui/scroll_smoothing.h"
 #include "scene/property_list_helper.h"
 #include "scene/resources/text_paragraph.h"
 
@@ -154,6 +155,7 @@ private:
 
 	void _scroll_changed(double);
 	void _shape_text(int p_idx);
+	void _wheel_scroll(ScrollBar *p_bar, double p_amount);
 	void _mouse_exited();
 	void _shift_range_select(int p_from, int p_to);
 
@@ -189,7 +191,14 @@ protected:
 
 		Ref<Texture2D> scroll_hint;
 		Color scroll_hint_color;
+
+		// See ScrollContainer: off unless a theme asks for it, under the same two
+		// names, so one setting reaches everything that scrolls.
+		int smooth_scroll = 0;
+		int smooth_scroll_speed = 16;
 	} theme_cache;
+
+	ScrollSmoothing smoothing;
 
 	void _notification(int p_what);
 	bool _set(const StringName &p_name, const Variant &p_value);

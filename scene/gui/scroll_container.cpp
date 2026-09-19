@@ -179,28 +179,15 @@ void ScrollContainer::_scroll_bar_by(ScrollBar *p_bar, double p_amount) {
 		return;
 	}
 
-	if (!smoothing) {
-		// Start from where the view actually is, not from a stale target.
-		smooth_target = Vector2(h_scroll->get_value(), v_scroll->get_value());
-		smoothing = true;
-		set_process_internal(true);
-	}
-
-	const bool vertical = p_bar == v_scroll;
-	double target = (vertical ? smooth_target.y : smooth_target.x) + p_amount;
-	target = CLAMP(target, p_bar->get_min(), p_bar->get_max() - p_bar->get_page());
-	if (vertical) {
-		smooth_target.y = target;
-	} else {
-		smooth_target.x = target;
-	}
+	smoothing.wheel(p_bar, p_amount, h_scroll, v_scroll);
+	set_process_internal(true);
 }
 
 void ScrollContainer::_stop_smoothing() {
-	if (!smoothing) {
+	if (!smoothing.is_active()) {
 		return;
 	}
-	smoothing = false;
+	smoothing.stop();
 	// Something else may still need the frame: a touch drag, or the scrolling
 	// that happens while dragging something over this container.
 	if (!drag_touching && !(scroll_on_drag_hover && is_inside_tree() && get_viewport() && get_viewport()->gui_is_dragging())) {
@@ -208,39 +195,11 @@ void ScrollContainer::_stop_smoothing() {
 	}
 }
 
-void ScrollContainer::_step_smoothing(double p_delta) {
-	if (!smoothing) {
-		return;
-	}
-
-	// An exponential approach, so the same fraction of the remaining distance is
-	// covered every second however many frames that took. Higher speed, sooner
-	// there.
-	const double speed = MAX(1, theme_cache.smooth_scroll_speed);
-	const double t = 1.0 - Math::exp(-speed * p_delta);
-
-	const Vector2 current(h_scroll->get_value(), v_scroll->get_value());
-	Vector2 next = current.lerp(smooth_target, CLAMP(t, 0.0, 1.0));
-
-	// Close enough that another frame would not show: sit down exactly.
-	if (Math::abs(smooth_target.x - next.x) < 0.5 && Math::abs(smooth_target.y - next.y) < 0.5) {
-		next = smooth_target;
-		_stop_smoothing();
-	}
-
-	if (next.x != current.x) {
-		h_scroll->set_value(next.x);
-	}
-	if (next.y != current.y) {
-		v_scroll->set_value(next.y);
-	}
-}
-
 void ScrollContainer::gui_input(const Ref<InputEvent> &p_gui_input) {
 	ERR_FAIL_COND(p_gui_input.is_null());
 
-	double prev_v_scroll = smoothing ? smooth_target.y : v_scroll->get_value();
-	double prev_h_scroll = smoothing ? smooth_target.x : h_scroll->get_value();
+	double prev_v_scroll = smoothing.is_active() ? smoothing.target.y : v_scroll->get_value();
+	double prev_h_scroll = smoothing.is_active() ? smoothing.target.x : h_scroll->get_value();
 	bool h_scroll_enabled = horizontal_scroll_mode != SCROLL_MODE_DISABLED;
 	bool v_scroll_enabled = vertical_scroll_mode != SCROLL_MODE_DISABLED;
 
@@ -249,7 +208,7 @@ void ScrollContainer::gui_input(const Ref<InputEvent> &p_gui_input) {
 	// Only the wheel is smoothed. Anything else - a drag, a click on the bar,
 	// the keyboard - means to put the view somewhere now, and fighting it for
 	// the next few frames would feel like a bug.
-	if (smoothing) {
+	if (smoothing.is_active()) {
 		const bool is_wheel = mb.is_valid() && (mb->get_button_index() == MouseButton::WHEEL_UP || mb->get_button_index() == MouseButton::WHEEL_DOWN || mb->get_button_index() == MouseButton::WHEEL_LEFT || mb->get_button_index() == MouseButton::WHEEL_RIGHT);
 		if (!is_wheel) {
 			_stop_smoothing();
@@ -303,8 +262,8 @@ void ScrollContainer::gui_input(const Ref<InputEvent> &p_gui_input) {
 				}
 			}
 
-			const double now_v = smoothing ? smooth_target.y : v_scroll->get_value();
-			const double now_h = smoothing ? smooth_target.x : h_scroll->get_value();
+			const double now_v = smoothing.is_active() ? smoothing.target.y : v_scroll->get_value();
+			const double now_h = smoothing.is_active() ? smoothing.target.x : h_scroll->get_value();
 			if (scroll_value_modified && (now_v != prev_v_scroll || now_h != prev_h_scroll)) {
 				accept_event(); // Accept event if scroll changed.
 				return;
@@ -616,13 +575,15 @@ void ScrollContainer::_notification(int p_what) {
 
 		case NOTIFICATION_DRAG_END: {
 			// Unless the view is still catching up with the wheel.
-			if (!smoothing) {
+			if (!smoothing.is_active()) {
 				set_process_internal(false);
 			}
 		} break;
 
 		case NOTIFICATION_INTERNAL_PROCESS: {
-			_step_smoothing(get_process_delta_time());
+			if (smoothing.is_active() && !smoothing.step(get_process_delta_time(), theme_cache.smooth_scroll_speed, h_scroll, v_scroll)) {
+				_stop_smoothing();
+			}
 
 			if (scroll_on_drag_hover && get_viewport()->gui_is_dragging()) {
 				Point2 mouse_position = get_viewport()->get_mouse_position() - get_global_position();

@@ -31,6 +31,7 @@
 #pragma once
 
 #include "scene/gui/control.h"
+#include "scene/gui/scroll_smoothing.h"
 #include "scene/resources/text_paragraph.h"
 #include "servers/display/accessibility_server.h"
 
@@ -702,7 +703,14 @@ private:
 		int scrollbar_margin_left = -1;
 		int scrollbar_h_separation = 0;
 		int scrollbar_v_separation = 0;
+
+		// See ScrollContainer: off unless a theme asks, and the same two names,
+		// so one setting can reach everything that scrolls.
+		int smooth_scroll = 0;
+		int smooth_scroll_speed = 16;
 	} theme_cache;
+
+	ScrollSmoothing smoothing;
 
 	struct Cache {
 		enum ClickType {

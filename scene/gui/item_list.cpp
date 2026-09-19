@@ -735,6 +735,17 @@ void ItemList::set_fixed_tag_icon_size(const Size2i &p_size) {
 	shape_changed = true;
 }
 
+void ItemList::_wheel_scroll(ScrollBar *p_bar, double p_amount) {
+	if (theme_cache.smooth_scroll <= 0) {
+		// Exactly what used to happen, so a theme that does not ask for smoothing
+		// is left with the behaviour it had.
+		p_bar->scroll(p_amount);
+		return;
+	}
+	smoothing.wheel(p_bar, p_amount, scroll_bar_h, scroll_bar_v);
+	set_process_internal(true);
+}
+
 void ItemList::gui_input(const Ref<InputEvent> &p_event) {
 	ERR_FAIL_COND(p_event.is_null());
 
@@ -871,19 +882,19 @@ void ItemList::gui_input(const Ref<InputEvent> &p_event) {
 			if (mb->get_button_index() == MouseButton::WHEEL_UP) {
 				// By default, the vertical orientation takes precedence. This is an exception.
 				if (mb->is_shift_pressed() || v_scroll_hidden) {
-					scroll_bar_h->scroll(-scroll_bar_h->get_page() / 8 * mb->get_factor());
+					_wheel_scroll(scroll_bar_h, -scroll_bar_h->get_page() / 8 * mb->get_factor());
 					scroll_value_modified = true;
 				} else {
-					scroll_bar_v->scroll(-scroll_bar_v->get_page() / 8 * mb->get_factor());
+					_wheel_scroll(scroll_bar_v, -scroll_bar_v->get_page() / 8 * mb->get_factor());
 					scroll_value_modified = true;
 				}
 			}
 			if (mb->get_button_index() == MouseButton::WHEEL_DOWN) {
 				if (mb->is_shift_pressed() || v_scroll_hidden) {
-					scroll_bar_h->scroll(scroll_bar_h->get_page() / 8 * mb->get_factor());
+					_wheel_scroll(scroll_bar_h, scroll_bar_h->get_page() / 8 * mb->get_factor());
 					scroll_value_modified = true;
 				} else {
-					scroll_bar_v->scroll(scroll_bar_v->get_page() / 8 * mb->get_factor());
+					_wheel_scroll(scroll_bar_v, scroll_bar_v->get_page() / 8 * mb->get_factor());
 					scroll_value_modified = true;
 				}
 			}
@@ -892,19 +903,19 @@ void ItemList::gui_input(const Ref<InputEvent> &p_event) {
 			if (mb->get_button_index() == MouseButton::WHEEL_LEFT) {
 				// By default, the horizontal orientation takes precedence. This is an exception.
 				if (mb->is_shift_pressed() || h_scroll_hidden) {
-					scroll_bar_v->scroll(-scroll_bar_v->get_page() / 8 * mb->get_factor());
+					_wheel_scroll(scroll_bar_v, -scroll_bar_v->get_page() / 8 * mb->get_factor());
 					scroll_value_modified = true;
 				} else {
-					scroll_bar_h->scroll(-scroll_bar_h->get_page() / 8 * mb->get_factor());
+					_wheel_scroll(scroll_bar_h, -scroll_bar_h->get_page() / 8 * mb->get_factor());
 					scroll_value_modified = true;
 				}
 			}
 			if (mb->get_button_index() == MouseButton::WHEEL_RIGHT) {
 				if (mb->is_shift_pressed() || h_scroll_hidden) {
-					scroll_bar_v->scroll(scroll_bar_v->get_page() / 8 * mb->get_factor());
+					_wheel_scroll(scroll_bar_v, scroll_bar_v->get_page() / 8 * mb->get_factor());
 					scroll_value_modified = true;
 				} else {
-					scroll_bar_h->scroll(scroll_bar_h->get_page() / 8 * mb->get_factor());
+					_wheel_scroll(scroll_bar_h, scroll_bar_h->get_page() / 8 * mb->get_factor());
 					scroll_value_modified = true;
 				}
 			}
@@ -1311,6 +1322,18 @@ void ItemList::_accessibility_action_blur(const Variant &p_data, int p_index) {
 
 void ItemList::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_INTERNAL_PROCESS: {
+			// Nothing else here asks for the frame, so it is given back as soon as
+			// the view has caught up.
+			if (!smoothing.step(get_process_delta_time(), theme_cache.smooth_scroll_speed, scroll_bar_h, scroll_bar_v)) {
+				set_process_internal(false);
+			}
+		} break;
+
+		case NOTIFICATION_DRAG_BEGIN: {
+			smoothing.stop();
+		} break;
+
 		case NOTIFICATION_EXIT_TREE:
 		case NOTIFICATION_ACCESSIBILITY_INVALIDATE: {
 			for (int i = 0; i < items.size(); i++) {
@@ -2488,6 +2511,8 @@ void ItemList::_bind_methods() {
 	BIND_THEME_ITEM(Theme::DATA_TYPE_ICON, ItemList, scroll_hint);
 	BIND_THEME_ITEM(Theme::DATA_TYPE_COLOR, ItemList, scroll_hint_color);
 
+	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, ItemList, smooth_scroll);
+	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, ItemList, smooth_scroll_speed);
 	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, ItemList, line_separation);
 	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, ItemList, icon_margin);
 	BIND_THEME_ITEM_CUSTOM(Theme::DATA_TYPE_STYLEBOX, ItemList, hovered_style, "hovered");

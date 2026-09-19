@@ -668,6 +668,10 @@ void fill_default_theme(Ref<Theme> &theme, const Ref<Font> &default_font, const 
 	// which is what everything has always done. A theme turns it on.
 	theme->set_constant("smooth_scroll", "ScrollContainer", 0);
 	theme->set_constant("smooth_scroll_speed", "ScrollContainer", 16);
+	theme->set_constant("smooth_scroll", "Tree", 0);
+	theme->set_constant("smooth_scroll_speed", "Tree", 16);
+	theme->set_constant("smooth_scroll", "ItemList", 0);
+	theme->set_constant("smooth_scroll_speed", "ItemList", 16);
 
 	theme->set_icon("scroll_hint_vertical", "ScrollContainer", icons["scroll_hint_vertical"]);
 	theme->set_icon("scroll_hint_horizontal", "ScrollContainer", icons["scroll_hint_horizontal"]);

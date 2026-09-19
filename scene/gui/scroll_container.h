@@ -32,6 +32,7 @@
 
 #include "scene/gui/container.h"
 #include "scene/gui/scroll_bar.h"
+#include "scene/gui/scroll_smoothing.h"
 
 class PanelContainer;
 class TextureRect;
@@ -114,14 +115,10 @@ private:
 		int smooth_scroll_speed = 16;
 	} theme_cache;
 
-	// Where the wheel has asked the view to be. The bars chase it while
-	// smoothing is on; the rest of the time it is not used at all.
-	Vector2 smooth_target;
-	bool smoothing = false;
+	ScrollSmoothing smoothing;
 
 	void _scroll_bar_by(ScrollBar *p_bar, double p_amount);
 	void _stop_smoothing();
-	void _step_smoothing(double p_delta);
 
 	void _cancel_drag();
 

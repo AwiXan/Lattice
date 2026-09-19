@@ -3787,6 +3787,16 @@ void Tree::_go_down() {
 bool Tree::_scroll(bool p_horizontal, float p_pages) {
 	ScrollBar *scroll = p_horizontal ? (ScrollBar *)h_scroll : (ScrollBar *)v_scroll;
 
+	if (theme_cache.smooth_scroll > 0) {
+		// The wheel moves a target and the bars catch up with it; see
+		// ScrollSmoothing. Whether anything moved is decided by the target,
+		// because the bar has not moved yet.
+		const Vector2 before = smoothing.is_active() ? smoothing.target : Vector2(h_scroll->get_value(), v_scroll->get_value());
+		smoothing.wheel(scroll, scroll->get_page() * p_pages, h_scroll, v_scroll);
+		set_process_internal(true);
+		return smoothing.target != before;
+	}
+
 	double prev_value = scroll->get_value();
 	scroll->set_value(scroll->get_value() + scroll->get_page() * p_pages);
 
@@ -5141,6 +5151,8 @@ void Tree::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_DRAG_BEGIN: {
+			// Dragging means to put the view somewhere now.
+			smoothing.stop();
 			single_select_defer = nullptr;
 			if (theme_cache.scroll_speed > 0) {
 				scrolling = true;
@@ -5149,6 +5161,16 @@ void Tree::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_INTERNAL_PROCESS: {
+			if (smoothing.is_active()) {
+				if (!smoothing.step(get_process_delta_time(), theme_cache.smooth_scroll_speed, h_scroll, v_scroll)) {
+					// Arrived. Only give the frame back if nothing else wants it.
+					if (!drag_touching && !scrolling) {
+						set_process_internal(false);
+					}
+				}
+				_determine_hovered_item();
+			}
+
 			if (drag_touching) {
 				if (drag_touching_deaccel) {
 					float pos = v_scroll->get_value();
@@ -7440,6 +7462,9 @@ void Tree::_bind_methods() {
 	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, Tree, scrollbar_margin_left);
 	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, Tree, scrollbar_h_separation);
 	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, Tree, scrollbar_v_separation);
+
+	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, Tree, smooth_scroll);
+	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, Tree, smooth_scroll_speed);
 
 	BIND_THEME_ITEM_CUSTOM(Theme::DATA_TYPE_STYLEBOX, Tree, title_button, "title_button_normal");
 	BIND_THEME_ITEM(Theme::DATA_TYPE_STYLEBOX, Tree, title_button_pressed);

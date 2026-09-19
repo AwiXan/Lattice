@@ -1673,8 +1673,14 @@ void ThemeModern::populate_editor_styles(const Ref<EditorTheme> &p_theme, Editor
 		// How quickly a view catches up with the wheel, or not at all. Read here so
 		// that the theme is what decides it, and changing the setting rebuilds the
 		// theme and reaches every container at once.
-		p_theme->set_constant("smooth_scroll", "ScrollContainer", EDITOR_GET("interface/scrolling/smooth_scrolling") ? 1 : 0);
-		p_theme->set_constant("smooth_scroll_speed", "ScrollContainer", int(Math::round(double(EDITOR_GET("interface/scrolling/smooth_scrolling_speed")))));
+		const int smooth_scroll = EDITOR_GET("interface/scrolling/smooth_scrolling") ? 1 : 0;
+		const int smooth_scroll_speed = int(Math::round(double(EDITOR_GET("interface/scrolling/smooth_scrolling_speed"))));
+		// Everything in the engine that scrolls with its own bars, so the setting
+		// means the editor rather than one kind of panel.
+		for (const StringName &scrolling_type : { SNAME("ScrollContainer"), SNAME("Tree"), SNAME("ItemList") }) {
+			p_theme->set_constant("smooth_scroll", scrolling_type, smooth_scroll);
+			p_theme->set_constant("smooth_scroll_speed", scrolling_type, smooth_scroll_speed);
+		}
 
 		// Scroll hints.
 		p_theme->set_color("scroll_hint_vertical_color", "ScrollContainer", Color(0, 0, 0, p_config.dark_theme ? 1.0 : 0.5));
