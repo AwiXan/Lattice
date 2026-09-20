@@ -319,10 +319,9 @@ Control::CursorShape EditorPaneTree::get_cursor_shape(const Point2 &p_pos) const
 void EditorPaneTree::_update_closable() {
 	const Vector<EditorPane *> panes = get_panes();
 	for (EditorPane *pane : panes) {
-		// The last pane has nowhere to hand its space back to, and nothing to
-		// choose between, so it shows no header at all.
+		// The last pane has nowhere to hand its space back to. It keeps its
+		// header: every pane has one, so none of them is the special one.
 		pane->set_closable(panes.size() > 1);
-		pane->set_header_visible(panes.size() > 1);
 	}
 }
 

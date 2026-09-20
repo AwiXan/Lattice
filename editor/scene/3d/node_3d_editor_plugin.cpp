@@ -12029,7 +12029,7 @@ Node3DEditorPlugin::Node3DEditorPlugin() {
 		EditorPanelRegistry::PanelType type;
 		type.id = "view_3d";
 		type.title = TTRC("3D");
-		type.icon = "Node3D";
+		type.icon = "3D";
 		type.binding = EditorPanelRegistry::BINDING_DOCUMENT;
 		type.create = callable_mp(this, &Node3DEditorPlugin::create_main_screen_view);
 		type.release = callable_mp(this, &Node3DEditorPlugin::release_main_screen_view);

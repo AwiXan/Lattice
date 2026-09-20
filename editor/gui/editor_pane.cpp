@@ -43,6 +43,7 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/flow_container.h"
+#include "scene/gui/panel_container.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/separator.h"
@@ -55,8 +56,11 @@ void EditorPane::_bind_methods() {
 }
 
 void EditorPane::_build_header() {
+	header_panel = memnew(PanelContainer);
+	add_child(header_panel);
+
 	header = memnew(HFlowContainer);
-	add_child(header);
+	header_panel->add_child(header);
 
 	tab_bar = memnew(TabBar);
 	tab_bar->set_h_size_flags(SIZE_EXPAND_FILL);
@@ -135,9 +139,22 @@ void EditorPane::_update_theme() {
 	if (!base) {
 		return;
 	}
+	more_button->set_button_icon(base->get_editor_theme_icon(SNAME("Add")));
 	split_right_button->set_button_icon(base->get_editor_theme_icon(SNAME("Panels2Alt")));
 	split_down_button->set_button_icon(base->get_editor_theme_icon(SNAME("Panels2")));
 	close_button->set_button_icon(base->get_editor_theme_icon(SNAME("Close")));
+
+	// Its own background, a shade off the pane's, so a header reads as the
+	// pane's edge rather than as part of what the pane is showing.
+	Ref<StyleBoxFlat> header_style;
+	header_style.instantiate();
+	header_style->set_bg_color(base->get_theme_color(SNAME("dark_color_2"), EditorStringName(Editor)));
+	const int side = Math::round(2 * EDSCALE);
+	header_style->set_content_margin_all(side);
+	header_style->set_border_width(SIDE_BOTTOM, Math::round(1 * EDSCALE));
+	header_style->set_border_color(base->get_theme_color(SNAME("dark_color_3"), EditorStringName(Editor)));
+	header_panel->add_theme_style_override(SceneStringName(panel), header_style);
+
 	_update_palette();
 }
 
@@ -268,7 +285,6 @@ void EditorPane::_update_tabs() {
 	if (subject_button->is_visible()) {
 		_update_subject_list();
 	}
-	_update_header_visibility();
 	// A type registered after this pane was built - an addon's - belongs in the
 	// header too, and this is the moment anything about the pane has changed.
 	_update_palette();
@@ -569,10 +585,10 @@ EditorPane::PanelDrop EditorPane::_read_drop(const Variant &p_data) const {
 
 Rect2 EditorPane::get_body_rect() const {
 	Rect2 body(Point2(), get_size());
-	if (header && header->is_visible()) {
+	if (header_panel && header_panel->is_visible()) {
 		// Where the header actually ends, rather than its height plus whatever
 		// the separation happens to be.
-		const real_t taken = header->get_rect().get_end().y;
+		const real_t taken = header_panel->get_rect().get_end().y;
 		body.position.y = taken;
 		body.size.y = MAX(0.0, get_size().y - taken);
 	}
@@ -580,7 +596,7 @@ Rect2 EditorPane::get_body_rect() const {
 }
 
 bool EditorPane::is_point_on_header(const Point2 &p_point) const {
-	return header && header->is_visible() && header->get_rect().has_point(p_point);
+	return header_panel && header_panel->is_visible() && header_panel->get_rect().has_point(p_point);
 }
 
 EditorPane::DropZone EditorPane::get_drop_zone_at(const Point2 &p_point) const {
@@ -653,7 +669,7 @@ bool EditorPane::accept_drop(const Point2 &p_point, const Variant &p_data) {
 	if (is_point_on_header(p_point)) {
 		// Where along the bar it was let go, so a tab can be put in order
 		// rather than only appended.
-		const Point2 in_bar = p_point - header->get_position() - tab_bar->get_position();
+		const Point2 in_bar = p_point - header_panel->get_position() - header->get_position() - tab_bar->get_position();
 		int at = tab_bar->get_tab_idx_at_point(in_bar);
 		if (at < 0) {
 			at = panels.size();
@@ -794,19 +810,7 @@ void EditorPane::set_closable(bool p_closable) {
 }
 
 bool EditorPane::is_header_visible() const {
-	return header && header->is_visible();
-}
-
-void EditorPane::set_header_visible(bool p_visible) {
-	header_wanted = p_visible;
-	_update_header_visibility();
-}
-
-void EditorPane::_update_header_visibility() {
-	// A pane holding more than one panel needs its tabs, and one holding
-	// nothing needs the row that offers something to put in it - otherwise an
-	// empty pane is a dead end with no way out of it.
-	header->set_visible(header_wanted || panels.size() != 1);
+	return header_panel && header_panel->is_visible();
 }
 
 EditorPane *EditorPaneDropHint::_pane_at(const Point2 &p_point) const {

@@ -6399,7 +6399,7 @@ CanvasItemEditorPlugin::CanvasItemEditorPlugin() {
 		EditorPanelRegistry::PanelType type;
 		type.id = "view_2d";
 		type.title = TTRC("2D");
-		type.icon = "Node2D";
+		type.icon = "2D";
 		type.binding = EditorPanelRegistry::BINDING_DOCUMENT;
 		type.create = callable_mp(this, &CanvasItemEditorPlugin::create_main_screen_view);
 		type.release = callable_mp(this, &CanvasItemEditorPlugin::release_main_screen_view);

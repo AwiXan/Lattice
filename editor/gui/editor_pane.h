@@ -40,6 +40,7 @@ class EditorPaneTree;
 class HBoxContainer;
 class HFlowContainer;
 class MenuButton;
+class PanelContainer;
 class OptionButton;
 class TabBar;
 
@@ -101,6 +102,8 @@ private:
 		Control *control = nullptr;
 	};
 
+	// What the header is drawn in, and what the pane measures it by.
+	PanelContainer *header_panel = nullptr;
 	// It wraps onto a second line rather than holding the pane open at its own
 	// width, so a pane can be made as narrow as what it is showing allows.
 	HFlowContainer *header = nullptr;
@@ -124,9 +127,6 @@ private:
 	// Rebuilding the tab bar makes it report selections of its own - adding the
 	// first tab selects it - which would overwrite the panel actually chosen.
 	bool rebuilding_tabs = false;
-	// Whether the arrangement wants this pane's header. A pane may still show
-	// it for reasons of its own; see _update_header_visibility().
-	bool header_wanted = false;
 
 	void _build_header();
 	void _update_theme();
@@ -143,7 +143,6 @@ private:
 	void _close_pressed();
 	String _title_of(const PanelEntry &p_entry) const;
 	void _show_only_current();
-	void _update_header_visibility();
 	// Stops showing a panel: back to whoever lent it, or freed if this pane
 	// built it.
 	void _let_go_of(const PanelEntry &p_entry);
@@ -229,9 +228,6 @@ public:
 	// Whether this pane offers to be closed. The last one does not.
 	void set_closable(bool p_closable);
 	bool is_header_visible() const;
-	// With one pane holding one panel there is nothing to choose between, so a
-	// header would be a row of buttons above an editor that has never had one.
-	void set_header_visible(bool p_visible);
 
 	EditorPane();
 };
