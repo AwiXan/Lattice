@@ -266,6 +266,10 @@ String EditorDock::get_effective_layout_key() const {
 }
 
 void EditorDock::set_tab_index(int p_index, bool p_set_current) {
+	if (!parent_dock_container) {
+		// Nowhere among the slots to be moved within.
+		return;
+	}
 	parent_dock_container->move_dock_index(this, p_index, p_set_current);
 	previous_tab_index = parent_dock_container->get_tab_idx_from_control(this);
 }
@@ -278,7 +282,11 @@ void EditorDock::update_tab_style() {
 		return; // Floating.
 	}
 
-	ERR_FAIL_NULL(parent_dock_container);
+	if (!parent_dock_container) {
+		// Open, but not in one of the slots: a pane is showing it, and the
+		// pane's own tabs say what it is. There is no tab of ours to style.
+		return;
+	}
 
 	int index = parent_dock_container->get_tab_idx_from_control(this);
 	ERR_FAIL_COND(index == -1);
