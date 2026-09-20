@@ -272,8 +272,14 @@ public:
 
 	// What the panel type registers: a tree wired to the editor's selection,
 	// and the way to point one at a document.
+	// A panel showing a scene: see EditorScenePanel, which puts this tree and a
+	// remote one side by side behind a Local/Remote choice.
 	static Control *create_panel();
 	static void bind_panel(Control *p_panel, int p_document_id);
+	static Control *create_scene_panel();
+	static void bind_scene_panel(Control *p_panel, int p_document_id);
+	static Dictionary save_scene_panel(Control *p_panel);
+	static void load_scene_panel(Control *p_panel, const Dictionary &p_state);
 
 	void set_show_enabled_subscene(bool p_show) { show_enabled_subscene = p_show; }
 	void set_valid_types(const Vector<StringName> &p_valid);

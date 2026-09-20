@@ -544,6 +544,10 @@ Dictionary EditorPaneTree::_save_slot(const Slot *p_slot) const {
 			Dictionary panel;
 			panel["panel"] = String(pane->get_panel_type_at(i));
 			panel["subject"] = _subject_to_saved(pane->get_panel_type_at(i), pane->get_panel_subject_at(i));
+			const Dictionary state = EditorPanelRegistry::save_panel_state(pane->get_panel_type_at(i), pane->get_panel_at(i));
+			if (!state.is_empty()) {
+				panel["state"] = state;
+			}
 			saved_panels.push_back(panel);
 		}
 		data["panels"] = saved_panels;
@@ -610,7 +614,10 @@ EditorPaneTree::Slot *EditorPaneTree::_load_slot(const Dictionary &p_data, Slot 
 			// A type that is no longer registered - an addon removed since -
 			// leaves that tab out rather than losing the whole arrangement.
 			if (panel != StringName() && EditorPanelRegistry::has_type(panel)) {
-				pane->add_panel(panel, _subject_from_saved(panel, panel_data.get("subject", Variant())));
+				const int at = pane->add_panel(panel, _subject_from_saved(panel, panel_data.get("subject", Variant())));
+				if (at >= 0) {
+					EditorPanelRegistry::load_panel_state(panel, pane->get_panel_at(at), panel_data.get("state", Dictionary()));
+				}
 			}
 		}
 		pane->set_current_panel(p_data.get("current", 0));

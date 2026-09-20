@@ -141,6 +141,22 @@ bool EditorPanelRegistry::open_resource(const StringName &p_id, Control *p_panel
 	return answer.get_type() == Variant::BOOL ? (bool)answer : true;
 }
 
+Dictionary EditorPanelRegistry::save_panel_state(const StringName &p_id, Control *p_panel) {
+	const PanelType *type = types.getptr(p_id);
+	if (!type || !type->save_state.is_valid() || !p_panel) {
+		return Dictionary();
+	}
+	return type->save_state.call(p_panel);
+}
+
+void EditorPanelRegistry::load_panel_state(const StringName &p_id, Control *p_panel, const Dictionary &p_state) {
+	const PanelType *type = types.getptr(p_id);
+	if (!type || !type->load_state.is_valid() || !p_panel || p_state.is_empty()) {
+		return;
+	}
+	type->load_state.call(p_panel, p_state);
+}
+
 bool EditorPanelRegistry::release_panel(const StringName &p_id, Control *p_panel) {
 	const PanelType *type = types.getptr(p_id);
 	if (!type || !type->release.is_valid()) {

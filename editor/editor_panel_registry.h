@@ -105,6 +105,14 @@ public:
 		// it. Unset means "point the panel at it", which is what a panel bound
 		// to a resource is for.
 		Callable open;
+		// What a panel of this type wants written down beyond its subject, and
+		// how to read it back. A scene panel remembers whether it was on the
+		// running game and which session; a viewport could remember its camera.
+		// Anything a layout has to survive a restart with goes here rather than
+		// into the arrangement, which knows nothing about any panel in
+		// particular.
+		Callable save_state;
+		Callable load_state;
 		// Called with the panel when a pane stops showing it, and says whether
 		// it took it back. A lent type always does. A type that builds its
 		// panels may still want the first one back - the editor's own 3D view
@@ -153,6 +161,11 @@ public:
 	// Asks a type to show a resource itself. False means it would rather be
 	// pointed at it in the ordinary way.
 	static bool open_resource(const StringName &p_id, Control *p_panel, const String &p_path);
+
+	// Whatever a panel wants remembered besides its subject. Empty for a type
+	// that wants nothing, which is most of them.
+	static Dictionary save_panel_state(const StringName &p_id, Control *p_panel);
+	static void load_panel_state(const StringName &p_id, Control *p_panel, const Dictionary &p_state);
 
 	static void cleanup();
 

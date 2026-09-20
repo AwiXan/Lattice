@@ -8943,8 +8943,10 @@ EditorNode::EditorNode() {
 		type.title = TTRC("Scene");
 		type.icon = "PackedScene";
 		type.binding = EditorPanelRegistry::BINDING_DOCUMENT;
-		type.create = callable_mp_static(&SceneTreeEditor::create_panel);
-		type.bind = callable_mp_static(&SceneTreeEditor::bind_panel);
+		type.create = callable_mp_static(&SceneTreeEditor::create_scene_panel);
+		type.bind = callable_mp_static(&SceneTreeEditor::bind_scene_panel);
+		type.save_state = callable_mp_static(&SceneTreeEditor::save_scene_panel);
+		type.load_state = callable_mp_static(&SceneTreeEditor::load_scene_panel);
 		EditorPanelRegistry::register_type(type);
 	}
 
@@ -8971,6 +8973,7 @@ EditorNode::EditorNode() {
 		type.binding = EditorPanelRegistry::BINDING_RESOURCE;
 		type.create = callable_mp_static(&EditorInspector::create_resource_panel);
 		type.bind = callable_mp_static(&EditorInspector::bind_resource_panel);
+		type.rank = callable_mp_static(&EditorInspector::rank_resource_panel);
 		type.rank = callable_mp_static(&EditorInspector::rank_resource_panel);
 		EditorPanelRegistry::register_type(type);
 	}

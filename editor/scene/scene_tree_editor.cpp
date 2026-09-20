@@ -30,6 +30,8 @@
 
 #include "scene_tree_editor.h"
 
+#include "editor/scene/editor_scene_panel.h"
+
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/io/resource_loader.h"
@@ -75,6 +77,31 @@ Control *SceneTreeEditor::create_panel() {
 	SceneTreeEditor *tree = memnew(SceneTreeEditor(false, true, true));
 	tree->set_editor_selection(EditorNode::get_singleton()->get_editor_selection());
 	return tree;
+}
+
+Control *SceneTreeEditor::create_scene_panel() {
+	return memnew(EditorScenePanel);
+}
+
+Dictionary SceneTreeEditor::save_scene_panel(Control *p_panel) {
+	EditorScenePanel *panel = Object::cast_to<EditorScenePanel>(p_panel);
+	return panel ? panel->save_state() : Dictionary();
+}
+
+void SceneTreeEditor::load_scene_panel(Control *p_panel, const Dictionary &p_state) {
+	EditorScenePanel *panel = Object::cast_to<EditorScenePanel>(p_panel);
+	if (panel) {
+		panel->load_state(p_state);
+	}
+}
+
+void SceneTreeEditor::bind_scene_panel(Control *p_panel, int p_document_id) {
+	EditorScenePanel *panel = Object::cast_to<EditorScenePanel>(p_panel);
+	if (panel && panel->get_local_tree()) {
+		// Only the local half is pointed at a document. The remote half shows
+		// whatever the game has, which is not a document the editor owns.
+		panel->get_local_tree()->bind_document(p_document_id);
+	}
 }
 
 void SceneTreeEditor::bind_panel(Control *p_panel, int p_document_id) {
