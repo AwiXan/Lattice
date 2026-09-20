@@ -323,7 +323,7 @@ void EditorMainScreen::split_main_pane(bool p_vertical) {
 		return;
 	}
 
-	EditorPane *pane = pane_tree->split_pane(pane_tree->get_first_pane(), p_vertical);
+	EditorPane *pane = pane_tree->split_pane(pane_tree->get_main_screen_pane(), p_vertical);
 	if (!pane) {
 		return;
 	}
