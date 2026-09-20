@@ -936,54 +936,10 @@ void DockContextPopup::_notification(int p_what) {
 		case Control::NOTIFICATION_LAYOUT_DIRECTION_CHANGED:
 		case NOTIFICATION_TRANSLATION_CHANGED:
 		case NOTIFICATION_THEME_CHANGED: {
-			if (make_float_button) {
-				make_float_button->set_button_icon(get_editor_theme_icon(SNAME("MakeFloating")));
-			}
-			if (is_layout_rtl()) {
-				tab_move_left_button->set_button_icon(get_editor_theme_icon(SNAME("Forward")));
-				tab_move_right_button->set_button_icon(get_editor_theme_icon(SNAME("Back")));
-				tab_move_left_button->set_tooltip_text(TTR("Move this dock right one tab."));
-				tab_move_right_button->set_tooltip_text(TTR("Move this dock left one tab."));
-			} else {
-				tab_move_left_button->set_button_icon(get_editor_theme_icon(SNAME("Back")));
-				tab_move_right_button->set_button_icon(get_editor_theme_icon(SNAME("Forward")));
-				tab_move_left_button->set_tooltip_text(TTR("Move this dock left one tab."));
-				tab_move_right_button->set_tooltip_text(TTR("Move this dock right one tab."));
-			}
+			make_float_button->set_button_icon(get_editor_theme_icon(SNAME("MakeFloating")));
 			close_button->set_button_icon(get_editor_theme_icon(SNAME("Close")));
 		} break;
 	}
-}
-
-void DockContextPopup::_slot_clicked(int p_slot) {
-	DockTabContainer *target_tab_container = dock_manager->dock_slots[p_slot];
-	if (context_dock->get_parent_container() != target_tab_container) {
-		dock_manager->_move_dock(context_dock, target_tab_container, target_tab_container->get_tab_count());
-		dock_manager->_update_layout();
-		hide();
-	}
-}
-
-void DockContextPopup::_tab_move_left() {
-	TabContainer *tab_container = context_dock->get_parent_container();
-	if (!tab_container) {
-		return;
-	}
-	int new_index = tab_container->get_tab_idx_from_control(context_dock) - 1;
-	context_dock->set_tab_index(new_index, true);
-	dock_manager->_update_layout();
-	dock_select->queue_redraw();
-}
-
-void DockContextPopup::_tab_move_right() {
-	TabContainer *tab_container = context_dock->get_parent_container();
-	if (!tab_container) {
-		return;
-	}
-	int new_index = tab_container->get_tab_idx_from_control(context_dock) + 1;
-	context_dock->set_tab_index(new_index, true);
-	dock_manager->_update_layout();
-	dock_select->queue_redraw();
 }
 
 void DockContextPopup::_close_dock() {
@@ -998,38 +954,26 @@ void DockContextPopup::_float_dock() {
 }
 
 void DockContextPopup::_update_buttons() {
-	if (context_dock->global || context_dock->closable) {
-		close_button->set_tooltip_text(TTRC("Close this dock."));
-		close_button->set_disabled(false);
+	const bool can_close = context_dock->global || context_dock->closable;
+	close_button->set_disabled(!can_close);
+	close_button->set_tooltip_text(can_close ? TTRC("Close this dock.") : TTRC("This dock can't be closed."));
+
+	if (!EditorNode::get_singleton()->is_multi_window_enabled()) {
+		make_float_button->set_disabled(true);
+		make_float_button->set_tooltip_text(EditorNode::get_singleton()->get_multiwindow_support_tooltip_text());
+	} else if (!(context_dock->available_layouts & EditorDock::DOCK_LAYOUT_FLOATING)) {
+		make_float_button->set_disabled(true);
+		make_float_button->set_tooltip_text(TTRC("This dock does not support floating."));
 	} else {
-		close_button->set_tooltip_text(TTRC("This dock can't be closed."));
-		close_button->set_disabled(true);
-	}
-	if (EditorNode::get_singleton()->is_multi_window_enabled()) {
-		if (!(context_dock->available_layouts & EditorDock::DOCK_LAYOUT_FLOATING)) {
-			make_float_button->set_tooltip_text(TTRC("This dock does not support floating."));
-			make_float_button->set_disabled(true);
-		} else {
-			make_float_button->set_tooltip_text(TTRC("Make this dock floating."));
-			make_float_button->set_disabled(false);
-		}
+		make_float_button->set_disabled(false);
+		make_float_button->set_tooltip_text(TTRC("Put this dock in a window of its own."));
 	}
 
-	// Update tab move buttons.
-	tab_move_left_button->set_disabled(true);
-	tab_move_right_button->set_disabled(true);
-	TabContainer *context_tab_container = context_dock->get_parent_container();
-	if (context_tab_container && context_tab_container->get_tab_count() > 0) {
-		int context_tab_index = context_tab_container->get_tab_idx_from_control(context_dock);
-		tab_move_left_button->set_disabled(context_tab_index == 0);
-		tab_move_right_button->set_disabled(context_tab_index >= context_tab_container->get_tab_count() - 1);
-	}
 	reset_size();
 }
 
 void DockContextPopup::set_dock(EditorDock *p_dock) {
 	context_dock = p_dock;
-	dock_select->context_dock = p_dock;
 	_update_buttons();
 }
 
@@ -1043,57 +987,25 @@ void DockContextPopup::docks_updated() {
 DockContextPopup::DockContextPopup() {
 	dock_manager = EditorDockManager::get_singleton();
 
-	dock_select_popup_vb = memnew(VBoxContainer);
-	add_child(dock_select_popup_vb);
-
-	HBoxContainer *header_hb = memnew(HBoxContainer);
-	tab_move_left_button = memnew(Button);
-	tab_move_left_button->set_accessibility_name(TTRC("Move Tab Left"));
-	tab_move_left_button->set_flat(true);
-	tab_move_left_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
-	tab_move_left_button->connect(SceneStringName(pressed), callable_mp(this, &DockContextPopup::_tab_move_left));
-	header_hb->add_child(tab_move_left_button);
-
-	Label *position_label = memnew(Label);
-	position_label->set_text(TTRC("Dock Position"));
-	position_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	position_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-	header_hb->add_child(position_label);
-
-	tab_move_right_button = memnew(Button);
-	tab_move_right_button->set_accessibility_name(TTRC("Move Tab Right"));
-	tab_move_right_button->set_flat(true);
-	tab_move_right_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
-	tab_move_right_button->connect(SceneStringName(pressed), callable_mp(this, &DockContextPopup::_tab_move_right));
-
-	header_hb->add_child(tab_move_right_button);
-	dock_select_popup_vb->add_child(header_hb);
-
-	dock_select = memnew(DockSlotGrid);
-	dock_select_popup_vb->add_child(dock_select);
-	dock_select->connect("slot_clicked", callable_mp(this, &DockContextPopup::_slot_clicked));
-
-	Control *separator = memnew(Control);
-	separator->set_custom_minimum_size(Vector2(0, 8 * EDSCALE));
-	dock_select_popup_vb->add_child(separator);
+	// Two things this menu can do that dragging the tab cannot. Where a dock
+	// sits is not among them any more: that is what dragging it is for, and a
+	// picture of eight slots to click at was the long way round.
+	HBoxContainer *buttons = memnew(HBoxContainer);
+	add_child(buttons);
 
 	make_float_button = memnew(Button);
-	make_float_button->set_text(TTRC("Make Floating"));
-	if (!EditorNode::get_singleton()->is_multi_window_enabled()) {
-		make_float_button->set_disabled(true);
-		make_float_button->set_tooltip_text(EditorNode::get_singleton()->get_multiwindow_support_tooltip_text());
-	}
+	make_float_button->set_accessibility_name(TTRC("Make Floating"));
+	make_float_button->set_flat(true);
 	make_float_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
-	make_float_button->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	make_float_button->connect(SceneStringName(pressed), callable_mp(this, &DockContextPopup::_float_dock));
-	dock_select_popup_vb->add_child(make_float_button);
+	buttons->add_child(make_float_button);
 
 	close_button = memnew(Button);
-	close_button->set_text(TTRC("Close"));
+	close_button->set_accessibility_name(TTRC("Close"));
+	close_button->set_flat(true);
 	close_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
-	close_button->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	close_button->connect(SceneStringName(pressed), callable_mp(this, &DockContextPopup::_close_dock));
-	dock_select_popup_vb->add_child(close_button);
+	buttons->add_child(close_button);
 }
 
 void DockShortcutHandler::shortcut_input(const Ref<InputEvent> &p_event) {
@@ -1118,149 +1030,3 @@ void DockShortcutHandler::shortcut_input(const Ref<InputEvent> &p_event) {
 	}
 }
 
-void DockSlotGrid::_update_rect_cache() {
-	for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
-		Rect2 rect = EditorDockManager::get_singleton()->dock_slots[i]->grid_rect;
-		if (is_layout_rtl()) {
-			rect.position.x = GRID_SIZE.x - rect.position.x - rect.size.x;
-		}
-		rect.position = rect.position * CELL_SIZE * EDSCALE + (rect.position + Vector2i(0, 1)) * MARGINS * EDSCALE;
-		rect.size = rect.size * CELL_SIZE * EDSCALE + (rect.size - Vector2i(1, 1)) * MARGINS * EDSCALE;
-		rect_cache[i] = rect;
-	}
-
-	// Temporarily hard-coded, until main screen is registered as a slot.
-	{
-		Rect2 rect = Rect2i(2, 0, 4, 4);
-		if (is_layout_rtl()) {
-			rect.position.x = GRID_SIZE.x - rect.position.x - rect.size.x;
-		}
-		rect.position = rect.position * CELL_SIZE * EDSCALE + (rect.position + Vector2i(0, 1)) * MARGINS * EDSCALE;
-		rect.size = rect.size * CELL_SIZE * EDSCALE + (rect.size - Vector2i(1, 1)) * MARGINS * EDSCALE;
-		main_screen_rect = rect;
-	}
-}
-
-void DockSlotGrid::_bind_methods() {
-	ADD_SIGNAL(MethodInfo("slot_clicked", PropertyInfo(Variant::INT, "slot")));
-}
-
-void DockSlotGrid::_notification(int p_what) {
-	switch (p_what) {
-		case NOTIFICATION_LAYOUT_DIRECTION_CHANGED:
-		case NOTIFICATION_TRANSLATION_CHANGED: {
-			rect_cache_dirty = true;
-		} break;
-
-		case NOTIFICATION_DRAW: {
-			if (rect_cache_dirty) {
-				_update_rect_cache();
-				rect_cache_dirty = false;
-			}
-			Color used_dock_color = Color(0.6, 0.6, 0.6, 0.8);
-			Color hovered_dock_color = Color(0.8, 0.8, 0.8, 0.8);
-			Color tab_selected_color = get_theme_color(SNAME("mono_color"), EditorStringName(Editor));
-			Color tab_unselected_color = used_dock_color;
-			Color unused_dock_color = used_dock_color;
-			unused_dock_color.a = 0.4;
-			Color unusable_dock_color = unused_dock_color;
-			unusable_dock_color.a = 0.1;
-			Color tab_unusable_color = unusable_dock_color;
-
-			TabContainer *context_tab_container = context_dock->get_parent_container();
-			int context_tab_index = -1;
-			if (context_tab_container && context_tab_container->get_tab_count() > 0) {
-				context_tab_index = context_tab_container->get_tab_idx_from_control(context_dock);
-			}
-
-			for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
-				const Rect2i slot_rect = rect_cache[i];
-				int max_tabs = EditorDockManager::get_singleton()->dock_slots[i]->grid_rect.size.x * TABS_PER_CELL;
-
-				DockTabContainer *dock_slot = EditorDockManager::get_singleton()->dock_slots[i];
-				bool is_context_slot = context_tab_container == dock_slot;
-				bool is_slot_available = context_dock->available_layouts & dock_slot->layout;
-				int tabs_to_draw = MIN(max_tabs, dock_slot->get_tab_count());
-
-				if (i == context_dock->dock_slot_index) {
-					draw_rect(slot_rect, tab_selected_color);
-				} else if (!is_slot_available) {
-					draw_rect(slot_rect, unusable_dock_color);
-				} else if (i == hovered_slot) {
-					draw_rect(slot_rect, hovered_dock_color);
-				} else if (tabs_to_draw == 0) {
-					draw_rect(slot_rect, unused_dock_color);
-				} else {
-					draw_rect(slot_rect, used_dock_color);
-				}
-
-				real_t tab_width = ((slot_rect.size.x - (max_tabs - 1) * TAB_MARGIN * EDSCALE) / max_tabs);
-				real_t initial_offset = (slot_rect.size.x - (max_tabs * tab_width + (max_tabs - 1) * TAB_MARGIN * EDSCALE)) * 0.5;
-
-				for (int j = 0; j < tabs_to_draw; j++) {
-					real_t pos_x = is_layout_rtl()
-							? slot_rect.size.x - (initial_offset + (j + 1) * tab_width + j * TAB_MARGIN * EDSCALE)
-							: initial_offset + j * (tab_width + TAB_MARGIN * EDSCALE);
-					const Rect2 tab_rect = Rect2(slot_rect.position + Vector2(pos_x, -MARGINS.y * EDSCALE + MARGINS.y * EDSCALE / 4), Vector2(tab_width, MARGINS.y * EDSCALE / 2));
-					if (is_context_slot && context_tab_index == j) {
-						draw_rect(tab_rect, tab_selected_color);
-					} else if (is_slot_available) {
-						draw_rect(tab_rect, tab_unselected_color);
-					} else {
-						draw_rect(tab_rect, tab_unusable_color);
-					}
-				}
-			}
-			draw_rect(main_screen_rect, unusable_dock_color);
-		} break;
-
-		case NOTIFICATION_MOUSE_EXIT: {
-			if (hovered_slot > -1) {
-				hovered_slot = -1;
-				queue_redraw();
-			}
-		} break;
-	}
-}
-
-void DockSlotGrid::gui_input(const Ref<InputEvent> &p_event) {
-	Ref<InputEventMouse> me = p_event;
-	if (me.is_valid()) {
-		Vector2 point = me->get_position();
-
-		int over_dock_slot = -1;
-		for (int i = 0; i < EditorDock::DOCK_SLOT_MAX; i++) {
-			if (rect_cache[i].has_point(point)) {
-				over_dock_slot = i;
-				break;
-			}
-		}
-
-		if (over_dock_slot != hovered_slot) {
-			queue_redraw();
-			hovered_slot = over_dock_slot;
-		}
-
-		if (over_dock_slot == -1) {
-			return;
-		}
-
-		Ref<InputEventMouseButton> mb = me;
-		DockTabContainer *target_tab_container = EditorDockManager::get_singleton()->dock_slots[over_dock_slot];
-		if (context_dock->get_parent_container() == target_tab_container) {
-			return;
-		}
-
-		if (!(context_dock->available_layouts & target_tab_container->layout)) {
-			return;
-		}
-
-		if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT && mb->is_pressed()) {
-			emit_signal("slot_clicked", over_dock_slot);
-		}
-	}
-}
-
-Size2 DockSlotGrid::get_minimum_size() const {
-	return GRID_SIZE * CELL_SIZE * EDSCALE + (GRID_SIZE - Vector2i(1, 0)) * MARGINS * EDSCALE;
-}
