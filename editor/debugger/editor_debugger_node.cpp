@@ -94,10 +94,6 @@ EditorDebuggerNode::EditorDebuggerNode() {
 
 	// Remote scene tree
 	remote_scene_tree = memnew(EditorDebuggerTree);
-	remote_scene_tree->connect("objects_selected", callable_mp(this, &EditorDebuggerNode::_remote_objects_requested));
-	remote_scene_tree->connect("selection_cleared", callable_mp(this, &EditorDebuggerNode::_remote_selection_cleared));
-	remote_scene_tree->connect("save_node", callable_mp(this, &EditorDebuggerNode::_save_node_requested));
-	remote_scene_tree->connect("button_clicked", callable_mp(this, &EditorDebuggerNode::_remote_tree_button_pressed));
 	register_remote_tree(remote_scene_tree);
 	SceneTreeDock::get_singleton()->add_remote_tree_editor(remote_scene_tree);
 	SceneTreeDock::get_singleton()->connect("remote_tree_selected", callable_mp(this, &EditorDebuggerNode::request_remote_tree));
@@ -776,12 +772,31 @@ void EditorDebuggerNode::_remote_tree_clear_selection_requested(int p_debugger) 
 
 void EditorDebuggerNode::register_remote_tree(EditorDebuggerTree *p_tree, int p_session) {
 	ERR_FAIL_NULL(p_tree);
+	if (remote_trees.has(p_tree->get_instance_id())) {
+		remote_trees[p_tree->get_instance_id()] = p_session;
+		return;
+	}
 	remote_trees[p_tree->get_instance_id()] = p_session;
+
+	// Selecting in it reaches the game it is watching - which is what draws the
+	// outline around the node over there.
+	p_tree->connect("objects_selected", callable_mp(this, &EditorDebuggerNode::_remote_objects_requested));
+	p_tree->connect("selection_cleared", callable_mp(this, &EditorDebuggerNode::_remote_selection_cleared));
+	p_tree->connect("save_node", callable_mp(this, &EditorDebuggerNode::_save_node_requested));
+	p_tree->connect("button_clicked", callable_mp(this, &EditorDebuggerNode::_remote_tree_button_pressed).bind(p_tree));
 }
 
 void EditorDebuggerNode::unregister_remote_tree(EditorDebuggerTree *p_tree) {
 	ERR_FAIL_NULL(p_tree);
+	if (!remote_trees.has(p_tree->get_instance_id())) {
+		return;
+	}
 	remote_trees.erase(p_tree->get_instance_id());
+
+	p_tree->disconnect("objects_selected", callable_mp(this, &EditorDebuggerNode::_remote_objects_requested));
+	p_tree->disconnect("selection_cleared", callable_mp(this, &EditorDebuggerNode::_remote_selection_cleared));
+	p_tree->disconnect("save_node", callable_mp(this, &EditorDebuggerNode::_save_node_requested));
+	p_tree->disconnect("button_clicked", callable_mp(this, &EditorDebuggerNode::_remote_tree_button_pressed).bind(p_tree));
 }
 
 void EditorDebuggerNode::set_remote_tree_session(EditorDebuggerTree *p_tree, int p_session) {
@@ -839,21 +854,29 @@ void EditorDebuggerNode::_remote_tree_updated(int p_debugger) {
 	}
 }
 
-void EditorDebuggerNode::_remote_tree_button_pressed(Object *p_item, int p_column, int p_id, MouseButton p_button) {
+void EditorDebuggerNode::_remote_tree_button_pressed(Object *p_item, int p_column, int p_id, MouseButton p_button, EditorDebuggerTree *p_tree) {
 	if (p_button != MouseButton::LEFT) {
 		return;
 	}
 
 	TreeItem *item = Object::cast_to<TreeItem>(p_item);
 	ERR_FAIL_NULL(item);
+	ERR_FAIL_NULL(p_tree);
+
+	// The session this tree is watching, which need not be the one in front.
+	const int session = get_remote_tree_session(p_tree);
+	ScriptEditorDebugger *debugger = get_debugger(session == FOLLOW_CURRENT ? tabs->get_current_tab() : session);
+	if (!debugger) {
+		return;
+	}
 
 	if (p_id == EditorDebuggerTree::BUTTON_SUBSCENE) {
-		remote_scene_tree->emit_signal(SNAME("open"), item->get_meta("scene_file_path"));
+		p_tree->emit_signal(SNAME("open"), item->get_meta("scene_file_path"));
 	} else if (p_id == EditorDebuggerTree::BUTTON_VISIBILITY) {
 		ObjectID obj_id = item->get_metadata(0);
 		ERR_FAIL_COND(obj_id.is_null());
-		get_current_debugger()->update_remote_object(obj_id, "visible", !item->get_meta("visible"));
-		get_current_debugger()->request_remote_tree();
+		debugger->update_remote_object(obj_id, "visible", !item->get_meta("visible"));
+		debugger->request_remote_tree();
 	}
 }
 
@@ -875,26 +898,28 @@ void EditorDebuggerNode::_remote_object_property_updated(ObjectID p_id, const St
 }
 
 void EditorDebuggerNode::_remote_objects_requested(const TypedArray<uint64_t> &p_ids, int p_debugger) {
-	if (p_debugger != tabs->get_current_tab()) {
+	ScriptEditorDebugger *debugger = get_debugger(p_debugger);
+	if (!debugger) {
 		return;
 	}
 	stop_waiting_inspection();
-	get_current_debugger()->request_remote_objects(p_ids);
+	debugger->request_remote_objects(p_ids);
 }
 
 void EditorDebuggerNode::_remote_selection_cleared(int p_debugger) {
-	if (p_debugger != tabs->get_current_tab()) {
+	ScriptEditorDebugger *debugger = get_debugger(p_debugger);
+	if (!debugger) {
 		return;
 	}
 	stop_waiting_inspection();
-	get_current_debugger()->clear_inspector();
+	debugger->clear_inspector();
 }
 
 void EditorDebuggerNode::_save_node_requested(ObjectID p_id, const String &p_file, int p_debugger) {
-	if (p_debugger != tabs->get_current_tab()) {
-		return;
+	ScriptEditorDebugger *debugger = get_debugger(p_debugger);
+	if (debugger) {
+		debugger->save_node(p_id, p_file);
 	}
-	get_current_debugger()->save_node(p_id, p_file);
 }
 
 void EditorDebuggerNode::_breakpoint_set_in_tree(Ref<RefCounted> p_script, int p_line, bool p_enabled, int p_debugger) {

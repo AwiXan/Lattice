@@ -143,7 +143,7 @@ protected:
 	void _remote_tree_select_requested(const TypedArray<int64_t> &p_ids, int p_debugger);
 	void _remote_tree_clear_selection_requested(int p_debugger);
 	void _remote_tree_updated(int p_debugger);
-	void _remote_tree_button_pressed(Object *p_item, int p_column, int p_id, MouseButton p_button);
+	void _remote_tree_button_pressed(Object *p_item, int p_column, int p_id, MouseButton p_button, EditorDebuggerTree *p_tree);
 	void _remote_objects_updated(EditorDebuggerRemoteObjects *p_objs, int p_debugger);
 	void _remote_object_property_updated(ObjectID p_id, const String &p_property, int p_debugger);
 	void _remote_objects_requested(const TypedArray<uint64_t> &p_ids, int p_debugger);
@@ -193,6 +193,7 @@ public:
 	int get_session_count() const;
 	String get_session_name(int p_session) const;
 	int get_current_session() const;
+	EditorDebuggerTree *get_remote_scene_tree() const { return remote_scene_tree; }
 
 	void debug_next();
 	void debug_step();
