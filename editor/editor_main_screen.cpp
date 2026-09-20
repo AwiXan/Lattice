@@ -125,7 +125,10 @@ EditorPaneWindow *EditorMainScreen::open_panel_in_window(EditorPane *p_from, int
 	}
 
 	EditorPaneWindow *window = memnew(EditorPaneWindow);
-	add_child(window);
+	// Not in the main screen: that is a container, and it would lay this out to
+	// fill it - an empty stand-in over the whole editor, swallowing every
+	// click. The docks park theirs in the same place for the same reason.
+	EditorNode::get_singleton()->get_gui_base()->add_child(window);
 	_watch_tree(window->get_pane_tree());
 	window->connect("window_close_requested", callable_mp(this, &EditorMainScreen::_pane_window_closed).bind(window));
 	pane_windows.push_back(window);
@@ -221,7 +224,7 @@ void EditorMainScreen::_restore_pane_windows(const Array &p_windows) {
 			continue;
 		}
 		EditorPaneWindow *window = memnew(EditorPaneWindow);
-		add_child(window);
+		EditorNode::get_singleton()->get_gui_base()->add_child(window);
 		_watch_tree(window->get_pane_tree());
 		window->connect("window_close_requested", callable_mp(this, &EditorMainScreen::_pane_window_closed).bind(window));
 		pane_windows.push_back(window);
