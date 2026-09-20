@@ -748,7 +748,51 @@ Variant EditorPane::_tab_get_drag_data_fw(const Point2 &p_point, Control *p_from
 	return data;
 }
 
+bool EditorPane::open_resource(const String &p_path) {
+	const StringName type = EditorPanelRegistry::find_type_for_resource(p_path);
+	if (type == StringName()) {
+		return false;
+	}
+
+	const int at = show_panel_of_type(type);
+	if (at < 0) {
+		return false;
+	}
+	// A type that keeps its own tabs opens the file in them; anything else is
+	// simply pointed at it.
+	if (!EditorPanelRegistry::open_resource(type, get_panel_at(at), p_path)) {
+		set_current_panel(at);
+		set_panel_subject(p_path);
+	}
+	return true;
+}
+
+String EditorPane::first_openable_file(const Variant &p_data) {
+	if (p_data.get_type() != Variant::DICTIONARY) {
+		return String();
+	}
+	const Dictionary data = p_data;
+	const String kind = data.get("type", "");
+	if (kind != "files" && kind != "files_and_dirs") {
+		return String();
+	}
+	const Vector<String> files = data.get("files", Vector<String>());
+	for (const String &file : files) {
+		if (EditorPanelRegistry::find_type_for_resource(file) != StringName()) {
+			return file;
+		}
+	}
+	return String();
+}
+
 bool EditorPane::_tab_can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const {
+	// A file let go on the tabs means "show it here". Only on the tabs: over
+	// the body a file still means whatever the panel wants of it, so dropping a
+	// scene on a 3D view still puts it in the scene.
+	if (!first_openable_file(p_data).is_empty()) {
+		return true;
+	}
+
 	const PanelDrop drop = _read_drop(p_data);
 	if (!drop.is_valid()) {
 		return false;
@@ -758,6 +802,12 @@ bool EditorPane::_tab_can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 }
 
 void EditorPane::_tab_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) {
+	const String file = first_openable_file(p_data);
+	if (!file.is_empty()) {
+		open_resource(file);
+		return;
+	}
+
 	const PanelDrop drop = _read_drop(p_data);
 	if (!drop.is_valid()) {
 		return;

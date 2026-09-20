@@ -215,6 +215,12 @@ public:
 	// does not say keeps the behaviour it always had: shown where it was put,
 	// hidden when another main screen is chosen.
 	virtual Control *get_main_screen_control() { return nullptr; }
+	// How well this main screen suits a resource dropped on a pane, and how it
+	// shows one. Zero, the default, means it does not show resources at all; a
+	// plugin that does answers higher than the general inspector's 1 for the
+	// formats it knows. See EditorPanelRegistry::PanelType::rank.
+	virtual int rank_resource(const String &p_path, const StringName &p_class) const { return 0; }
+	virtual bool open_resource(const String &p_path) { return false; }
 	virtual void make_visible(bool p_visible);
 	virtual void set_current() {}
 	virtual void selected_notify() {} //notify that it was raised by the user, not the editor

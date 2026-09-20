@@ -85,12 +85,17 @@ public:
 	// get in the way of the drop at all - a node dragged onto a 3D view has to
 	// reach that view, as it always did.
 	static bool is_panel_drag(const Variant &p_data);
+	// The first file in a drag that something registered can show, if any.
+	static String first_openable_file(const Variant &p_data);
 
 	// A drop somewhere over this pane, in this pane's coordinates. These are
 	// what the hint calls, because during a drag the thing under the mouse is
 	// the hint and not what the pane is showing.
 	bool can_accept_drop(const Point2 &p_point, const Variant &p_data) const;
 	bool accept_drop(const Point2 &p_point, const Variant &p_data);
+	// Shows a file here, in whichever kind of panel suits it. Returns false if
+	// nothing registered can show that kind of file.
+	bool open_resource(const String &p_path);
 
 	TabBar *get_tab_bar() const { return tab_bar; }
 

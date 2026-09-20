@@ -913,6 +913,10 @@ public:
 	// an image gets a workspace instead of a strip at the side of the screen.
 	static Control *create_resource_panel();
 	static void bind_resource_panel(Control *p_panel, const String &p_path);
+	// It shows the properties of anything that loads, and knows nothing about
+	// any format in particular, so it answers the lowest useful number: a
+	// viewer that does know one will beat it.
+	static int rank_resource_panel(const String &p_path, const StringName &p_class);
 	Object *get_next_edited_object();
 
 	void set_keying(bool p_active);

@@ -90,6 +90,8 @@ private:
 	HashMap<ObjectID, ObjectID> plugin_controls;
 	Control *_control_of(EditorPlugin *p_editor);
 	Control *_lend_main_panel(EditorPlugin *p_editor);
+	static int _rank_main_panel(const String &p_path, const StringName &p_class, EditorPlugin *p_editor);
+	static bool _open_in_main_panel(Control *p_panel, const String &p_path, EditorPlugin *p_editor);
 	bool _return_main_panel(Control *p_panel, EditorPlugin *p_editor);
 
 	// Arrangements of panes in windows of their own. The main one is not among

@@ -520,6 +520,14 @@ StringName EditorMainScreen::_main_panel_type_id(const EditorPlugin *p_editor) {
 	return StringName("main_" + const_cast<EditorPlugin *>(p_editor)->get_plugin_name());
 }
 
+int EditorMainScreen::_rank_main_panel(const String &p_path, const StringName &p_class, EditorPlugin *p_editor) {
+	return p_editor ? p_editor->rank_resource(p_path, p_class) : 0;
+}
+
+bool EditorMainScreen::_open_in_main_panel(Control *p_panel, const String &p_path, EditorPlugin *p_editor) {
+	return p_editor ? p_editor->open_resource(p_path) : false;
+}
+
 Control *EditorMainScreen::_control_of(EditorPlugin *p_editor) {
 	Control *known = p_editor->get_main_screen_control();
 	if (known) {
@@ -614,6 +622,8 @@ void EditorMainScreen::add_main_plugin(EditorPlugin *p_editor) {
 		type.lent = true;
 		type.create = callable_mp(this, &EditorMainScreen::_lend_main_panel).bind(p_editor);
 		type.release = callable_mp(this, &EditorMainScreen::_return_main_panel).bind(p_editor);
+		type.rank = callable_mp_static(&EditorMainScreen::_rank_main_panel).bind(p_editor);
+		type.open = callable_mp_static(&EditorMainScreen::_open_in_main_panel).bind(p_editor);
 		EditorPanelRegistry::register_type(type);
 	}
 }

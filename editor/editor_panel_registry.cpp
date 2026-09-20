@@ -30,6 +30,8 @@
 
 #include "editor_panel_registry.h"
 
+#include "core/io/resource_loader.h"
+
 #include "scene/gui/control.h"
 
 void EditorPanelRegistry::register_type(const PanelType &p_type) {
@@ -106,6 +108,37 @@ void EditorPanelRegistry::bind_panel(const StringName &p_id, Control *p_panel, c
 		return;
 	}
 	type->bind.call(p_panel, p_subject);
+}
+
+StringName EditorPanelRegistry::find_type_for_resource(const String &p_path) {
+	if (p_path.is_empty()) {
+		return StringName();
+	}
+	const StringName resource_class = ResourceLoader::get_resource_type(p_path);
+
+	StringName best;
+	int best_rank = 0;
+	for (const KeyValue<StringName, PanelType> &E : types) {
+		if (!E.value.rank.is_valid()) {
+			continue;
+		}
+		const Variant answer = E.value.rank.call(p_path, resource_class);
+		const int rank = answer.get_type() == Variant::INT ? (int)answer : 0;
+		if (rank > best_rank) {
+			best_rank = rank;
+			best = E.key;
+		}
+	}
+	return best;
+}
+
+bool EditorPanelRegistry::open_resource(const StringName &p_id, Control *p_panel, const String &p_path) {
+	const PanelType *type = types.getptr(p_id);
+	if (!type || !type->open.is_valid()) {
+		return false;
+	}
+	const Variant answer = type->open.call(p_panel, p_path);
+	return answer.get_type() == Variant::BOOL ? (bool)answer : true;
 }
 
 bool EditorPanelRegistry::release_panel(const StringName &p_id, Control *p_panel) {

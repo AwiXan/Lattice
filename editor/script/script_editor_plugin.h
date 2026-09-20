@@ -485,6 +485,8 @@ public:
 	virtual String get_plugin_name() const override { return TTRC("Script"); }
 	bool has_main_screen() const override { return true; }
 	virtual Control *get_main_screen_control() override;
+	virtual int rank_resource(const String &p_path, const StringName &p_class) const override;
+	virtual bool open_resource(const String &p_path) override;
 	virtual void edit(Object *p_object) override;
 	virtual bool handles(Object *p_object) const override;
 	virtual void make_visible(bool p_visible) override;

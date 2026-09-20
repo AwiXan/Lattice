@@ -8971,6 +8971,7 @@ EditorNode::EditorNode() {
 		type.binding = EditorPanelRegistry::BINDING_RESOURCE;
 		type.create = callable_mp_static(&EditorInspector::create_resource_panel);
 		type.bind = callable_mp_static(&EditorInspector::bind_resource_panel);
+		type.rank = callable_mp_static(&EditorInspector::rank_resource_panel);
 		EditorPanelRegistry::register_type(type);
 	}
 

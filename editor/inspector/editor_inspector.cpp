@@ -5260,6 +5260,10 @@ Control *EditorInspector::create_resource_panel() {
 	return inspector;
 }
 
+int EditorInspector::rank_resource_panel(const String &p_path, const StringName &p_class) {
+	return ResourceLoader::exists(p_path) ? 1 : 0;
+}
+
 void EditorInspector::bind_resource_panel(Control *p_panel, const String &p_path) {
 	EditorInspector *inspector = Object::cast_to<EditorInspector>(p_panel);
 	if (!inspector) {

@@ -4319,6 +4319,26 @@ Control *ScriptEditorPlugin::get_main_screen_control() {
 	return window_wrapper;
 }
 
+int ScriptEditorPlugin::rank_resource(const String &p_path, const StringName &p_class) const {
+	// A script belongs in the thing that edits scripts, not in a panel showing
+	// its properties, so this beats the general inspector.
+	if (p_class == StringName()) {
+		return 0;
+	}
+	return (ClassDB::is_parent_class(p_class, "Script") || ClassDB::is_parent_class(p_class, "JSON")) ? 10 : 0;
+}
+
+bool ScriptEditorPlugin::open_resource(const String &p_path) {
+	Ref<Resource> res = ResourceLoader::load(p_path);
+	if (res.is_null()) {
+		return false;
+	}
+	// It keeps its own tabs, so opening one more is adding to them rather than
+	// making a second script editor.
+	script_editor->edit(res);
+	return true;
+}
+
 void ScriptEditorPlugin::make_visible(bool p_visible) {
 	if (p_visible) {
 		window_wrapper->show();

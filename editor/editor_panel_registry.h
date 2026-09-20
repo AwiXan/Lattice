@@ -88,6 +88,23 @@ public:
 		// as the pane holds it. A pane never frees a lent panel - it gives it
 		// back, and whoever lent it decides where it goes.
 		bool lent = false;
+		// How well a panel of this type suits a resource, asked as
+		// (String path, StringName resource_class) and answered with a number.
+		// Zero, or unset, means it cannot show that resource at all. The highest
+		// answer wins, so an inspector that shows anything answers 1 and a
+		// viewer that knows the format answers more.
+		//
+		// This is the whole of it: nothing asks "is it a script", and a plugin
+		// that brings a better viewer for something says so here rather than
+		// being added to a list somewhere.
+		Callable rank;
+		// Shows a resource in a panel of this type, for a type that would
+		// rather do it itself than be pointed at it. The script editor would:
+		// it has tabs of its own, and opening a script means adding one to them
+		// rather than making a second script editor. Answers whether it took
+		// it. Unset means "point the panel at it", which is what a panel bound
+		// to a resource is for.
+		Callable open;
 		// Called with the panel when a pane stops showing it, and says whether
 		// it took it back. A lent type always does. A type that builds its
 		// panels may still want the first one back - the editor's own 3D view
@@ -130,6 +147,12 @@ public:
 	// Gives a panel back to whoever lent it. False means nobody did, and the
 	// caller is the one who has to free it.
 	static bool release_panel(const StringName &p_id, Control *p_panel);
+
+	// Which registered type suits this resource best, or nothing if none does.
+	static StringName find_type_for_resource(const String &p_path);
+	// Asks a type to show a resource itself. False means it would rather be
+	// pointed at it in the ordinary way.
+	static bool open_resource(const StringName &p_id, Control *p_panel, const String &p_path);
 
 	static void cleanup();
 
