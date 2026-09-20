@@ -104,6 +104,12 @@ private:
 	bool inspect_edited_object_wait = false;
 	float inspect_edited_object_timeout = 0;
 	EditorDebuggerTree *remote_scene_tree = nullptr;
+	// Every remote tree being shown, and which session each one watches. The
+	// editor used to have exactly one, which meant one thing to look at even
+	// with several games running; a pane showing a remote tree registers its
+	// own, so two panes can watch two sessions at once. FOLLOW_CURRENT means
+	// "whichever session is in front", which is what the Scene dock's does.
+	HashMap<ObjectID, int> remote_trees;
 	bool remote_scene_tree_wait = false;
 	float remote_scene_tree_timeout = 0.0;
 	bool remote_scene_tree_clear_msg = true;
@@ -127,6 +133,7 @@ private:
 	friend class DebugAdapterParser;
 	static EditorDebuggerNode *singleton;
 	EditorDebuggerNode();
+	~EditorDebuggerNode();
 
 protected:
 	void _debugger_stopped(int p_id);
@@ -172,6 +179,20 @@ public:
 	ScriptEditorDebugger *get_current_debugger() const;
 	ScriptEditorDebugger *get_default_debugger() const;
 	ScriptEditorDebugger *get_debugger(int p_debugger) const;
+
+	// A remote tree watches one session, or follows whichever is in front.
+	enum {
+		FOLLOW_CURRENT = -1,
+	};
+	void register_remote_tree(EditorDebuggerTree *p_tree, int p_session = FOLLOW_CURRENT);
+	void unregister_remote_tree(EditorDebuggerTree *p_tree);
+	void set_remote_tree_session(EditorDebuggerTree *p_tree, int p_session);
+	int get_remote_tree_session(EditorDebuggerTree *p_tree) const;
+
+	// How many sessions there are to choose between, and what to call them.
+	int get_session_count() const;
+	String get_session_name(int p_session) const;
+	int get_current_session() const;
 
 	void debug_next();
 	void debug_step();

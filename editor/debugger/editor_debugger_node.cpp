@@ -98,6 +98,7 @@ EditorDebuggerNode::EditorDebuggerNode() {
 	remote_scene_tree->connect("selection_cleared", callable_mp(this, &EditorDebuggerNode::_remote_selection_cleared));
 	remote_scene_tree->connect("save_node", callable_mp(this, &EditorDebuggerNode::_save_node_requested));
 	remote_scene_tree->connect("button_clicked", callable_mp(this, &EditorDebuggerNode::_remote_tree_button_pressed));
+	register_remote_tree(remote_scene_tree);
 	SceneTreeDock::get_singleton()->add_remote_tree_editor(remote_scene_tree);
 	SceneTreeDock::get_singleton()->connect("remote_tree_selected", callable_mp(this, &EditorDebuggerNode::request_remote_tree));
 
@@ -109,6 +110,15 @@ EditorDebuggerNode::EditorDebuggerNode() {
 	}
 
 	EditorRunBar::get_singleton()->get_pause_button()->connect(SceneStringName(pressed), callable_mp(this, &EditorDebuggerNode::_paused));
+}
+
+EditorDebuggerNode::~EditorDebuggerNode() {
+	// Anything that asks for the debugger while the editor is being taken down
+	// - a panel telling it to stop feeding a tree - has to be told there is
+	// none, rather than handed a pointer into freed memory.
+	if (singleton == this) {
+		singleton = nullptr;
+	}
 }
 
 ScriptEditorDebugger *EditorDebuggerNode::_add_debugger() {
@@ -709,7 +719,24 @@ String EditorDebuggerNode::get_var_value(const String &p_var) const {
 
 // LiveEdit/Inspector
 void EditorDebuggerNode::request_remote_tree() {
-	get_current_debugger()->request_remote_tree();
+	// Every session something is watching, so a pane looking at the second game
+	// is kept up to date even while the first is in front.
+	HashSet<int> wanted;
+	const int current = tabs->get_current_tab();
+	for (const KeyValue<ObjectID, int> &E : remote_trees) {
+		if (!ObjectDB::get_instance<EditorDebuggerTree>(E.key)) {
+			continue;
+		}
+		wanted.insert(E.value == FOLLOW_CURRENT ? current : E.value);
+	}
+	wanted.insert(current);
+
+	for (const int &session : wanted) {
+		ScriptEditorDebugger *debugger = get_debugger(session);
+		if (debugger) {
+			debugger->request_remote_tree();
+		}
+	}
 }
 
 void EditorDebuggerNode::set_remote_selection(const TypedArray<int64_t> &p_ids) {
@@ -747,12 +774,69 @@ void EditorDebuggerNode::_remote_tree_clear_selection_requested(int p_debugger) 
 	remote_scene_tree_clear_msg = true;
 }
 
-void EditorDebuggerNode::_remote_tree_updated(int p_debugger) {
-	if (p_debugger != tabs->get_current_tab()) {
+void EditorDebuggerNode::register_remote_tree(EditorDebuggerTree *p_tree, int p_session) {
+	ERR_FAIL_NULL(p_tree);
+	remote_trees[p_tree->get_instance_id()] = p_session;
+}
+
+void EditorDebuggerNode::unregister_remote_tree(EditorDebuggerTree *p_tree) {
+	ERR_FAIL_NULL(p_tree);
+	remote_trees.erase(p_tree->get_instance_id());
+}
+
+void EditorDebuggerNode::set_remote_tree_session(EditorDebuggerTree *p_tree, int p_session) {
+	ERR_FAIL_NULL(p_tree);
+	if (!remote_trees.has(p_tree->get_instance_id())) {
 		return;
 	}
-	remote_scene_tree->clear();
-	remote_scene_tree->update_scene_tree(get_current_debugger()->get_remote_tree(), p_debugger);
+	remote_trees[p_tree->get_instance_id()] = p_session;
+	// It is looking somewhere else now, so what it shows is out of date until
+	// that session answers.
+	p_tree->clear();
+	request_remote_tree();
+}
+
+int EditorDebuggerNode::get_remote_tree_session(EditorDebuggerTree *p_tree) const {
+	ERR_FAIL_NULL_V(p_tree, FOLLOW_CURRENT);
+	const int *session = remote_trees.getptr(p_tree->get_instance_id());
+	return session ? *session : FOLLOW_CURRENT;
+}
+
+int EditorDebuggerNode::get_session_count() const {
+	return tabs->get_tab_count();
+}
+
+String EditorDebuggerNode::get_session_name(int p_session) const {
+	ERR_FAIL_INDEX_V(p_session, tabs->get_tab_count(), String());
+	return tabs->get_tab_title(p_session);
+}
+
+int EditorDebuggerNode::get_current_session() const {
+	return tabs->get_current_tab();
+}
+
+void EditorDebuggerNode::_remote_tree_updated(int p_debugger) {
+	ScriptEditorDebugger *debugger = get_debugger(p_debugger);
+	if (!debugger) {
+		return;
+	}
+
+	// Every tree watching this session, not only the one the editor used to
+	// have. A tree that follows the current session only hears about it while
+	// that session is the one in front.
+	const int current = tabs->get_current_tab();
+	for (const KeyValue<ObjectID, int> &E : remote_trees) {
+		EditorDebuggerTree *tree = ObjectDB::get_instance<EditorDebuggerTree>(E.key);
+		if (!tree) {
+			continue;
+		}
+		const int watched = E.value == FOLLOW_CURRENT ? current : E.value;
+		if (watched != p_debugger) {
+			continue;
+		}
+		tree->clear();
+		tree->update_scene_tree(debugger->get_remote_tree(), p_debugger);
+	}
 }
 
 void EditorDebuggerNode::_remote_tree_button_pressed(Object *p_item, int p_column, int p_id, MouseButton p_button) {
