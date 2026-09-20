@@ -51,6 +51,7 @@
 
 void EditorPane::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("split_requested", PropertyInfo(Variant::BOOL, "vertical")));
+	ADD_SIGNAL(MethodInfo("float_requested", PropertyInfo(Variant::INT, "panel")));
 	ADD_SIGNAL(MethodInfo("close_requested"));
 	ADD_SIGNAL(MethodInfo("panels_changed"));
 }
@@ -106,6 +107,12 @@ void EditorPane::_build_header() {
 
 	header->add_child(memnew(VSeparator));
 
+	float_button = memnew(Button);
+	float_button->set_flat(true);
+	float_button->set_focus_mode(FOCUS_NONE);
+	float_button->connect(SceneStringName(pressed), callable_mp(this, &EditorPane::_float_pressed));
+	header->add_child(float_button);
+
 	split_right_button = memnew(Button);
 	split_right_button->set_flat(true);
 	split_right_button->set_focus_mode(FOCUS_NONE);
@@ -140,6 +147,14 @@ void EditorPane::_update_theme() {
 		return;
 	}
 	more_button->set_button_icon(base->get_editor_theme_icon(SNAME("Add")));
+
+	const EditorPaneTree *tree = _get_pane_tree();
+	const bool windowed = tree && tree->is_windowed();
+	float_button->set_button_icon(base->get_editor_theme_icon(windowed ? SNAME("Back") : SNAME("MakeFloating")));
+	float_button->set_tooltip_text(windowed
+					? TTRC("Put this panel back in the main window.")
+					: TTRC("Open this panel in a window of its own."));
+	float_button->set_visible(EditorNode::get_singleton()->is_multi_window_enabled());
 	split_right_button->set_button_icon(base->get_editor_theme_icon(SNAME("Panels2Alt")));
 	split_down_button->set_button_icon(base->get_editor_theme_icon(SNAME("Panels2")));
 	close_button->set_button_icon(base->get_editor_theme_icon(SNAME("Close")));
@@ -176,19 +191,21 @@ void EditorPane::_update_palette() {
 		return;
 	}
 
-	// What a pane offers, split in two. A view of a scene - 2D, 3D, the tree,
-	// the inspector - is something to arrange around what is being edited, so
-	// it gets a button that can also be dragged somewhere. Everywhere else the
-	// editor can take you is a place to go rather than a thing to arrange, so
-	// they share one menu between them and take up a button's worth of room.
+	// What a pane offers, split by what the thing is bound to. A view of a
+	// scene - 2D, 3D, the tree, the inspector - is something to arrange around
+	// what is being edited, so it gets a button that can also be dragged
+	// somewhere. Everything else - the script editor, the game view, the
+	// FileSystem, Signals, Groups - is a place to go rather than a thing to
+	// arrange, so they share one menu and cost a button's worth of room between
+	// them.
 	//
 	// A panel showing a resource is in neither: it is opened by dragging that
-	// resource here. Nor is a dock: its own tab is how it is moved.
+	// resource here, and a menu of every file would be a file browser.
 	Vector<StringName> wanted;
 	Vector<StringName> elsewhere;
 	for (const StringName &id : EditorPanelRegistry::get_type_ids()) {
 		const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(id);
-		if (!type || !type->offered || type->binding == EditorPanelRegistry::BINDING_RESOURCE) {
+		if (!type || type->binding == EditorPanelRegistry::BINDING_RESOURCE) {
 			continue;
 		}
 		if (type->binding == EditorPanelRegistry::BINDING_DOCUMENT) {
@@ -197,6 +214,9 @@ void EditorPane::_update_palette() {
 			elsewhere.push_back(id);
 		}
 	}
+	// Alphabetical, because the order types happen to register in is no order
+	// at all to a reader.
+	elsewhere.sort_custom<StringName::AlphCompare>();
 
 	if (more_button) {
 		PopupMenu *popup = more_button->get_popup();
@@ -253,7 +273,28 @@ void EditorPane::_more_selected(int p_index) {
 void EditorPane::_palette_pressed(const StringName &p_type) {
 	// Pressing is the same as dropping it here, so it goes the same way and
 	// gets the same answer about what to show.
-	add_panel(p_type, _subject_for_type(p_type));
+	if (show_panel_of_type(p_type) >= 0) {
+		return;
+	}
+
+	// There is one of it and it is already somewhere. Asking for it here means
+	// wanting it here, so it comes, rather than nothing happening at all.
+	EditorPaneTree *tree = _get_pane_tree();
+	if (!tree) {
+		return;
+	}
+	for (EditorPane *pane : tree->get_panes()) {
+		if (pane == this) {
+			continue;
+		}
+		for (int i = 0; i < pane->get_panel_count(); i++) {
+			if (pane->get_panel_type_at(i) == p_type) {
+				pane->transfer_panel_to(this, i);
+				tree->drop_empty_panes();
+				return;
+			}
+		}
+	}
 }
 
 String EditorPane::_title_of(const PanelEntry &p_entry) const {
@@ -343,6 +384,12 @@ void EditorPane::_subject_selected(int p_index) {
 
 void EditorPane::_split_pressed(bool p_vertical) {
 	emit_signal(SNAME("split_requested"), p_vertical);
+}
+
+void EditorPane::_float_pressed() {
+	// The same button both ways: out of the main window, or back into it. Which
+	// one it is depends on where this pane already is.
+	emit_signal(SNAME("float_requested"), current);
 }
 
 void EditorPane::_close_pressed() {

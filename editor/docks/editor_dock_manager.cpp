@@ -816,9 +816,6 @@ void EditorDockManager::add_dock(EditorDock *p_dock) {
 		type.icon = p_dock->get_icon_name();
 		type.binding = EditorPanelRegistry::BINDING_GLOBAL;
 		type.lent = true;
-		// A dock is reached by dragging its own tab, so a pane offering to make
-		// one would be offering something that is already somewhere.
-		type.offered = false;
 		type.create = callable_mp(this, &EditorDockManager::_lend_dock_panel).bind(p_dock);
 		type.release = callable_mp(this, &EditorDockManager::_return_dock_panel).bind(p_dock);
 		EditorPanelRegistry::register_type(type);

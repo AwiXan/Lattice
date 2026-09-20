@@ -78,6 +78,9 @@ class EditorPaneTree : public Container {
 	// The pane last worked in. Asking for a kind of panel - from a menu, from a
 	// shortcut - puts it there rather than somewhere arbitrary.
 	EditorPane *active_pane = nullptr;
+	// Whether this arrangement is the one in a window of its own. A pane in one
+	// offers to send a panel back rather than out.
+	bool windowed = false;
 
 	// The divider being dragged, where along it the grab started, and what the
 	// ratio was then - so a drag is one sum rather than a running total.
@@ -95,6 +98,7 @@ class EditorPaneTree : public Container {
 
 	void _wire_pane(EditorPane *p_pane);
 	void _pane_split_requested(bool p_vertical, EditorPane *p_pane);
+	void _pane_float_requested(int p_panel, EditorPane *p_pane);
 
 	Slot *_leaf_for(const EditorPane *p_pane) const;
 	Slot *_find_leaf(Slot *p_slot, const EditorPane *p_pane) const;
@@ -128,6 +132,9 @@ public:
 	// everything else has been closed.
 	EditorPane *get_first_pane() const;
 	Vector<EditorPane *> get_panes() const;
+	void set_windowed(bool p_windowed) { windowed = p_windowed; }
+	bool is_windowed() const { return windowed; }
+
 	// The pane last worked in, or the first one if none has been.
 	EditorPane *get_active_pane() const;
 	void set_active_pane(EditorPane *p_pane);

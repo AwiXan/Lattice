@@ -88,11 +88,6 @@ public:
 		// as the pane holds it. A pane never frees a lent panel - it gives it
 		// back, and whoever lent it decides where it goes.
 		bool lent = false;
-		// Whether a pane offers to put one of these here. A dock says no: there
-		// is one of it, it is already somewhere, and its own tab is how it is
-		// moved. A main screen says yes, because otherwise there would be no way
-		// left to ask for it.
-		bool offered = true;
 		// Called with the panel when a pane stops showing it, and says whether
 		// it took it back. A lent type always does. A type that builds its
 		// panels may still want the first one back - the editor's own 3D view

@@ -36,11 +36,13 @@
 #include "editor/editor_node.h"
 #include "editor/editor_panel_registry.h"
 #include "editor/gui/editor_pane.h"
+#include "editor/gui/editor_pane_window.h"
 #include "editor/gui/editor_pane_tree.h"
 #include "editor/editor_string_names.h"
 #include "editor/plugins/editor_plugin.h"
 #include "editor/settings/editor_settings.h"
 #include "scene/gui/box_container.h"
+#include "scene/main/window.h"
 #include "scene/gui/button.h"
 
 void EditorMainScreen::_notification(int p_what) {
@@ -76,6 +78,12 @@ void EditorMainScreen::save_layout_to_config(Ref<ConfigFile> p_config_file, cons
 	if (pane_tree) {
 		p_config_file->set_value(p_section, "panes", pane_tree->save_layout());
 	}
+
+	Array windows;
+	for (const EditorPaneWindow *window : pane_windows) {
+		windows.push_back(window->save_layout());
+	}
+	p_config_file->set_value(p_section, "pane_windows", windows);
 }
 
 void EditorMainScreen::load_layout_from_config(Ref<ConfigFile> p_config_file, const String &p_section) {
@@ -91,11 +99,133 @@ void EditorMainScreen::load_layout_from_config(Ref<ConfigFile> p_config_file, co
 		// layout is read.
 		callable_mp(this, &EditorMainScreen::_restore_panes).call_deferred(panes);
 	}
+
+	const Array windows = p_config_file->get_value(p_section, "pane_windows", Array());
+	if (!windows.is_empty()) {
+		// After the main arrangement, for the same reason: a panel in a window
+		// may be pointed at a scene that is not open yet.
+		callable_mp(this, &EditorMainScreen::_restore_pane_windows).call_deferred(windows);
+	}
 }
 
 void EditorMainScreen::_restore_panes(const Dictionary &p_layout) {
 	if (pane_tree) {
 		pane_tree->load_layout(p_layout);
+	}
+}
+
+void EditorMainScreen::_watch_tree(EditorPaneTree *p_tree) {
+	p_tree->connect(SNAME("panel_float_requested"), callable_mp(this, &EditorMainScreen::_panel_float_requested).bind(p_tree));
+}
+
+EditorPaneWindow *EditorMainScreen::open_panel_in_window(EditorPane *p_from, int p_panel) {
+	ERR_FAIL_NULL_V(p_from, nullptr);
+	if (!EditorNode::get_singleton()->is_multi_window_enabled()) {
+		return nullptr;
+	}
+
+	EditorPaneWindow *window = memnew(EditorPaneWindow);
+	add_child(window);
+	_watch_tree(window->get_pane_tree());
+	window->connect("window_close_requested", callable_mp(this, &EditorMainScreen::_pane_window_closed).bind(window));
+	pane_windows.push_back(window);
+
+	EditorPane *host = window->get_pane_tree()->get_first_pane();
+	if (!host || !p_from->transfer_panel_to(host, p_panel)) {
+		// Nothing moved, so there is nothing for the window to show.
+		_close_pane_window(window, false);
+		return nullptr;
+	}
+	if (pane_tree) {
+		pane_tree->drop_empty_panes();
+	}
+
+	window->update_title();
+	// A third of the editor, near where it came from, which is what the docks
+	// do when they are made floating.
+	const Size2i size = EditorNode::get_singleton()->get_window()->get_size() / 2;
+	const Point2i at = p_from->get_screen_position();
+	window->restore_window(Rect2i(at, size), EditorNode::get_singleton()->get_gui_base()->get_window()->get_current_screen());
+	window->grab_window_focus();
+	return window;
+}
+
+void EditorMainScreen::_panel_float_requested(EditorPane *p_pane, int p_panel, EditorPaneTree *p_tree) {
+	if (!p_tree->is_windowed()) {
+		open_panel_in_window(p_pane, p_panel);
+		return;
+	}
+
+	// The other direction: back into the main arrangement, beside whatever is
+	// being worked on there.
+	EditorPane *home = pane_tree ? pane_tree->get_active_pane() : nullptr;
+	if (!home) {
+		return;
+	}
+	p_pane->transfer_panel_to(home, p_panel);
+	p_tree->drop_empty_panes();
+
+	for (EditorPaneWindow *window : pane_windows) {
+		if (window->get_pane_tree() != p_tree) {
+			continue;
+		}
+		bool empty = true;
+		for (EditorPane *pane : p_tree->get_panes()) {
+			empty = empty && pane->get_panel_count() == 0;
+		}
+		if (empty) {
+			// Nothing left to look at.
+			_close_pane_window(window, false);
+		} else {
+			window->update_title();
+		}
+		break;
+	}
+}
+
+void EditorMainScreen::_pane_window_closed(EditorPaneWindow *p_window) {
+	_close_pane_window(p_window, true);
+}
+
+void EditorMainScreen::_close_pane_window(EditorPaneWindow *p_window, bool p_keep_panels) {
+	ERR_FAIL_NULL(p_window);
+
+	if (p_keep_panels && pane_tree) {
+		// Closing a window is not throwing away what is in it: whatever it
+		// still holds comes back to the arrangement it came from.
+		EditorPane *home = pane_tree->get_active_pane();
+		if (home) {
+			for (EditorPane *pane : p_window->get_pane_tree()->get_panes()) {
+				while (pane->get_panel_count() > 0) {
+					if (!pane->transfer_panel_to(home, 0)) {
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	pane_windows.erase(p_window);
+	p_window->queue_free();
+}
+
+void EditorMainScreen::_restore_pane_windows(const Array &p_windows) {
+	if (!EditorNode::get_singleton()->is_multi_window_enabled()) {
+		// The arrangement said windows and this editor has none, so what they
+		// held stays in the main one rather than being lost.
+		return;
+	}
+	for (int i = 0; i < p_windows.size(); i++) {
+		const Dictionary data = p_windows[i];
+		if (data.is_empty()) {
+			continue;
+		}
+		EditorPaneWindow *window = memnew(EditorPaneWindow);
+		add_child(window);
+		_watch_tree(window->get_pane_tree());
+		window->connect("window_close_requested", callable_mp(this, &EditorMainScreen::_pane_window_closed).bind(window));
+		pane_windows.push_back(window);
+		window->load_layout(data);
 	}
 }
 
@@ -508,6 +638,7 @@ EditorMainScreen::EditorMainScreen() {
 	pane_tree = memnew(EditorPaneTree);
 	add_child(pane_tree);
 	pane_tree->connect(SNAME("layout_changed"), callable_mp(this, &EditorMainScreen::_panes_changed));
+	_watch_tree(pane_tree);
 
 	// Where a main screen stands when no pane is showing it. Plugins parent
 	// their views into this and addons reach it through EditorInterface, so it

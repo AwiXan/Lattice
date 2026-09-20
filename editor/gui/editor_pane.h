@@ -118,6 +118,7 @@ private:
 	MenuButton *more_button = nullptr;
 	Vector<StringName> more_types;
 	OptionButton *subject_button = nullptr;
+	Button *float_button = nullptr;
 	Button *split_right_button = nullptr;
 	Button *split_down_button = nullptr;
 	Button *close_button = nullptr;
@@ -140,6 +141,7 @@ private:
 	Ref<Texture2D> _icon_of(const StringName &p_type) const;
 	void _subject_selected(int p_index);
 	void _split_pressed(bool p_vertical);
+	void _float_pressed();
 	void _close_pressed();
 	String _title_of(const PanelEntry &p_entry) const;
 	void _show_only_current();

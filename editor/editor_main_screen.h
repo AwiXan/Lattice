@@ -38,6 +38,7 @@ class ConfigFile;
 class EditorDocumentView;
 class EditorPane;
 class EditorPaneTree;
+class EditorPaneWindow;
 class EditorPlugin;
 class HBoxContainer;
 class HSplitContainer;
@@ -91,8 +92,20 @@ private:
 	Control *_lend_main_panel(EditorPlugin *p_editor);
 	bool _return_main_panel(Control *p_panel, EditorPlugin *p_editor);
 
+	// Arrangements of panes in windows of their own. The main one is not among
+	// them; it is the one that is always there.
+	Vector<EditorPaneWindow *> pane_windows;
+
 	void _panes_changed();
 	void _restore_panes(const Dictionary &p_layout);
+	void _restore_pane_windows(const Array &p_windows);
+	// A pane asking for one of its panels to be somewhere else: out of the main
+	// window if it is in it, back into it if it is not.
+	void _panel_float_requested(EditorPane *p_pane, int p_panel, EditorPaneTree *p_tree);
+	void _pane_window_closed(EditorPaneWindow *p_window);
+	void _watch_tree(EditorPaneTree *p_tree);
+	// Closes a window, bringing whatever it still holds back with it.
+	void _close_pane_window(EditorPaneWindow *p_window, bool p_keep_panels);
 
 	// Whether a main screen may be asked for at all. The feature profiles turn
 	// them off; there is no button left to hide, so it is written down here.
@@ -128,6 +141,11 @@ public:
 	// first pane; addons keep reaching it through EditorInterface unchanged.
 	VBoxContainer *get_control() const;
 	EditorPaneTree *get_pane_tree() const { return pane_tree; }
+
+	// Sends a panel to a window of its own, and hands back the window it went
+	// to. Null if the editor cannot open windows at all.
+	EditorPaneWindow *open_panel_in_window(EditorPane *p_from, int p_panel);
+	int get_pane_window_count() const { return pane_windows.size(); }
 
 	// Splitting shows a second view of the plugin currently selected, pointed
 	// at another open scene, so two documents are edited side by side. Plugins
