@@ -959,6 +959,7 @@ void SceneTreeEditor::_node_renamed(Node *p_node) {
 }
 
 void SceneTreeEditor::_update_tree(bool p_scroll_to_selected) {
+
 	if (!is_inside_tree()) {
 		tree_dirty = false;
 		return;
@@ -1271,6 +1272,19 @@ void SceneTreeEditor::_compute_hash(Node *p_node, uint64_t &hash) {
 	}
 }
 
+void SceneTreeEditor::_queue_update_tree() {
+	if (update_queued) {
+		return;
+	}
+	update_queued = true;
+	callable_mp(this, &SceneTreeEditor::_deferred_update_tree).call_deferred();
+}
+
+void SceneTreeEditor::_deferred_update_tree() {
+	update_queued = false;
+	_update_tree();
+}
+
 void SceneTreeEditor::_reset() {
 	// Stop any waiting change to tooltip.
 	update_node_tooltip_delay->stop();
@@ -1409,7 +1423,10 @@ void SceneTreeEditor::_notification(int p_what) {
 
 			tree->connect("item_collapsed", callable_mp(this, &SceneTreeEditor::_cell_collapsed));
 
-			_update_tree();
+			// Catching up on anything that happened while there was nothing
+			// listening. Asked for rather than done, so that the theme
+			// notification that follows a reparent does not make it twice.
+			_queue_update_tree();
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
@@ -1431,7 +1448,7 @@ void SceneTreeEditor::_notification(int p_what) {
 		case NOTIFICATION_TRANSLATION_CHANGED: {
 			// When we change theme or translation we need to re-do everything.
 			_reset();
-			_update_tree();
+			_queue_update_tree();
 		} break;
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {

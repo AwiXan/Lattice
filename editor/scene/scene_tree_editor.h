@@ -142,6 +142,15 @@ class SceneTreeEditor : public Control {
 
 	void _compute_hash(Node *p_node, uint64_t &hash);
 	void _reset();
+	// Rebuilding costs as much as the scene is big, and the reasons to want one
+	// arrive together: coming back into the tree sends ENTER_TREE and then
+	// THEME_CHANGED, so a dock merely carried from one place to another used to
+	// build the whole tree, re-read it for the theme, throw it away and build it
+	// again. Asking for a rebuild rather than doing one collapses that into a
+	// single pass, and the clearing in between then happens over nothing.
+	void _queue_update_tree();
+	void _deferred_update_tree();
+	bool update_queued = false;
 	PackedStringArray _get_node_configuration_warnings(Node *p_node);
 	PackedStringArray _get_node_accessibility_configuration_warnings(Node *p_node);
 
