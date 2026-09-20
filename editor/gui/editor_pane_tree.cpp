@@ -442,6 +442,10 @@ EditorPaneTree::EditorPaneTree() {
 	set_v_size_flags(SIZE_EXPAND_FILL);
 	set_h_size_flags(SIZE_EXPAND_FILL);
 
+	drop_hint = memnew(EditorPaneDropHint);
+	drop_hint->watch(this);
+	add_child(drop_hint);
+
 	EditorPane *first = memnew(EditorPane);
 	_wire_pane(first);
 	root = first;

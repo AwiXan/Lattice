@@ -318,23 +318,33 @@ bool EditorMainScreen::is_split_view_enabled() const {
 	return pane_tree && pane_tree->get_panes().size() > 1;
 }
 
+void EditorMainScreen::split_main_pane(bool p_vertical) {
+	if (!pane_tree) {
+		return;
+	}
+
+	EditorPane *pane = pane_tree->split_pane(pane_tree->get_first_pane(), p_vertical);
+	if (!pane) {
+		return;
+	}
+	// "Another of what I am looking at": the new pane starts on the selected
+	// plugin's panel, pointed at the scene being worked on. The tree itself
+	// knows nothing about main screen plugins; this is the one place that does.
+	const StringName type = selected_plugin ? selected_plugin->get_main_screen_panel_type() : StringName();
+	if (type != StringName()) {
+		EditorData &editor_data = EditorNode::get_editor_data();
+		const Variant subject = editor_data.get_edited_scene_count() > 0 ? Variant(editor_data.get_scene_history_id(editor_data.get_edited_scene())) : Variant(-1);
+		pane->set_panel_type(type, subject);
+	}
+}
+
 void EditorMainScreen::set_split_view_enabled(bool p_enabled) {
 	if (!pane_tree || p_enabled == is_split_view_enabled()) {
 		return;
 	}
 
 	if (p_enabled) {
-		EditorPane *pane = pane_tree->split_pane(pane_tree->get_first_pane(), false);
-		// The menu means "another of what I am looking at", so the new pane
-		// starts on the selected plugin's panel, pointed at the scene being
-		// worked on. The tree itself knows nothing about main screen plugins;
-		// this is the one place that does.
-		const StringName type = selected_plugin ? selected_plugin->get_main_screen_panel_type() : StringName();
-		if (pane && type != StringName()) {
-			EditorData &editor_data = EditorNode::get_editor_data();
-			const Variant subject = editor_data.get_edited_scene_count() > 0 ? Variant(editor_data.get_scene_history_id(editor_data.get_edited_scene())) : Variant(-1);
-			pane->set_panel_type(type, subject);
-		}
+		split_main_pane(false);
 		return;
 	}
 

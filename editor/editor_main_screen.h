@@ -129,6 +129,10 @@ public:
 	// Splitting puts a second pane beside the first. Which panel it shows and
 	// what that panel is pointed at are the pane's own business from then on.
 	void set_split_view_enabled(bool p_enabled);
+	// Another pane beside or below the one holding the main screen, showing the
+	// same kind of view on the same scene. A pane with a header of its own can
+	// be split from there; this is for the first one, which has none.
+	void split_main_pane(bool p_vertical);
 	bool is_split_view_enabled() const;
 
 	void add_main_plugin(EditorPlugin *p_editor);

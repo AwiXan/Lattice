@@ -33,6 +33,7 @@
 #include "scene/gui/margin_container.h"
 
 class EditorPane;
+class EditorPaneDropHint;
 class SplitContainer;
 
 // Panes arranged by splitting, with no fixed number of them.
@@ -47,6 +48,10 @@ class EditorPaneTree : public MarginContainer {
 
 	// The single Control under this one: a pane, or a split of panes.
 	Control *root = nullptr;
+	// Lies over all of them while a panel is being dragged. See
+	// EditorPaneDropHint: a pane cannot show where a drop would land, because
+	// what it shows is drawn on top of it and takes the mouse besides.
+	EditorPaneDropHint *drop_hint = nullptr;
 
 	void _wire_pane(EditorPane *p_pane);
 	void _pane_split_requested(bool p_vertical, EditorPane *p_pane);

@@ -780,6 +780,9 @@ void EditorNode::_update_theme(bool p_skip_creation) {
 		editor_main_screen->add_theme_style_override(SceneStringName(panel), theme->get_stylebox(SNAME("Content"), EditorStringName(EditorStyles)));
 		bottom_panel->_theme_changed();
 		distraction_free->set_button_icon(theme->get_icon(SNAME("DistractionFree"), EditorStringName(EditorIcons)));
+		// Panels2 is two panels one above the other, Panels2Alt two side by side.
+		split_right->set_button_icon(theme->get_icon(SNAME("Panels2Alt"), EditorStringName(EditorIcons)));
+		split_down->set_button_icon(theme->get_icon(SNAME("Panels2"), EditorStringName(EditorIcons)));
 		update_distraction_free_button_theme();
 
 		help_menu->set_item_icon(help_menu->get_item_index(HELP_SEARCH), get_editor_theme_native_menu_icon(SNAME("HelpSearch"), menu_type == MENU_TYPE_GLOBAL, dark_mode));
@@ -6930,6 +6933,10 @@ void EditorNode::_prepare_save_confirmation_popup() {
 	}
 }
 
+void EditorNode::_split_editor(bool p_vertical) {
+	editor_main_screen->split_main_pane(p_vertical);
+}
+
 void EditorNode::_toggle_distraction_free_mode() {
 	if (EDITOR_GET("interface/editor/behavior/separate_distraction_mode")) {
 		int screen = editor_main_screen->get_selected_index();
@@ -8931,6 +8938,21 @@ EditorNode::EditorNode() {
 	srt->add_child(scene_tabs);
 	scene_tabs->connect("tab_changed", callable_mp(this, &EditorNode::_set_current_scene));
 	scene_tabs->connect("tab_closed", callable_mp(this, &EditorNode::_scene_tab_closed));
+
+	// Beside the scene tabs rather than in a menu: a single pane shows no header
+	// of its own, so this is the way into the first split - and it takes no room
+	// that the tab bar was not using anyway.
+	split_right = memnew(Button);
+	split_right->set_theme_type_variation("FlatMenuButton");
+	split_right->set_tooltip_text(TTRC("Put another pane beside this one."));
+	scene_tabs->add_extra_button(split_right);
+	split_right->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_split_editor).bind(false));
+
+	split_down = memnew(Button);
+	split_down->set_theme_type_variation("FlatMenuButton");
+	split_down->set_tooltip_text(TTRC("Put another pane below this one."));
+	scene_tabs->add_extra_button(split_down);
+	split_down->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_split_editor).bind(true));
 
 	distraction_free = memnew(Button);
 	distraction_free->set_theme_type_variation("FlatMenuButton");

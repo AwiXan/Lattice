@@ -40,6 +40,8 @@
 #include "scene/gui/label.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/panel.h"
+#include "editor/settings/editor_settings.h"
+#include "editor/themes/editor_scale.h"
 #include "scene/gui/separator.h"
 #include "scene/gui/tab_bar.h"
 
@@ -116,8 +118,8 @@ void EditorPane::_update_theme() {
 	if (!base) {
 		return;
 	}
-	split_right_button->set_button_icon(base->get_editor_theme_icon(SNAME("Panels2")));
-	split_down_button->set_button_icon(base->get_editor_theme_icon(SNAME("Panels2Alt")));
+	split_right_button->set_button_icon(base->get_editor_theme_icon(SNAME("Panels2Alt")));
+	split_down_button->set_button_icon(base->get_editor_theme_icon(SNAME("Panels2")));
 	close_button->set_button_icon(base->get_editor_theme_icon(SNAME("Close")));
 	_update_palette();
 }
@@ -191,8 +193,15 @@ String EditorPane::_title_of(const PanelEntry &p_entry) const {
 void EditorPane::_update_tabs() {
 	rebuilding_tabs = true;
 	tab_bar->clear_tabs();
+	Control *base = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_gui_base() : nullptr;
 	for (const PanelEntry &entry : panels) {
 		tab_bar->add_tab(_title_of(entry));
+		// The same icon the header button for this kind carries, so a row of
+		// tabs can be read at a glance rather than by their names.
+		const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(entry.type);
+		if (base && type && type->icon != StringName()) {
+			tab_bar->set_tab_icon(tab_bar->get_tab_count() - 1, base->get_editor_theme_icon(type->icon));
+		}
 	}
 	if (current >= 0 && current < tab_bar->get_tab_count()) {
 		tab_bar->set_current_tab(current);
@@ -561,23 +570,47 @@ EditorPane::PanelDrop EditorPane::_read_drop(const Variant &p_data) const {
 	return drop;
 }
 
+Rect2 EditorPane::get_body_rect() const {
+	Rect2 body(Point2(), get_size());
+	if (header && header->is_visible()) {
+		// Where the header actually ends, rather than its height plus whatever
+		// the separation happens to be.
+		const real_t taken = header->get_rect().get_end().y;
+		body.position.y = taken;
+		body.size.y = MAX(0.0, get_size().y - taken);
+	}
+	return body;
+}
+
+bool EditorPane::is_point_on_header(const Point2 &p_point) const {
+	return header && header->is_visible() && header->get_rect().has_point(p_point);
+}
+
 EditorPane::DropZone EditorPane::get_drop_zone_at(const Point2 &p_point) const {
-	const Size2 size = get_size();
-	if (size.x <= 0 || size.y <= 0) {
+	// Over the tabs is always "join these", whatever part of the bar it is.
+	if (is_point_on_header(p_point)) {
 		return DROP_INTO;
 	}
-	// A quarter of each side, and no more than a comfortable band, so that a
-	// large pane does not become mostly edge.
-	const real_t band_x = MIN(size.x * 0.25, 120.0);
-	const real_t band_y = MIN(size.y * 0.25, 120.0);
+
+	const Rect2 body = get_body_rect();
+	if (body.size.x <= 0 || body.size.y <= 0) {
+		return DROP_INTO;
+	}
+	const Point2 at = p_point - body.position;
+
+	// Nearly a third of each side, up to a band wide enough to aim at without
+	// care, so that a large pane does not become mostly edge and a small one is
+	// still worth aiming at.
+	const real_t band_x = MIN(body.size.x * 0.3, 180.0 * EDSCALE);
+	const real_t band_y = MIN(body.size.y * 0.3, 180.0 * EDSCALE);
 
 	// Whichever edge is nearest, if any is near enough.
-	const real_t left = p_point.x;
-	const real_t right = size.x - p_point.x;
-	const real_t top = p_point.y;
-	const real_t bottom = size.y - p_point.y;
+	const real_t left = at.x;
+	const real_t right = body.size.x - at.x;
+	const real_t top = at.y;
+	const real_t bottom = body.size.y - at.y;
 
-	real_t best = MIN(MIN(left, right), MIN(top, bottom));
+	const real_t best = MIN(MIN(left, right), MIN(top, bottom));
 	if (best == left && left < band_x) {
 		return DROP_LEFT;
 	}
@@ -591,6 +624,46 @@ EditorPane::DropZone EditorPane::get_drop_zone_at(const Point2 &p_point) const {
 		return DROP_BOTTOM;
 	}
 	return DROP_INTO;
+}
+
+bool EditorPane::is_panel_drag(const Variant &p_data) {
+	if (p_data.get_type() != Variant::DICTIONARY) {
+		return false;
+	}
+	const Dictionary data = p_data;
+	return String(data.get("type", "")) == "editor_pane_panel" || data.has("editor_panel") || data.has("editor_panel_subject");
+}
+
+bool EditorPane::can_accept_drop(const Point2 &p_point, const Variant &p_data) const {
+	const PanelDrop drop = _read_drop(p_data);
+	if (!drop.is_valid()) {
+		return false;
+	}
+	// Putting a pane's panel back into the pane it is already in changes
+	// nothing - unless it is being put somewhere else in the order.
+	if (drop.source == this && get_drop_zone_at(p_point) == DROP_INTO && !is_point_on_header(p_point)) {
+		return false;
+	}
+	return true;
+}
+
+bool EditorPane::accept_drop(const Point2 &p_point, const Variant &p_data) {
+	const PanelDrop drop = _read_drop(p_data);
+	if (!drop.is_valid()) {
+		return false;
+	}
+
+	if (is_point_on_header(p_point)) {
+		// Where along the bar it was let go, so a tab can be put in order
+		// rather than only appended.
+		const Point2 in_bar = p_point - header->get_position() - tab_bar->get_position();
+		int at = tab_bar->get_tab_idx_at_point(in_bar);
+		if (at < 0) {
+			at = panels.size();
+		}
+		return _accept_drop(drop, DROP_INTO, at);
+	}
+	return _accept_drop(drop, get_drop_zone_at(p_point), -1);
 }
 
 Variant EditorPane::_tab_get_drag_data_fw(const Point2 &p_point, Control *p_from) {
@@ -639,33 +712,6 @@ void EditorPane::_tab_drop_data_fw(const Point2 &p_point, const Variant &p_data,
 	_accept_drop(drop, DROP_INTO, at);
 }
 
-bool EditorPane::can_drop_data(const Point2 &p_point, const Variant &p_data) const {
-	const PanelDrop drop = _read_drop(p_data);
-	if (!drop.is_valid()) {
-		drop_zone = DROP_NONE;
-		return false;
-	}
-	const DropZone zone = get_drop_zone_at(p_point);
-	// Dropping a pane's only panel back into the same pane changes nothing.
-	if (drop.source == this && zone == DROP_INTO) {
-		drop_zone = DROP_NONE;
-		return false;
-	}
-	if (zone != drop_zone) {
-		drop_zone = zone;
-		const_cast<EditorPane *>(this)->queue_redraw();
-	}
-	return true;
-}
-
-void EditorPane::drop_data(const Point2 &p_point, const Variant &p_data) {
-	const PanelDrop drop = _read_drop(p_data);
-	const DropZone zone = get_drop_zone_at(p_point);
-	drop_zone = DROP_NONE;
-	queue_redraw();
-	_accept_drop(drop, zone, -1);
-}
-
 bool EditorPane::_accept_drop(const PanelDrop &p_drop, DropZone p_zone, int p_tab_index) {
 	if (!p_drop.is_valid()) {
 		return false;
@@ -708,45 +754,6 @@ void EditorPane::_notification(int p_what) {
 			_return_everything_lent();
 		} break;
 
-		case NOTIFICATION_DRAG_END: {
-			if (drop_zone != DROP_NONE) {
-				drop_zone = DROP_NONE;
-				queue_redraw();
-			}
-		} break;
-
-		case NOTIFICATION_DRAW: {
-			if (drop_zone == DROP_NONE) {
-				break;
-			}
-			const Size2 size = get_size();
-			Rect2 hint(Vector2(), size);
-			switch (drop_zone) {
-				case DROP_LEFT:
-					hint.size.x *= 0.5;
-					break;
-				case DROP_RIGHT:
-					hint.position.x = size.x * 0.5;
-					hint.size.x *= 0.5;
-					break;
-				case DROP_TOP:
-					hint.size.y *= 0.5;
-					break;
-				case DROP_BOTTOM:
-					hint.position.y = size.y * 0.5;
-					hint.size.y *= 0.5;
-					break;
-				default:
-					break;
-			}
-			// From the editor's own base: a colour looked up here would be wrong
-			// for a pane that is between parents.
-			Color accent = EditorNode::get_singleton()->get_gui_base()->get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
-			accent.a = 0.25;
-			draw_rect(hint, accent);
-			accent.a = 0.8;
-			draw_rect(hint, accent, false, 2.0);
-		} break;
 	}
 }
 
@@ -799,6 +806,156 @@ void EditorPane::set_header_visible(bool p_visible) {
 	// A pane holding more than one panel always needs its tabs, however few
 	// panes there are.
 	header->set_visible(p_visible || panels.size() > 1);
+}
+
+EditorPane *EditorPaneDropHint::_pane_at(const Point2 &p_point) const {
+	if (!tree) {
+		return nullptr;
+	}
+	const Point2 global = get_global_transform().xform(p_point);
+	for (EditorPane *pane : tree->get_panes()) {
+		if (pane->is_visible_in_tree() && pane->get_global_rect().has_point(global)) {
+			return pane;
+		}
+	}
+	return nullptr;
+}
+
+void EditorPaneDropHint::_forget() {
+	if (target || zone != EditorPane::DROP_NONE) {
+		target = nullptr;
+		zone = EditorPane::DROP_NONE;
+		on_header = false;
+		queue_redraw();
+	}
+}
+
+bool EditorPaneDropHint::can_drop_data(const Point2 &p_point, const Variant &p_data) const {
+	EditorPane *pane = _pane_at(p_point);
+	if (!pane) {
+		const_cast<EditorPaneDropHint *>(this)->_forget();
+		return false;
+	}
+
+	const Point2 in_pane = pane->get_global_transform().affine_inverse().xform(get_global_transform().xform(p_point));
+	if (!pane->can_accept_drop(in_pane, p_data)) {
+		const_cast<EditorPaneDropHint *>(this)->_forget();
+		return false;
+	}
+
+	const EditorPane::DropZone now = pane->get_drop_zone_at(in_pane);
+	const bool header_now = pane->is_point_on_header(in_pane);
+	// Redrawn on every move while over the tabs, because the mark follows the
+	// pointer between them rather than sitting in one place.
+	if (pane != target || now != zone || header_now != on_header || header_now) {
+		target = pane;
+		zone = now;
+		on_header = header_now;
+		const_cast<EditorPaneDropHint *>(this)->queue_redraw();
+	}
+	return true;
+}
+
+void EditorPaneDropHint::drop_data(const Point2 &p_point, const Variant &p_data) {
+	EditorPane *pane = _pane_at(p_point);
+	if (!pane) {
+		return;
+	}
+	const Point2 in_pane = pane->get_global_transform().affine_inverse().xform(get_global_transform().xform(p_point));
+	_forget();
+	pane->accept_drop(in_pane, p_data);
+}
+
+void EditorPaneDropHint::_notification(int p_what) {
+	switch (p_what) {
+		case NOTIFICATION_THEME_CHANGED: {
+			accent = get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
+			const int radius = EDSCALE * (int)EDITOR_GET("interface/theme/corner_radius");
+			landing->set_corner_radius_all(radius);
+			outline->set_corner_radius_all(radius);
+		} break;
+
+		case NOTIFICATION_DRAG_BEGIN: {
+			// Only for a drag some pane could take. Anything else - a node onto
+			// a 3D view, a file onto the FileSystem - has to reach what it was
+			// aimed at, so this stays out of the way.
+			if (!get_viewport() || !EditorPane::is_panel_drag(get_viewport()->gui_get_drag_data())) {
+				break;
+			}
+			// Above whatever the panes are showing, however the arrangement has
+			// been rebuilt since.
+			move_to_front();
+			show();
+		} break;
+
+		case NOTIFICATION_DRAG_END: {
+			_forget();
+			hide();
+		} break;
+
+		case NOTIFICATION_DRAW: {
+			if (!target || zone == EditorPane::DROP_NONE) {
+				break;
+			}
+
+			const Transform2D to_here = get_global_transform().affine_inverse() * target->get_global_transform();
+			const Rect2 pane_rect = to_here.xform(Rect2(Point2(), target->get_size()));
+
+			// The pane being aimed at, faintly, so it is clear which one is
+			// being talked about even before the landing place is read.
+			outline->set_border_color(accent * Color(1, 1, 1, 0.35));
+			draw_style_box(outline, pane_rect.grow(-1 * EDSCALE));
+
+			// Where the panel would end up.
+			Rect2 landing_rect = to_here.xform(target->get_body_rect());
+			switch (zone) {
+				case EditorPane::DROP_LEFT:
+					landing_rect.size.x *= 0.5;
+					break;
+				case EditorPane::DROP_RIGHT:
+					landing_rect.position.x += landing_rect.size.x * 0.5;
+					landing_rect.size.x *= 0.5;
+					break;
+				case EditorPane::DROP_TOP:
+					landing_rect.size.y *= 0.5;
+					break;
+				case EditorPane::DROP_BOTTOM:
+					landing_rect.position.y += landing_rect.size.y * 0.5;
+					landing_rect.size.y *= 0.5;
+					break;
+				default:
+					// Joining this pane is about the whole of it, tabs included.
+					landing_rect = pane_rect;
+					break;
+			}
+
+			landing->set_bg_color(accent * Color(1, 1, 1, 0.18));
+			landing->set_border_color(accent);
+			draw_style_box(landing, landing_rect.grow(-2 * EDSCALE));
+
+			// Over the tabs, the bar says where between them it would go.
+			if (on_header) {
+				TabBar *bar = target->get_tab_bar();
+				draw_set_transform_matrix(to_here * Transform2D(0, target->get_tab_bar()->get_global_position() - target->get_global_position()));
+				bar->_draw_tab_drop(get_canvas_item());
+				draw_set_transform_matrix(Transform2D());
+			}
+		} break;
+	}
+}
+
+EditorPaneDropHint::EditorPaneDropHint() {
+	hide();
+	// It is there to be dropped on, and to be looked at - never to be clicked
+	// through to, which is the whole point of it.
+	set_mouse_filter(MOUSE_FILTER_STOP);
+
+	landing.instantiate();
+	landing->set_border_width_all(Math::round(2 * EDSCALE));
+	outline.instantiate();
+	outline->set_bg_color(Color(0, 0, 0, 0));
+	outline->set_draw_center(false);
+	outline->set_border_width_all(Math::round(1 * EDSCALE));
 }
 
 EditorPane::EditorPane() {

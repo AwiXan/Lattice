@@ -429,6 +429,8 @@ private:
 	Timer *editor_layout_save_delay_timer = nullptr;
 	Timer *scan_changes_timer = nullptr;
 	Button *distraction_free = nullptr;
+	Button *split_right = nullptr;
+	Button *split_down = nullptr;
 	Callable palette_file_selected_callback;
 
 	EditorBottomPanel *bottom_panel = nullptr;
@@ -674,6 +676,7 @@ private:
 	void _update_addon_config();
 
 	void _toggle_distraction_free_mode();
+	void _split_editor(bool p_vertical);
 
 	void _inherit_imported(const String &p_action);
 	void _open_imported();

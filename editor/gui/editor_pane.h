@@ -32,6 +32,7 @@
 
 #include "editor/editor_panel_registry.h"
 #include "scene/gui/box_container.h"
+#include "scene/resources/style_box_flat.h"
 
 class Button;
 class Control;
@@ -69,7 +70,27 @@ public:
 		DROP_BOTTOM,
 	};
 
+	// Where a drop at this point would land. The header is not part of it: a
+	// tab let go over the tabs joins them, wherever along the bar it was.
 	DropZone get_drop_zone_at(const Point2 &p_point) const;
+	// The part of this pane a panel actually occupies, which is everything
+	// below the header.
+	Rect2 get_body_rect() const;
+	bool is_point_on_header(const Point2 &p_point) const;
+
+	// Whether a drag is offering a panel at all. Answered without asking any
+	// particular pane, so that the hint lying over the panes knows whether to
+	// get in the way of the drop at all - a node dragged onto a 3D view has to
+	// reach that view, as it always did.
+	static bool is_panel_drag(const Variant &p_data);
+
+	// A drop somewhere over this pane, in this pane's coordinates. These are
+	// what the hint calls, because during a drag the thing under the mouse is
+	// the hint and not what the pane is showing.
+	bool can_accept_drop(const Point2 &p_point, const Variant &p_data) const;
+	bool accept_drop(const Point2 &p_point, const Variant &p_data);
+
+	TabBar *get_tab_bar() const { return tab_bar; }
 
 private:
 
@@ -98,10 +119,6 @@ private:
 	// Rebuilding the tab bar makes it report selections of its own - adding the
 	// first tab selects it - which would overwrite the panel actually chosen.
 	bool rebuilding_tabs = false;
-
-	// Written while answering whether a drop is possible, which is the only
-	// moment the position is known, and read while drawing the hint.
-	mutable DropZone drop_zone = DROP_NONE;
 
 	void _build_header();
 	void _update_theme();
@@ -158,11 +175,6 @@ protected:
 	void _notification(int p_what);
 	static void _bind_methods();
 
-	// A tab dropped on the body of a pane: into it, or beside it if let go near
-	// an edge. The tab bar has its own, which inserts at a position instead.
-	virtual bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override;
-	virtual void drop_data(const Point2 &p_point, const Variant &p_data) override;
-
 public:
 	// Adds a panel of a registered type, pointed at p_subject - a document's
 	// history id, a resource path, or nothing for a panel that shows the same
@@ -217,4 +229,42 @@ public:
 	void set_header_visible(bool p_visible);
 
 	EditorPane();
+};
+
+// Where a drag would land, drawn over the panes rather than by them.
+//
+// A pane cannot do this itself, for two reasons that are really the same one:
+// what a pane shows is its child, so a hint the pane drew would be underneath
+// it - and a 3D view takes the mouse for itself, so the drop would never be
+// offered to the pane at all. Godot stops looking for someone to take a drop at
+// the first control that swallows the mouse, and a viewport is one.
+//
+// So one control lies over the whole arrangement while a drag a pane would
+// accept is in the air, finds the pane under the pointer, and answers for it.
+class EditorPaneDropHint : public Control {
+	GDCLASS(EditorPaneDropHint, Control);
+
+	EditorPaneTree *tree = nullptr;
+	// Worked out while answering whether a drop is possible - the only moment
+	// the position is known - and read while drawing.
+	mutable EditorPane *target = nullptr;
+	mutable EditorPane::DropZone zone = EditorPane::DROP_NONE;
+	mutable bool on_header = false;
+
+	Ref<StyleBoxFlat> landing;
+	Ref<StyleBoxFlat> outline;
+	Color accent;
+
+	EditorPane *_pane_at(const Point2 &p_point) const;
+	void _forget();
+
+protected:
+	void _notification(int p_what);
+	virtual bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override;
+	virtual void drop_data(const Point2 &p_point, const Variant &p_data) override;
+
+public:
+	void watch(EditorPaneTree *p_tree) { tree = p_tree; }
+
+	EditorPaneDropHint();
 };
