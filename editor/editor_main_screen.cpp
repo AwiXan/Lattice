@@ -47,52 +47,24 @@ void EditorMainScreen::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_READY: {
 			set_accessibility_region(true);
-			if (EDITOR_3D < buttons.size() && buttons[EDITOR_3D]->is_visible()) {
-				// If the 3D editor is enabled, use this as the default.
+			// What a fresh editor shows. A saved arrangement replaces it a moment
+			// later; this is what there is when there is none.
+			if (EDITOR_3D < plugin_allowed.size() && plugin_allowed[EDITOR_3D]) {
 				select(EDITOR_3D);
 				return;
 			}
-
-			// Switch to the first main screen plugin that is enabled. Usually this is
-			// 2D, but may be subsequent ones if 2D is disabled in the feature profile.
-			for (int i = 0; i < buttons.size(); i++) {
-				Button *editor_button = buttons[i];
-				if (editor_button->is_visible()) {
+			for (int i = 0; i < plugin_allowed.size(); i++) {
+				if (plugin_allowed[i]) {
 					select(i);
 					return;
 				}
 			}
-
-			select(-1);
-		} break;
-		case NOTIFICATION_THEME_CHANGED: {
-			for (int i = 0; i < buttons.size(); i++) {
-				Button *tb = buttons[i];
-				EditorPlugin *p_editor = editor_table[i];
-				Ref<Texture2D> icon = p_editor->get_plugin_icon();
-
-				if (icon.is_valid()) {
-					tb->set_button_icon(icon);
-				} else if (has_theme_icon(p_editor->get_plugin_name(), EditorStringName(EditorIcons))) {
-					tb->set_button_icon(get_theme_icon(p_editor->get_plugin_name(), EditorStringName(EditorIcons)));
-				}
-			}
 		} break;
 	}
-}
-
-void EditorMainScreen::set_button_container(HBoxContainer *p_button_hb) {
-	button_hb = p_button_hb;
 }
 
 void EditorMainScreen::save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const {
-	int selected_main_editor_idx = -1;
-	for (int i = 0; i < buttons.size(); i++) {
-		if (buttons[i]->is_pressed()) {
-			selected_main_editor_idx = i;
-			break;
-		}
-	}
+	const int selected_main_editor_idx = get_selected_index();
 	if (selected_main_editor_idx != -1) {
 		p_config_file->set_value(p_section, "selected_main_editor_idx", selected_main_editor_idx);
 	} else {
@@ -108,7 +80,7 @@ void EditorMainScreen::save_layout_to_config(Ref<ConfigFile> p_config_file, cons
 
 void EditorMainScreen::load_layout_from_config(Ref<ConfigFile> p_config_file, const String &p_section) {
 	int selected_main_editor_idx = p_config_file->get_value(p_section, "selected_main_editor_idx", -1);
-	if (selected_main_editor_idx >= 0 && selected_main_editor_idx < buttons.size()) {
+	if (selected_main_editor_idx >= 0 && selected_main_editor_idx < editor_table.size()) {
 		callable_mp(this, &EditorMainScreen::select).call_deferred(selected_main_editor_idx);
 	}
 
@@ -128,16 +100,16 @@ void EditorMainScreen::_restore_panes(const Dictionary &p_layout) {
 }
 
 void EditorMainScreen::set_button_enabled(int p_index, bool p_enabled) {
-	ERR_FAIL_INDEX(p_index, buttons.size());
-	buttons[p_index]->set_visible(p_enabled);
-	if (!p_enabled && buttons[p_index]->is_pressed()) {
+	ERR_FAIL_INDEX(p_index, plugin_allowed.size());
+	plugin_allowed.write[p_index] = p_enabled;
+	if (!p_enabled && selected_plugin == editor_table[p_index]) {
 		select(EDITOR_2D);
 	}
 }
 
 bool EditorMainScreen::is_button_enabled(int p_index) const {
-	ERR_FAIL_INDEX_V(p_index, buttons.size(), false);
-	return buttons[p_index]->is_visible();
+	ERR_FAIL_INDEX_V(p_index, plugin_allowed.size(), false);
+	return plugin_allowed[p_index];
 }
 
 int EditorMainScreen::_get_current_main_editor() const {
@@ -159,7 +131,7 @@ void EditorMainScreen::select_next() {
 		} else {
 			editor++;
 		}
-	} while (!buttons[editor]->is_visible());
+	} while (!plugin_allowed[editor]);
 
 	select(editor);
 }
@@ -173,7 +145,7 @@ void EditorMainScreen::select_prev() {
 		} else {
 			editor--;
 		}
-	} while (!buttons[editor]->is_visible());
+	} while (!plugin_allowed[editor]);
 
 	select(editor);
 }
@@ -181,8 +153,8 @@ void EditorMainScreen::select_prev() {
 void EditorMainScreen::select_by_name(const String &p_name) {
 	ERR_FAIL_COND(p_name.is_empty());
 
-	for (int i = 0; i < buttons.size(); i++) {
-		if (buttons[i]->get_text() == p_name) {
+	for (int i = 0; i < editor_table.size(); i++) {
+		if (editor_table[i]->get_plugin_name() == p_name) {
 			select(i);
 			return;
 		}
@@ -198,12 +170,9 @@ void EditorMainScreen::select(int p_index) {
 
 	ERR_FAIL_INDEX(p_index, editor_table.size());
 
-	if (!buttons[p_index]->is_visible()) { // Button hidden, no editor.
+	if (p_index >= plugin_allowed.size() || !plugin_allowed[p_index]) {
+		// Turned off by a feature profile.
 		return;
-	}
-
-	for (int i = 0; i < buttons.size(); i++) {
-		buttons[i]->set_pressed_no_signal(i == p_index);
 	}
 
 	EditorPlugin *new_editor = editor_table[p_index];
@@ -213,12 +182,21 @@ void EditorMainScreen::select(int p_index) {
 		return;
 	}
 
-	if (selected_plugin) {
-		selected_plugin->make_visible(false);
-	}
-
+	// Nothing is hidden any more. A main screen the user has put in a pane
+	// stays there; choosing another one puts that one somewhere too, rather
+	// than swapping what a single space shows.
 	selected_plugin = new_editor;
-	selected_plugin->make_visible(true);
+	const StringName type = selected_plugin->get_main_screen_panel_type() != StringName()
+			? selected_plugin->get_main_screen_panel_type()
+			: _main_panel_type_id(selected_plugin);
+	EditorPane *pane = pane_tree ? pane_tree->get_active_pane() : nullptr;
+	if (pane && EditorPanelRegistry::has_type(type)) {
+		pane->show_panel_of_type(type);
+	} else {
+		// Nothing can show it - an addon that keeps its view to itself - so it
+		// falls back to the way it always worked.
+		selected_plugin->make_visible(true);
+	}
 	selected_plugin->selected_notify();
 	// A scene dropped on a pane becomes this kind of view, unless the pane it
 	// lands on is already showing one and has its own answer. A main screen
@@ -272,15 +250,13 @@ bool EditorMainScreen::can_auto_switch_screens() const {
 	if (selected_plugin == nullptr) {
 		return true;
 	}
-	// Only allow auto-switching if the selected button is to the left of the Script button.
-	for (int i = 0; i < button_hb->get_child_count(); i++) {
-		Button *button = Object::cast_to<Button>(button_hb->get_child(i));
-		if (button->get_text() == "Script") {
-			// Selected button is at or after the Script button.
+	// Only from a main screen that comes before the script editor: opening a
+	// scene should not pull the view away from someone writing code.
+	for (int i = 0; i < editor_table.size(); i++) {
+		if (i == EDITOR_SCRIPT) {
 			return false;
 		}
-		if (button->get_text() == selected_plugin->get_plugin_name()) {
-			// Selected button is before the Script button.
+		if (editor_table[i] == selected_plugin) {
 			return true;
 		}
 	}
@@ -323,7 +299,7 @@ void EditorMainScreen::split_main_pane(bool p_vertical) {
 		return;
 	}
 
-	EditorPane *pane = pane_tree->split_pane(pane_tree->get_main_screen_pane(), p_vertical);
+	EditorPane *pane = pane_tree->split_pane(pane_tree->get_active_pane(), p_vertical);
 	if (!pane) {
 		return;
 	}
@@ -408,59 +384,121 @@ void EditorMainScreen::current_document_changed() {
 	}
 }
 
+StringName EditorMainScreen::_main_panel_type_id(const EditorPlugin *p_editor) {
+	// The same name a saved layout uses, so an arrangement that says "the
+	// script editor, here" still means it next time.
+	return StringName("main_" + const_cast<EditorPlugin *>(p_editor)->get_plugin_name());
+}
+
+Control *EditorMainScreen::_control_of(EditorPlugin *p_editor) {
+	Control *known = p_editor->get_main_screen_control();
+	if (known) {
+		return known;
+	}
+
+	// An addon says what to show by making it visible, and never says which
+	// Control that is. Asking it to show itself and seeing which of the parked
+	// controls appears is how the editor finds out, and once is enough.
+	const ObjectID *remembered = plugin_controls.getptr(p_editor->get_instance_id());
+	if (remembered) {
+		return ObjectDB::get_instance<Control>(*remembered);
+	}
+
+	HashSet<Control *> before;
+	for (int i = 0; i < main_screen_vbox->get_child_count(); i++) {
+		Control *child = Object::cast_to<Control>(main_screen_vbox->get_child(i));
+		if (child && child->is_visible()) {
+			before.insert(child);
+		}
+	}
+	p_editor->make_visible(true);
+	Control *found = nullptr;
+	for (int i = 0; i < main_screen_vbox->get_child_count(); i++) {
+		Control *child = Object::cast_to<Control>(main_screen_vbox->get_child(i));
+		if (child && child->is_visible() && !before.has(child)) {
+			found = child;
+			break;
+		}
+	}
+	if (found) {
+		plugin_controls.insert(p_editor->get_instance_id(), found->get_instance_id());
+	} else {
+		p_editor->make_visible(false);
+	}
+	return found;
+}
+
+Control *EditorMainScreen::_lend_main_panel(EditorPlugin *p_editor) {
+	ERR_FAIL_NULL_V(p_editor, nullptr);
+	if (lent_plugins.has(p_editor)) {
+		// There is one script editor, so a second pane cannot also show it.
+		return nullptr;
+	}
+	Control *control = _control_of(p_editor);
+	if (!control) {
+		return nullptr;
+	}
+
+	lent_plugins.insert(p_editor);
+	// It shows itself its own way, and then leaves the main screen for the pane
+	// that asked. Nothing hides it while it is out; see select().
+	p_editor->make_visible(true);
+	if (control->get_parent()) {
+		control->get_parent()->remove_child(control);
+	}
+	control->show();
+	return control;
+}
+
+bool EditorMainScreen::_return_main_panel(Control *p_panel, EditorPlugin *p_editor) {
+	ERR_FAIL_NULL_V(p_editor, false);
+	lent_plugins.erase(p_editor);
+
+	Control *control = _control_of(p_editor);
+	if (!control) {
+		return false;
+	}
+	if (control->get_parent()) {
+		control->get_parent()->remove_child(control);
+	}
+	main_screen_vbox->add_child(control);
+	control->hide();
+	return true;
+}
+
 void EditorMainScreen::add_main_plugin(EditorPlugin *p_editor) {
-	Button *tb = memnew(Button);
-	tb->set_toggle_mode(true);
-	tb->set_theme_type_variation("MainScreenButton");
-	tb->set_name(p_editor->get_plugin_name());
-	tb->set_text(p_editor->get_plugin_name());
-
-	Ref<Shortcut> shortcut = EditorSettings::get_singleton()->get_shortcut("editor/editor_" + p_editor->get_plugin_name().to_lower());
-	if (shortcut.is_valid()) {
-		tb->set_shortcut(shortcut);
-	}
-
-	Ref<Texture2D> icon = p_editor->get_plugin_icon();
-	if (icon.is_null() && has_theme_icon(p_editor->get_plugin_name(), EditorStringName(EditorIcons))) {
-		icon = get_editor_theme_icon(p_editor->get_plugin_name());
-	}
-	if (icon.is_valid()) {
-		tb->set_button_icon(icon);
-		// Make sure the control is updated if the icon is reimported.
-		icon->connect_changed(callable_mp((Control *)tb, &Control::update_minimum_size));
-	}
-
-	tb->connect(SceneStringName(pressed), callable_mp(this, &EditorMainScreen::select).bind(buttons.size()));
-
-	buttons.push_back(tb);
-	button_hb->add_child(tb);
+	plugin_allowed.push_back(true);
 	editor_table.push_back(p_editor);
 	main_editor_plugins.insert(p_editor->get_plugin_name(), p_editor);
+
+	// A main screen is a panel like any other. The ones that can be built twice
+	// - the 2D and 3D views - name themselves; the rest are one of a kind, so
+	// they are lent to whichever pane asks, and given back when it lets go.
+	if (p_editor->get_main_screen_panel_type() == StringName()) {
+		EditorPanelRegistry::PanelType type;
+		type.id = _main_panel_type_id(p_editor);
+		type.title = p_editor->get_plugin_name();
+		type.icon = has_theme_icon(p_editor->get_plugin_name(), EditorStringName(EditorIcons)) ? StringName(p_editor->get_plugin_name()) : StringName();
+		type.binding = EditorPanelRegistry::BINDING_CONTEXT;
+		type.lent = true;
+		type.create = callable_mp(this, &EditorMainScreen::_lend_main_panel).bind(p_editor);
+		type.release = callable_mp(this, &EditorMainScreen::_return_main_panel).bind(p_editor);
+		EditorPanelRegistry::register_type(type);
+	}
 }
 
 void EditorMainScreen::remove_main_plugin(EditorPlugin *p_editor) {
-	// Remove the main editor button and update the bindings of
-	// all buttons behind it to point to the correct main window.
-	for (int i = buttons.size() - 1; i >= 0; i--) {
-		if (p_editor->get_plugin_name() == buttons[i]->get_text()) {
-			if (buttons[i]->is_pressed()) {
-				select(EDITOR_SCRIPT);
-			}
-
-			memdelete(buttons[i]);
-			buttons.remove_at(i);
-
-			break;
-		} else {
-			buttons[i]->disconnect(SceneStringName(pressed), callable_mp(this, &EditorMainScreen::select));
-			buttons[i]->connect(SceneStringName(pressed), callable_mp(this, &EditorMainScreen::select).bind(i - 1));
-		}
+	const int index = editor_table.find(p_editor);
+	if (index >= 0 && index < plugin_allowed.size()) {
+		plugin_allowed.remove_at(index);
 	}
 
 	if (selected_plugin == p_editor) {
 		selected_plugin = nullptr;
 	}
 
+	EditorPanelRegistry::unregister_type(_main_panel_type_id(p_editor));
+	lent_plugins.erase(p_editor);
 	editor_table.erase(p_editor);
 	main_editor_plugins.erase(p_editor->get_plugin_name());
 }
@@ -470,13 +508,15 @@ EditorMainScreen::EditorMainScreen() {
 	add_child(pane_tree);
 	pane_tree->connect(SNAME("layout_changed"), callable_mp(this, &EditorMainScreen::_panes_changed));
 
+	// Where a main screen stands when no pane is showing it. Plugins parent
+	// their views into this and addons reach it through EditorInterface, so it
+	// is the same Control it has always been - it is simply not on screen any
+	// more. What is on screen is panes, and a main screen is a panel in one.
 	main_screen_vbox = memnew(VBoxContainer);
 	main_screen_vbox->set_name("MainScreen");
 	main_screen_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	main_screen_vbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	main_screen_vbox->add_theme_constant_override("separation", 0);
-	// The first pane shows it rather than owning it: plugins parent their views
-	// into this Control and addons reach it through EditorInterface, so it is
-	// the same Control it has always been.
-	pane_tree->adopt_main_screen(main_screen_vbox, TTRC("Main Screen"));
+	main_screen_vbox->hide();
+	add_child(main_screen_vbox);
 }

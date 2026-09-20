@@ -6288,7 +6288,33 @@ void CanvasItemEditorPlugin::edited_scene_changed() {
 	}
 }
 
+bool CanvasItemEditorPlugin::release_main_screen_view(Control *p_view) {
+	// Only the one the editor built for itself comes back here; every other is
+	// the pane's own and the pane frees it.
+	if (p_view != canvas_item_editor || !parked_parent) {
+		return false;
+	}
+	if (canvas_item_editor->get_parent()) {
+		canvas_item_editor->get_parent()->remove_child(canvas_item_editor);
+	}
+	parked_parent->add_child(canvas_item_editor);
+	canvas_item_editor->hide();
+	return true;
+}
+
 Control *CanvasItemEditorPlugin::create_main_screen_view() {
+	// The first view asked for is the one already standing in the main screen
+	// with nothing showing it - a pane is exactly something to show it in.
+	// Another is built only once that one is spoken for.
+	if (canvas_item_editor && canvas_item_editor->get_parent() && canvas_item_editor->get_parent() == parked_parent) {
+		parked_parent->remove_child(canvas_item_editor);
+		canvas_item_editor->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+		canvas_item_editor->set_process(true);
+		canvas_item_editor->set_physics_process(true);
+		canvas_item_editor->show();
+		return canvas_item_editor;
+	}
+
 	// Nothing is shared between 2D views the way the 3D gizmos and grid are:
 	// each keeps its own pan, zoom and overlays, and takes its world from the
 	// document it is pointed at.
@@ -6376,13 +6402,15 @@ CanvasItemEditorPlugin::CanvasItemEditorPlugin() {
 		type.icon = "Node2D";
 		type.binding = EditorPanelRegistry::BINDING_DOCUMENT;
 		type.create = callable_mp(this, &CanvasItemEditorPlugin::create_main_screen_view);
+		type.release = callable_mp(this, &CanvasItemEditorPlugin::release_main_screen_view);
 		type.bind = callable_mp_static(&EditorDocumentView::bind_panel);
 		EditorPanelRegistry::register_type(type);
 	}
 
 	canvas_item_editor = memnew(CanvasItemEditor);
 	canvas_item_editor->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	EditorNode::get_singleton()->get_editor_main_screen()->get_control()->add_child(canvas_item_editor);
+	parked_parent = EditorNode::get_singleton()->get_editor_main_screen()->get_control();
+	parked_parent->add_child(canvas_item_editor);
 	canvas_item_editor->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	canvas_item_editor->hide();
 }

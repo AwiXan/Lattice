@@ -1484,7 +1484,8 @@ ProjectManager::ProjectManager() {
 		main_view_toggles->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		main_view_toggles->set_stretch_ratio(2.0);
 		title_bar->add_child(main_view_toggles);
-		title_bar->set_center_control(main_view_toggles);
+		// The spacers either side of it do the centring; the bar itself wraps
+		// rather than holding the window open, so it has no centre to hold to.
 
 		if (can_expand) {
 			// Spacer to center main toggles.

@@ -84,8 +84,16 @@ public:
 		// as the pane holds it. A pane never frees a lent panel - it gives it
 		// back, and whoever lent it decides where it goes.
 		bool lent = false;
-		// Called with the panel when a pane stops showing it. Lent types only;
-		// nothing else has anywhere to give one back to.
+		// Whether a pane offers to put one of these here. A dock says no: there
+		// is one of it, it is already somewhere, and its own tab is how it is
+		// moved. A main screen says yes, because otherwise there would be no way
+		// left to ask for it.
+		bool offered = true;
+		// Called with the panel when a pane stops showing it, and says whether
+		// it took it back. A lent type always does. A type that builds its
+		// panels may still want the first one back - the editor's own 3D view
+		// is built before any pane exists - and says so by answering true for
+		// that one and false for the rest, which the caller then frees.
 		Callable release;
 		// Points a panel of this type at what it shows. The subject is whatever
 		// that kind of binding means: a document's history id, where -1 is

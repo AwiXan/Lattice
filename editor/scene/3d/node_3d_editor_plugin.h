@@ -1186,8 +1186,12 @@ public:
 	virtual String get_plugin_name() const override { return TTRC("3D"); }
 	bool has_main_screen() const override { return true; }
 	virtual Control *create_main_screen_view() override;
+	// Where the editor's own view stands when no pane is showing it.
+	Control *parked_parent = nullptr;
+	bool release_main_screen_view(Control *p_view);
 	virtual StringName get_main_screen_panel_type() const override { return spatial_editor ? spatial_editor->get_panel_type() : StringName(); }
 	virtual EditorDocumentView *get_main_screen_view() override { return spatial_editor; }
+	virtual Control *get_main_screen_control() override { return spatial_editor; }
 	virtual void make_visible(bool p_visible) override;
 	virtual void edit(Object *p_object) override;
 	virtual bool handles(Object *p_object) const override;

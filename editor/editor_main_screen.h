@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/templates/hash_set.h"
 #include "scene/gui/panel_container.h"
 
 class Button;
@@ -78,11 +79,24 @@ private:
 	// rather than looked up: which plugin is selected can change under it.
 	EditorDocumentView *pinned_primary_view = nullptr;
 
+	// Main screens that a pane is showing instead of the main screen itself.
+	// There is one of each, so one that is out cannot be lent again - and
+	// nothing hides it while it is out.
+	HashSet<EditorPlugin *> lent_plugins;
+
+	static StringName _main_panel_type_id(const EditorPlugin *p_editor);
+	// Which Control a plugin puts in the main screen, remembered once found.
+	HashMap<ObjectID, ObjectID> plugin_controls;
+	Control *_control_of(EditorPlugin *p_editor);
+	Control *_lend_main_panel(EditorPlugin *p_editor);
+	bool _return_main_panel(Control *p_panel, EditorPlugin *p_editor);
+
 	void _panes_changed();
 	void _restore_panes(const Dictionary &p_layout);
 
-	HBoxContainer *button_hb = nullptr;
-	Vector<Button *> buttons;
+	// Whether a main screen may be asked for at all. The feature profiles turn
+	// them off; there is no button left to hide, so it is written down here.
+	Vector<bool> plugin_allowed;
 	Vector<EditorPlugin *> editor_table;
 	HashMap<String, EditorPlugin *> main_editor_plugins;
 
@@ -92,11 +106,11 @@ protected:
 	void _notification(int p_what);
 
 public:
-	void set_button_container(HBoxContainer *p_button_hb);
-
 	void save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const;
 	void load_layout_from_config(Ref<ConfigFile> p_config_file, const String &p_section);
 
+	// Whether this main screen may be asked for. Kept for the feature profiles,
+	// which turn 3D, scripting, the game view or the asset store off.
 	void set_button_enabled(int p_index, bool p_enabled);
 	bool is_button_enabled(int p_index) const;
 

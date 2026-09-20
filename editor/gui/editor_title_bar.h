@@ -30,15 +30,20 @@
 
 #pragma once
 
-#include "scene/gui/box_container.h"
+#include "scene/gui/flow_container.h"
 
-class EditorTitleBar : public HBoxContainer {
-	GDCLASS(EditorTitleBar, HBoxContainer);
+// The row across the top: the menus, the project's name, the run controls.
+//
+// It wraps onto a second line when the window is too narrow for all of it,
+// rather than holding the window open at its own width. It used to be a plain
+// row, and the window could not be made narrower than everything in it laid
+// end to end - which, with the main screen buttons in the middle, was wide.
+class EditorTitleBar : public HFlowContainer {
+	GDCLASS(EditorTitleBar, HFlowContainer);
 
 	Point2i click_pos;
 	bool moving = false;
 	bool can_move = false;
-	Control *center_control = nullptr;
 
 protected:
 	void _notification(int p_what);
@@ -47,9 +52,6 @@ protected:
 	static void _bind_methods() {}
 
 public:
-	void set_center_control(Control *p_center_control);
-	Control *get_center_control() const;
-
 	void set_can_move_window(bool p_enabled);
 	bool get_can_move_window() const;
 };

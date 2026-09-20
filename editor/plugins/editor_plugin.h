@@ -210,6 +210,11 @@ public:
 	// The view this plugin put in the first pane, when it is one that can be
 	// bound to a document. Null for plugins whose main screen is not.
 	virtual EditorDocumentView *get_main_screen_view() { return nullptr; }
+	// The Control this plugin parented into the main screen, for whatever wants
+	// to show it somewhere else - a pane, a window of its own. A plugin that
+	// does not say keeps the behaviour it always had: shown where it was put,
+	// hidden when another main screen is chosen.
+	virtual Control *get_main_screen_control() { return nullptr; }
 	virtual void make_visible(bool p_visible);
 	virtual void set_current() {}
 	virtual void selected_notify() {} //notify that it was raised by the user, not the editor

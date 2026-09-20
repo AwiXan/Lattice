@@ -92,13 +92,15 @@ EditorPane *EditorPaneTree::get_first_pane() const {
 	return panes.is_empty() ? nullptr : panes[0];
 }
 
-EditorPane *EditorPaneTree::get_main_screen_pane() const {
-	for (EditorPane *pane : get_panes()) {
-		if (pane->is_adopting()) {
-			return pane;
-		}
+EditorPane *EditorPaneTree::get_active_pane() const {
+	if (active_pane && _find_leaf(root, active_pane)) {
+		return active_pane;
 	}
 	return get_first_pane();
+}
+
+void EditorPaneTree::set_active_pane(EditorPane *p_pane) {
+	active_pane = p_pane;
 }
 
 // --------------------------------------------------------------- the layout
@@ -319,7 +321,7 @@ void EditorPaneTree::_update_closable() {
 	for (EditorPane *pane : panes) {
 		// The last pane has nowhere to hand its space back to, and nothing to
 		// choose between, so it shows no header at all.
-		pane->set_closable(panes.size() > 1 && !pane->is_adopting());
+		pane->set_closable(panes.size() > 1);
 		pane->set_header_visible(panes.size() > 1);
 	}
 }
@@ -434,11 +436,6 @@ void EditorPaneTree::close_pane(EditorPane *p_pane) {
 		// Nothing would be left to give the space to.
 		return;
 	}
-	if (p_pane->is_adopting()) {
-		// This one holds the editor's main screen, which has to be somewhere.
-		return;
-	}
-
 	Slot *leaf = _leaf_for(p_pane);
 	ERR_FAIL_NULL(leaf);
 	Slot *branch = leaf->parent;
@@ -533,15 +530,13 @@ Dictionary EditorPaneTree::_save_slot(const Slot *p_slot) const {
 	if (p_slot->is_leaf()) {
 		const EditorPane *pane = p_slot->pane;
 		data["kind"] = "pane";
-		// Every panel the pane holds, in tab order. Type ids and subjects, never
-		// classes; "adopted" marks the one that is the editor's main screen, so
-		// that restoring an arrangement puts it back rather than losing it.
+		// Every panel the pane holds, in tab order: type ids and subjects, never
+		// class names.
 		Array saved_panels;
 		for (int i = 0; i < pane->get_panel_count(); i++) {
 			Dictionary panel;
 			panel["panel"] = String(pane->get_panel_type_at(i));
 			panel["subject"] = _subject_to_saved(pane->get_panel_type_at(i), pane->get_panel_subject_at(i));
-			panel["adopted"] = pane->is_panel_adopted_at(i);
 			saved_panels.push_back(panel);
 		}
 		data["panels"] = saved_panels;
@@ -604,12 +599,6 @@ EditorPaneTree::Slot *EditorPaneTree::_load_slot(const Dictionary &p_data, Slot 
 		const Array saved_panels = p_data.get("panels", Array());
 		for (int i = 0; i < saved_panels.size(); i++) {
 			const Dictionary panel_data = saved_panels[i];
-			if (bool(panel_data.get("adopted", false))) {
-				// The editor's main screen. It is given back to this pane once
-				// the old arrangement has let go of it.
-				pending_main_screen_host = pane;
-				continue;
-			}
 			const StringName panel = StringName(String(panel_data.get("panel", "")));
 			// A type that is no longer registered - an addon removed since -
 			// leaves that tab out rather than losing the whole arrangement.
@@ -633,19 +622,6 @@ void EditorPaneTree::load_layout(const Dictionary &p_layout) {
 		return;
 	}
 
-	// The editor's main screen is shown by one of the panes about to be thrown
-	// away. Take it out first: destroying the arrangement must not destroy the
-	// editor with it.
-	Control *main_screen = nullptr;
-	String main_screen_title;
-	for (EditorPane *pane : get_panes()) {
-		if (pane->is_adopting()) {
-			main_screen_title = pane->get_adopted_title();
-			main_screen = pane->release_adopted_panel();
-			break;
-		}
-	}
-
 	// The old arrangement goes before the new one is built, not after. There is
 	// one FileSystem: if the old panes still held it, the new ones asking for it
 	// would be told it was taken, and it would be missing from the arrangement
@@ -660,7 +636,6 @@ void EditorPaneTree::load_layout(const Dictionary &p_layout) {
 		memdelete(pane);
 	}
 
-	pending_main_screen_host = nullptr;
 	root = _load_slot(p_layout, nullptr);
 	if (!root) {
 		// Nothing readable in it, and the old arrangement is already gone. One
@@ -672,27 +647,10 @@ void EditorPaneTree::load_layout(const Dictionary &p_layout) {
 		root->pane = fresh;
 	}
 
-	if (main_screen) {
-		// An arrangement that says nothing about where the main screen goes -
-		// saved by an older build, or hand-edited - still has to put it
-		// somewhere, and the first pane is where it started.
-		EditorPane *host = pending_main_screen_host ? pending_main_screen_host : get_first_pane();
-		if (host) {
-			host->adopt_panel(main_screen, main_screen_title);
-		}
-	}
-	pending_main_screen_host = nullptr;
-
 	_update_closable();
 	update_minimum_size();
 	queue_sort();
 	emit_signal(SNAME("layout_changed"));
-}
-
-void EditorPaneTree::adopt_main_screen(Control *p_main_screen, const String &p_title) {
-	EditorPane *first = get_first_pane();
-	ERR_FAIL_NULL(first);
-	first->adopt_panel(p_main_screen, p_title);
 }
 
 EditorPaneTree::EditorPaneTree() {

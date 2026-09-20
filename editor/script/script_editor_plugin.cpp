@@ -4315,6 +4315,10 @@ bool ScriptEditorPlugin::handles(Object *p_object) const {
 	return p_object->is_class("Script");
 }
 
+Control *ScriptEditorPlugin::get_main_screen_control() {
+	return window_wrapper;
+}
+
 void ScriptEditorPlugin::make_visible(bool p_visible) {
 	if (p_visible) {
 		window_wrapper->show();

@@ -110,13 +110,15 @@ void EditorPanelRegistry::bind_panel(const StringName &p_id, Control *p_panel, c
 
 bool EditorPanelRegistry::release_panel(const StringName &p_id, Control *p_panel) {
 	const PanelType *type = types.getptr(p_id);
-	if (!type || !type->lent || !type->release.is_valid()) {
-		// Either this type builds its panels, or whoever lent this one is gone -
-		// at which point the caller freeing it is the right thing.
+	if (!type || !type->release.is_valid()) {
+		// Either nobody wants it back, or whoever lent it is gone - at which
+		// point the caller freeing it is the right thing.
 		return false;
 	}
-	type->release.call(p_panel);
-	return true;
+	const Variant answer = type->release.call(p_panel);
+	// A release that says nothing has taken it: only a type that hands some of
+	// its panels back and not others needs to answer.
+	return answer.get_type() == Variant::BOOL ? (bool)answer : true;
 }
 
 void EditorPanelRegistry::cleanup() {

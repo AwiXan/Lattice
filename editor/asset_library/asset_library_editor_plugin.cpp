@@ -2328,6 +2328,10 @@ const Ref<Texture2D> AssetLibraryEditorPlugin::get_plugin_icon() const {
 	return EditorNode::get_singleton()->get_editor_theme()->get_icon(SNAME("AssetStore"), EditorStringName(EditorIcons));
 }
 
+Control *AssetLibraryEditorPlugin::get_main_screen_control() {
+	return addon_library;
+}
+
 void AssetLibraryEditorPlugin::make_visible(bool p_visible) {
 	if (p_visible) {
 		addon_library->show();

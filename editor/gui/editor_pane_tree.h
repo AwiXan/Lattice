@@ -75,6 +75,10 @@ class EditorPaneTree : public Container {
 	// what it shows is drawn on top of it and takes the mouse besides.
 	EditorPaneDropHint *drop_hint = nullptr;
 
+	// The pane last worked in. Asking for a kind of panel - from a menu, from a
+	// shortcut - puts it there rather than somewhere arbitrary.
+	EditorPane *active_pane = nullptr;
+
 	// The divider being dragged, where along it the grab started, and what the
 	// ratio was then - so a drag is one sum rather than a running total.
 	Slot *dragging = nullptr;
@@ -108,9 +112,6 @@ class EditorPaneTree : public Container {
 	// Between what a binding means while running and what it means on disk.
 	static Variant _subject_to_saved(const StringName &p_type, const Variant &p_subject);
 	static Variant _subject_from_saved(const StringName &p_type, const Variant &p_saved);
-	// Which pane a layout being loaded says holds the editor's main screen, so
-	// that it can be given back once the old arrangement has let go of it.
-	EditorPane *pending_main_screen_host = nullptr;
 	void _update_closable();
 
 protected:
@@ -123,12 +124,13 @@ public:
 	virtual Size2 get_minimum_size() const override;
 	virtual CursorShape get_cursor_shape(const Point2 &p_pos = Point2i()) const override;
 
-	// The pane every other one is split off from. It holds the editor's main
-	// screen and is never closed.
+	// The pane every other one is split off from, and the one that is left when
+	// everything else has been closed.
 	EditorPane *get_first_pane() const;
-	// The one actually holding the main screen, wherever it has ended up.
-	EditorPane *get_main_screen_pane() const;
 	Vector<EditorPane *> get_panes() const;
+	// The pane last worked in, or the first one if none has been.
+	EditorPane *get_active_pane() const;
+	void set_active_pane(EditorPane *p_pane);
 
 	// Splits a pane in two, side by side or one above the other, and returns the
 	// pane that appeared. p_before puts the new pane first, which is what a drop
@@ -163,9 +165,6 @@ public:
 	// call: the path resolves either way.
 	Dictionary save_layout() const;
 	void load_layout(const Dictionary &p_layout);
-
-	// Takes the Control the editor's main screen is, to show in the first pane.
-	void adopt_main_screen(Control *p_main_screen, const String &p_title);
 
 	EditorPaneTree();
 	~EditorPaneTree();

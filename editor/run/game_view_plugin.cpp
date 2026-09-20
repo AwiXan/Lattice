@@ -1709,6 +1709,10 @@ void GameViewPluginBase::selected_notify() {
 }
 
 #ifndef ANDROID_ENABLED
+Control *GameViewPluginBase::get_main_screen_control() {
+	return window_wrapper;
+}
+
 void GameViewPluginBase::make_visible(bool p_visible) {
 	if (p_visible) {
 		window_wrapper->show();

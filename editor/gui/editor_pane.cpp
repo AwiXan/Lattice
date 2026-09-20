@@ -130,15 +130,13 @@ void EditorPane::_update_palette() {
 		return;
 	}
 
-	// Everything the editor can make another of. A panel showing a resource is
-	// not one: it is opened by dragging that resource here. Nor is a dock: there
-	// is one of each, it is already somewhere, and its own tab is how it is
-	// moved - a button offering a second FileSystem would be offering a thing
-	// that cannot exist.
+	// Everything a pane offers to show. A panel showing a resource is not one:
+	// it is opened by dragging that resource here. Nor is a dock: there is one
+	// of each, it is already somewhere, and its own tab is how it is moved.
 	Vector<StringName> wanted;
 	for (const StringName &id : EditorPanelRegistry::get_type_ids()) {
 		const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(id);
-		if (type && !type->lent && type->binding != EditorPanelRegistry::BINDING_RESOURCE) {
+		if (type && type->offered && type->binding != EditorPanelRegistry::BINDING_RESOURCE) {
 			wanted.push_back(id);
 		}
 	}
@@ -183,9 +181,6 @@ void EditorPane::_palette_pressed(const StringName &p_type) {
 }
 
 String EditorPane::_title_of(const PanelEntry &p_entry) const {
-	if (p_entry.adopted) {
-		return p_entry.title;
-	}
 	const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(p_entry.type);
 	return type && !type->title.is_empty() ? type->title : String(p_entry.type);
 }
@@ -309,11 +304,6 @@ int EditorPane::add_panel(const StringName &p_type, const Variant &p_subject) {
 
 void EditorPane::close_panel(int p_index) {
 	ERR_FAIL_INDEX(p_index, panels.size());
-	if (panels[p_index].adopted) {
-		// This is the editor's main screen, which has to be somewhere.
-		return;
-	}
-
 	_let_go_of(panels[p_index]);
 	panels.remove_at(p_index);
 
@@ -330,6 +320,11 @@ void EditorPane::close_panel(int p_index) {
 void EditorPane::set_current_panel(int p_index) {
 	if (p_index < 0 || p_index >= panels.size() || p_index == current) {
 		return;
+	}
+	EditorPaneTree *tree = _get_pane_tree();
+	if (tree) {
+		// Choosing something here is working here.
+		tree->set_active_pane(this);
 	}
 	current = p_index;
 	_show_only_current();
@@ -367,13 +362,6 @@ Control *EditorPane::get_panel_at(int p_index) const {
 	return panels[p_index].control;
 }
 
-bool EditorPane::is_panel_adopted_at(int p_index) const {
-	if (p_index < 0 || p_index >= panels.size()) {
-		return false;
-	}
-	return panels[p_index].adopted;
-}
-
 String EditorPane::get_panel_title_at(int p_index) const {
 	if (p_index < 0 || p_index >= panels.size()) {
 		return String();
@@ -382,15 +370,22 @@ String EditorPane::get_panel_title_at(int p_index) const {
 }
 
 void EditorPane::set_panel_type(const StringName &p_type, const Variant &p_subject) {
-	// Everything but the editor's main screen, which cannot be dropped.
 	for (int i = panels.size() - 1; i >= 0; i--) {
-		if (!panels[i].adopted) {
-			_let_go_of(panels[i]);
-			panels.remove_at(i);
+		_let_go_of(panels[i]);
+		panels.remove_at(i);
+	}
+	current = -1;
+	add_panel(p_type, p_subject);
+}
+
+int EditorPane::show_panel_of_type(const StringName &p_type) {
+	for (int i = 0; i < panels.size(); i++) {
+		if (panels[i].type == p_type) {
+			set_current_panel(i);
+			return i;
 		}
 	}
-	current = panels.is_empty() ? -1 : 0;
-	add_panel(p_type, p_subject);
+	return add_panel(p_type, _subject_for_type(p_type));
 }
 
 void EditorPane::set_panel_subject(const Variant &p_subject) {
@@ -399,61 +394,6 @@ void EditorPane::set_panel_subject(const Variant &p_subject) {
 	}
 	panels.write[current].subject = p_subject;
 	EditorPanelRegistry::bind_panel(panels[current].type, panels[current].control, p_subject);
-}
-
-void EditorPane::adopt_panel(Control *p_panel, const String &p_title) {
-	ERR_FAIL_NULL(p_panel);
-	ERR_FAIL_COND_MSG(is_adopting(), "This pane already shows the editor's main screen.");
-
-	PanelEntry entry;
-	entry.control = p_panel;
-	entry.adopted = true;
-	entry.title = p_title;
-	p_panel->set_v_size_flags(SIZE_EXPAND_FILL);
-	p_panel->set_h_size_flags(SIZE_EXPAND_FILL);
-	add_child(p_panel);
-
-	panels.insert(0, entry);
-	current = 0;
-	_show_only_current();
-	_update_tabs();
-	emit_signal(SNAME("panels_changed"));
-}
-
-bool EditorPane::is_adopting() const {
-	for (const PanelEntry &entry : panels) {
-		if (entry.adopted) {
-			return true;
-		}
-	}
-	return false;
-}
-
-String EditorPane::get_adopted_title() const {
-	for (const PanelEntry &entry : panels) {
-		if (entry.adopted) {
-			return entry.title;
-		}
-	}
-	return String();
-}
-
-Control *EditorPane::release_adopted_panel() {
-	for (int i = 0; i < panels.size(); i++) {
-		if (!panels[i].adopted) {
-			continue;
-		}
-		Control *released = panels[i].control;
-		if (released && released->get_parent() == this) {
-			remove_child(released);
-		}
-		panels.remove_at(i);
-		current = panels.is_empty() ? -1 : 0;
-		_show_only_current();
-		_update_tabs();
-		return released;
-	}
-	return nullptr;
 }
 
 void EditorPane::_let_go_of(const PanelEntry &p_entry) {
@@ -474,9 +414,10 @@ void EditorPane::_let_go_of(const PanelEntry &p_entry) {
 
 void EditorPane::_return_everything_lent() {
 	// Whatever was lent to this pane goes back rather than down with it: the
-	// editor has one FileSystem, and a pane closing is not a reason to lose it.
+	// editor has one FileSystem and one script editor, and a pane closing is
+	// not a reason to lose either.
 	for (const PanelEntry &entry : panels) {
-		if (entry.adopted || !entry.control) {
+		if (!entry.control) {
 			continue;
 		}
 		if (EditorPanelRegistry::release_panel(entry.type, entry.control)) {
@@ -668,8 +609,7 @@ bool EditorPane::accept_drop(const Point2 &p_point, const Variant &p_data) {
 
 Variant EditorPane::_tab_get_drag_data_fw(const Point2 &p_point, Control *p_from) {
 	const int index = tab_bar->get_tab_idx_at_point(p_point);
-	if (index < 0 || index >= panels.size() || panels[index].adopted) {
-		// The editor's main screen stays where it is.
+	if (index < 0 || index >= panels.size()) {
 		return Variant();
 	}
 
@@ -761,11 +701,6 @@ bool EditorPane::transfer_panel_to(EditorPane *p_target, int p_index, int p_targ
 	ERR_FAIL_NULL_V(p_target, false);
 	ERR_FAIL_INDEX_V(p_index, panels.size(), false);
 	if (p_target == this && (p_target_index == p_index || p_target_index < 0)) {
-		return false;
-	}
-	// The editor's main screen stays where it is: too much reaches it by name
-	// for it to wander.
-	if (panels[p_index].adopted) {
 		return false;
 	}
 

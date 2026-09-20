@@ -922,46 +922,6 @@ void EditorNode::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_PROCESS: {
-			if (editor_data.is_scene_changed(-1)) {
-				scene_tabs->update_scene_tabs();
-			}
-
-			// Every open document, not just the current one: a pane can be
-			// showing any of them, and the default environment is what a scene
-			// without a WorldEnvironment of its own renders against.
-			{
-				const Ref<Environment> &fallback = get_tree()->get_root()->get_world_3d()->get_fallback_environment();
-				for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
-					SubViewport *document_root = editor_data.get_scene_root_viewport(i);
-					if (!document_root) {
-						continue;
-					}
-					const Ref<World3D> &document_world = document_root->find_world_3d();
-					if (document_world.is_valid() && document_world->get_fallback_environment() != fallback) {
-						document_world->set_fallback_environment(fallback);
-					}
-				}
-			}
-
-			if (update_spinner->is_visible()) {
-				// Update the animation frame of the update spinner.
-				uint64_t frame = Engine::get_singleton()->get_frames_drawn();
-				uint64_t tick = OS::get_singleton()->get_ticks_msec();
-
-				if (frame != update_spinner_step_frame && (tick - update_spinner_step_msec) > (1000 / 8)) {
-					update_spinner_step++;
-					if (update_spinner_step >= 8) {
-						update_spinner_step = 0;
-					}
-
-					update_spinner_step_msec = tick;
-					update_spinner_step_frame = frame + 1;
-					update_spinner->set_button_icon(theme->get_icon("Progress" + itos(update_spinner_step + 1), EditorStringName(EditorIcons)));
-				}
-			}
-
-			editor_selection->update();
-
 			ResourceImporterTexture::get_singleton()->update_imports();
 
 			if (requested_first_scan) {
@@ -9218,14 +9178,8 @@ EditorNode::EditorNode() {
 	project_title->set_visible(can_expand && menu_type == MENU_TYPE_GLOBAL);
 	left_spacer->add_child(project_title);
 
-	HBoxContainer *main_editor_button_hb = memnew(HBoxContainer);
-	main_editor_button_hb->set_mouse_filter(Control::MOUSE_FILTER_STOP);
-	main_editor_button_hb->set_name("EditorMainScreenButtons");
-	editor_main_screen->set_button_container(main_editor_button_hb);
-	title_bar->add_child(main_editor_button_hb);
-	title_bar->set_center_control(main_editor_button_hb);
-
-	// Spacer to center 2D / 3D / Script buttons.
+	// Nothing is centred in the title bar any more: what used to be there - the
+	// 2D, 3D and Script buttons - is offered by each pane instead.
 	right_spacer = memnew(Control);
 	right_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	right_spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);

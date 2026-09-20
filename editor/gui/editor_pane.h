@@ -50,10 +50,9 @@ class TabBar;
 // which classes exist - and what will let a tab be torn into a window of its
 // own, since a window need only be told the same two things.
 //
-// A pane may instead adopt a Control built elsewhere. The editor's main screen
-// is one: plugins parent their views into it and reach it through
-// EditorInterface, so it stays the one Control it has always been and simply
-// lives in a pane like everything else.
+// Nothing here is special. The 3D view a fresh editor opens on is a panel of a
+// registered type like any other, and can be closed, moved or replaced like any
+// other - there is no main screen underneath it that has to stay.
 class EditorPane : public VBoxContainer {
 	GDCLASS(EditorPane, VBoxContainer);
 
@@ -98,9 +97,6 @@ private:
 		StringName type;
 		Variant subject;
 		Control *control = nullptr;
-		// The editor's main screen, shown here rather than built from a type.
-		bool adopted = false;
-		String title;
 	};
 
 	HBoxContainer *header = nullptr;
@@ -195,7 +191,6 @@ public:
 	StringName get_panel_type_at(int p_index) const;
 	Variant get_panel_subject_at(int p_index) const;
 	Control *get_panel_at(int p_index) const;
-	bool is_panel_adopted_at(int p_index) const;
 	String get_panel_title_at(int p_index) const;
 
 	// The panel being shown, for callers that only care about that.
@@ -205,17 +200,11 @@ public:
 
 	// Makes this pane show exactly one panel of the given type.
 	void set_panel_type(const StringName &p_type, const Variant &p_subject = Variant());
+	// Brings the panel of this type to the front, or adds one if this pane has
+	// none. Returns its index, or -1 if nothing could be made.
+	int show_panel_of_type(const StringName &p_type);
 	// Points the panel being shown at something else.
 	void set_panel_subject(const Variant &p_subject);
-
-	// Shows a Control built elsewhere - the editor's main screen. It is freed
-	// with this pane like any child, but it cannot be closed.
-	void adopt_panel(Control *p_panel, const String &p_title);
-	bool is_adopting() const;
-	String get_adopted_title() const;
-	// Hands the adopted Control back, so that replacing the whole arrangement
-	// does not destroy the editor's main screen along with it.
-	Control *release_adopted_panel();
 
 	// Hands a panel over to another pane, Control and all. Nothing is rebuilt,
 	// so what moves keeps its camera, its scroll and what it had selected - the
