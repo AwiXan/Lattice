@@ -479,6 +479,7 @@ void EditorMainScreen::add_main_plugin(EditorPlugin *p_editor) {
 		type.id = _main_panel_type_id(p_editor);
 		type.title = p_editor->get_plugin_name();
 		type.icon = has_theme_icon(p_editor->get_plugin_name(), EditorStringName(EditorIcons)) ? StringName(p_editor->get_plugin_name()) : StringName();
+		type.icon_texture = p_editor->get_plugin_icon();
 		type.binding = EditorPanelRegistry::BINDING_CONTEXT;
 		type.lent = true;
 		type.create = callable_mp(this, &EditorMainScreen::_lend_main_panel).bind(p_editor);

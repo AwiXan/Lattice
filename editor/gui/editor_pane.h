@@ -38,6 +38,8 @@ class Button;
 class Control;
 class EditorPaneTree;
 class HBoxContainer;
+class HFlowContainer;
+class MenuButton;
 class OptionButton;
 class TabBar;
 
@@ -99,12 +101,19 @@ private:
 		Control *control = nullptr;
 	};
 
-	HBoxContainer *header = nullptr;
+	// It wraps onto a second line rather than holding the pane open at its own
+	// width, so a pane can be made as narrow as what it is showing allows.
+	HFlowContainer *header = nullptr;
 	TabBar *tab_bar = nullptr;
-	// One button per kind of panel that can be added: press for one here, drag
-	// for one wherever it is let go.
+	// A button per kind of view that goes beside a scene: press for one here,
+	// drag for one wherever it is let go.
 	HBoxContainer *palette = nullptr;
 	Vector<StringName> palette_types;
+	// Everywhere else the editor can take you - the script editor, the game
+	// view, an addon's screen. Places to go rather than things to arrange, so
+	// they cost one button between them instead of one each.
+	MenuButton *more_button = nullptr;
+	Vector<StringName> more_types;
 	OptionButton *subject_button = nullptr;
 	Button *split_right_button = nullptr;
 	Button *split_down_button = nullptr;
@@ -115,6 +124,9 @@ private:
 	// Rebuilding the tab bar makes it report selections of its own - adding the
 	// first tab selects it - which would overwrite the panel actually chosen.
 	bool rebuilding_tabs = false;
+	// Whether the arrangement wants this pane's header. A pane may still show
+	// it for reasons of its own; see _update_header_visibility().
+	bool header_wanted = false;
 
 	void _build_header();
 	void _update_theme();
@@ -124,11 +136,14 @@ private:
 	void _tab_selected(int p_index);
 	void _tab_close_pressed(int p_index);
 	void _palette_pressed(const StringName &p_type);
+	void _more_selected(int p_index);
+	Ref<Texture2D> _icon_of(const StringName &p_type) const;
 	void _subject_selected(int p_index);
 	void _split_pressed(bool p_vertical);
 	void _close_pressed();
 	String _title_of(const PanelEntry &p_entry) const;
 	void _show_only_current();
+	void _update_header_visibility();
 	// Stops showing a panel: back to whoever lent it, or freed if this pane
 	// built it.
 	void _let_go_of(const PanelEntry &p_entry);
@@ -213,6 +228,7 @@ public:
 
 	// Whether this pane offers to be closed. The last one does not.
 	void set_closable(bool p_closable);
+	bool is_header_visible() const;
 	// With one pane holding one panel there is nothing to choose between, so a
 	// header would be a row of buttons above an editor that has never had one.
 	void set_header_visible(bool p_visible);

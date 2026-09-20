@@ -33,6 +33,7 @@
 #include "core/string/string_name.h"
 #include "core/templates/hash_map.h"
 #include "core/variant/callable.h"
+#include "scene/resources/texture.h"
 
 class Control;
 
@@ -75,7 +76,10 @@ public:
 	struct PanelType {
 		StringName id;
 		String title;
+		// An icon named in the editor's theme, and failing that one the type
+		// brought with it - a plugin's icon is a texture, not a name.
 		StringName icon;
+		Ref<Texture2D> icon_texture;
 		Binding binding = BINDING_CONTEXT;
 		// Builds a panel of this type. Returns a Control the caller owns.
 		Callable create;

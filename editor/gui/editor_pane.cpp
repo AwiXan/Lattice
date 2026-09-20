@@ -42,6 +42,9 @@
 #include "scene/gui/panel.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
+#include "scene/gui/flow_container.h"
+#include "scene/gui/menu_button.h"
+#include "scene/gui/popup_menu.h"
 #include "scene/gui/separator.h"
 #include "scene/gui/tab_bar.h"
 
@@ -52,11 +55,14 @@ void EditorPane::_bind_methods() {
 }
 
 void EditorPane::_build_header() {
-	header = memnew(HBoxContainer);
+	header = memnew(HFlowContainer);
 	add_child(header);
 
 	tab_bar = memnew(TabBar);
 	tab_bar->set_h_size_flags(SIZE_EXPAND_FILL);
+	// The bar offers arrows rather than demanding room for every tab, which is
+	// what lets a pane be narrower than its tabs laid end to end.
+	tab_bar->set_clip_tabs(true);
 	tab_bar->set_tab_close_display_policy(TabBar::CLOSE_BUTTON_SHOW_ACTIVE_ONLY);
 	tab_bar->connect(SNAME("tab_selected"), callable_mp(this, &EditorPane::_tab_selected));
 	tab_bar->connect(SNAME("tab_close_pressed"), callable_mp(this, &EditorPane::_tab_close_pressed));
@@ -74,6 +80,7 @@ void EditorPane::_build_header() {
 	subject_button->set_tooltip_text(TTRC("The scene this panel is showing. It does not have to be the one the tab bar has selected."));
 	subject_button->get_popup()->connect(SNAME("about_to_popup"), callable_mp(this, &EditorPane::_update_subject_list));
 	subject_button->connect(SceneStringName(item_selected), callable_mp(this, &EditorPane::_subject_selected));
+	subject_button->set_custom_minimum_size(Size2(60 * EDSCALE, 0));
 	subject_button->hide();
 	header->add_child(subject_button);
 
@@ -82,6 +89,16 @@ void EditorPane::_build_header() {
 	palette = memnew(HBoxContainer);
 	palette->add_theme_constant_override("separation", 0);
 	header->add_child(palette);
+
+	more_button = memnew(MenuButton);
+	more_button->set_flat(true);
+	more_button->set_focus_mode(FOCUS_NONE);
+	more_button->set_tooltip_text(TTRC("Show something else here."));
+	// Filled when opened rather than kept in step with the registry, so a type
+	// registered later needs to tell nobody.
+	more_button->get_popup()->connect(SNAME("about_to_popup"), callable_mp(this, &EditorPane::_update_palette));
+	more_button->get_popup()->connect(SNAME("index_pressed"), callable_mp(this, &EditorPane::_more_selected));
+	header->add_child(more_button);
 
 	header->add_child(memnew(VSeparator));
 
@@ -124,29 +141,63 @@ void EditorPane::_update_theme() {
 	_update_palette();
 }
 
-void EditorPane::_update_palette() {
+Ref<Texture2D> EditorPane::_icon_of(const StringName &p_type) const {
+	const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(p_type);
+	if (!type) {
+		return Ref<Texture2D>();
+	}
 	Control *base = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_gui_base() : nullptr;
-	if (!base) {
+	if (base && type->icon != StringName() && base->has_theme_icon(type->icon, EditorStringName(EditorIcons))) {
+		return base->get_editor_theme_icon(type->icon);
+	}
+	// A plugin brings its own rather than naming one in the theme.
+	return type->icon_texture;
+}
+
+void EditorPane::_update_palette() {
+	if (!EditorNode::get_singleton()) {
 		return;
 	}
 
-	// Everything a pane offers to show. A panel showing a resource is not one:
-	// it is opened by dragging that resource here. Nor is a dock: there is one
-	// of each, it is already somewhere, and its own tab is how it is moved.
+	// What a pane offers, split in two. A view of a scene - 2D, 3D, the tree,
+	// the inspector - is something to arrange around what is being edited, so
+	// it gets a button that can also be dragged somewhere. Everywhere else the
+	// editor can take you is a place to go rather than a thing to arrange, so
+	// they share one menu between them and take up a button's worth of room.
+	//
+	// A panel showing a resource is in neither: it is opened by dragging that
+	// resource here. Nor is a dock: its own tab is how it is moved.
 	Vector<StringName> wanted;
+	Vector<StringName> elsewhere;
 	for (const StringName &id : EditorPanelRegistry::get_type_ids()) {
 		const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(id);
-		if (type && type->offered && type->binding != EditorPanelRegistry::BINDING_RESOURCE) {
+		if (!type || !type->offered || type->binding == EditorPanelRegistry::BINDING_RESOURCE) {
+			continue;
+		}
+		if (type->binding == EditorPanelRegistry::BINDING_DOCUMENT) {
 			wanted.push_back(id);
+		} else {
+			elsewhere.push_back(id);
 		}
 	}
+
+	if (more_button) {
+		PopupMenu *popup = more_button->get_popup();
+		popup->clear();
+		for (const StringName &id : elsewhere) {
+			const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(id);
+			popup->add_icon_item(_icon_of(id), type->title.is_empty() ? String(id) : type->title);
+		}
+		more_types = elsewhere;
+		more_button->set_visible(!elsewhere.is_empty());
+	}
+
 	if (wanted == palette_types && palette->get_child_count() > 0) {
 		// Nothing new registered; only the icons need saying again.
 		for (int i = 0; i < palette->get_child_count(); i++) {
 			EditorPanelButton *button = Object::cast_to<EditorPanelButton>(palette->get_child(i));
-			const EditorPanelRegistry::PanelType *type = button ? EditorPanelRegistry::get_type(button->get_panel_type()) : nullptr;
-			if (type && type->icon != StringName()) {
-				button->set_button_icon(base->get_editor_theme_icon(type->icon));
+			if (button) {
+				button->set_button_icon(_icon_of(button->get_panel_type()));
 			}
 		}
 		return;
@@ -163,8 +214,9 @@ void EditorPane::_update_palette() {
 
 		EditorPanelButton *button = memnew(EditorPanelButton);
 		button->set_panel_type(id);
-		if (type->icon != StringName()) {
-			button->set_button_icon(base->get_editor_theme_icon(type->icon));
+		const Ref<Texture2D> icon = _icon_of(id);
+		if (icon.is_valid()) {
+			button->set_button_icon(icon);
 		} else {
 			button->set_text(title);
 		}
@@ -172,6 +224,13 @@ void EditorPane::_update_palette() {
 		button->connect(SceneStringName(pressed), callable_mp(this, &EditorPane::_palette_pressed).bind(id));
 		palette->add_child(button);
 	}
+}
+
+void EditorPane::_more_selected(int p_index) {
+	if (p_index < 0 || p_index >= more_types.size()) {
+		return;
+	}
+	_palette_pressed(more_types[p_index]);
 }
 
 void EditorPane::_palette_pressed(const StringName &p_type) {
@@ -191,11 +250,11 @@ void EditorPane::_update_tabs() {
 	Control *base = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_gui_base() : nullptr;
 	for (const PanelEntry &entry : panels) {
 		tab_bar->add_tab(_title_of(entry));
-		// The same icon the header button for this kind carries, so a row of
-		// tabs can be read at a glance rather than by their names.
-		const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(entry.type);
-		if (base && type && type->icon != StringName()) {
-			tab_bar->set_tab_icon(tab_bar->get_tab_count() - 1, base->get_editor_theme_icon(type->icon));
+		// The same icon the header offers this kind by, so a row of tabs can be
+		// read at a glance rather than by their names.
+		const Ref<Texture2D> icon = _icon_of(entry.type);
+		if (icon.is_valid()) {
+			tab_bar->set_tab_icon(tab_bar->get_tab_count() - 1, icon);
 		}
 	}
 	if (current >= 0 && current < tab_bar->get_tab_count()) {
@@ -209,10 +268,7 @@ void EditorPane::_update_tabs() {
 	if (subject_button->is_visible()) {
 		_update_subject_list();
 	}
-	// A pane holding more than one panel always needs its tabs.
-	if (panels.size() > 1) {
-		header->show();
-	}
+	_update_header_visibility();
 	// A type registered after this pane was built - an addon's - belongs in the
 	// header too, and this is the moment anything about the pane has changed.
 	_update_palette();
@@ -737,10 +793,20 @@ void EditorPane::set_closable(bool p_closable) {
 	close_button->set_visible(p_closable);
 }
 
+bool EditorPane::is_header_visible() const {
+	return header && header->is_visible();
+}
+
 void EditorPane::set_header_visible(bool p_visible) {
-	// A pane holding more than one panel always needs its tabs, however few
-	// panes there are.
-	header->set_visible(p_visible || panels.size() > 1);
+	header_wanted = p_visible;
+	_update_header_visibility();
+}
+
+void EditorPane::_update_header_visibility() {
+	// A pane holding more than one panel needs its tabs, and one holding
+	// nothing needs the row that offers something to put in it - otherwise an
+	// empty pane is a dead end with no way out of it.
+	header->set_visible(header_wanted || panels.size() != 1);
 }
 
 EditorPane *EditorPaneDropHint::_pane_at(const Point2 &p_point) const {
