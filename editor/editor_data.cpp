@@ -745,6 +745,7 @@ void EditorData::remove_scene(int p_idx) {
 		if (edited_scene[p_idx].root == SceneTree::get_singleton()->get_edited_scene_root()) {
 			SceneTree::get_singleton()->set_edited_scene_root(nullptr);
 		}
+		SceneTree::get_singleton()->remove_edited_document_root(edited_scene[p_idx].root);
 		memdelete(edited_scene[p_idx].root);
 		edited_scene.write[p_idx].root = nullptr;
 	}
@@ -779,6 +780,9 @@ void EditorData::set_scene_root(int p_idx, Node *p_root) {
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
 	EditedScene &scene_info = edited_scene.write[p_idx];
 
+	if (scene_info.root && scene_info.root != p_root) {
+		SceneTree::get_singleton()->remove_edited_document_root(scene_info.root);
+	}
 	scene_info.root = p_root;
 	if (p_root) {
 		// A document's scene belongs in the document's own viewport from the
@@ -790,7 +794,10 @@ void EditorData::set_scene_root(int p_idx, Node *p_root) {
 			if (p_root->get_parent()) {
 				p_root->get_parent()->remove_child(p_root);
 			}
+			SceneTree::get_singleton()->add_edited_document_root(p_root);
 			scene_info.root_viewport->add_child(p_root, true);
+		} else {
+			SceneTree::get_singleton()->add_edited_document_root(p_root);
 		}
 		if (p_root->is_instance()) {
 			scene_info.path = p_root->get_scene_file_path();

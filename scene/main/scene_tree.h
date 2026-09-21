@@ -168,6 +168,13 @@ private:
 
 #ifdef TOOLS_ENABLED
 	Node *edited_scene_root = nullptr;
+	// Every open document's root, not only the one being edited. Upstream keeps
+	// only the current scene in the tree, so "the edited scene" and "a scene
+	// being edited" were the same thing. With every open document live at once
+	// - each in a viewport of its own, each on screen in some pane - a node in
+	// any of them is part of a scene being edited, and has to be treated as one:
+	// given gizmos, drawn as the editor draws, and so on.
+	HashSet<ObjectID> edited_document_roots;
 #endif
 	struct UGCall {
 		StringName group;
@@ -421,6 +428,10 @@ public:
 
 	void set_edited_scene_root(Node *p_node);
 	Node *get_edited_scene_root() const;
+	// Open documents other than the current one. See edited_document_roots.
+	void add_edited_document_root(Node *p_root);
+	void remove_edited_document_root(Node *p_root);
+	bool is_in_edited_document(const Node *p_node) const;
 
 	void set_current_scene(Node *p_scene);
 	Node *get_current_scene() const;

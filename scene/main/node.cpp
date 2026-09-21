@@ -2731,8 +2731,18 @@ StringName Node::get_property_store_alias(const StringName &p_property) const {
 }
 
 bool Node::is_part_of_edited_scene() const {
-	return Engine::get_singleton()->is_editor_hint() && is_inside_tree() && data.tree->get_edited_scene_root() &&
-			data.tree->get_edited_scene_root()->get_parent()->is_ancestor_of(this);
+	if (!Engine::get_singleton()->is_editor_hint() || !is_inside_tree()) {
+		return false;
+	}
+	if (data.tree->get_edited_scene_root() && data.tree->get_edited_scene_root()->get_parent()->is_ancestor_of(this)) {
+		return true;
+	}
+	// Any other open document counts as well. Only the current one did, which
+	// was right while only the current one was in the tree; now that all of
+	// them are, a node entering the tree while its document is not the current
+	// one - loaded before it was chosen, or moved about by a tool script or an
+	// extension - was treated as nobody's, and got no gizmo to be clicked by.
+	return data.tree->is_in_edited_document(this);
 }
 #endif
 

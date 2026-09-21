@@ -1652,6 +1652,38 @@ void SceneTree::set_edited_scene_root(Node *p_node) {
 #endif
 }
 
+void SceneTree::add_edited_document_root(Node *p_root) {
+#ifdef TOOLS_ENABLED
+	if (p_root) {
+		edited_document_roots.insert(p_root->get_instance_id());
+	}
+#endif
+}
+
+void SceneTree::remove_edited_document_root(Node *p_root) {
+#ifdef TOOLS_ENABLED
+	if (p_root) {
+		edited_document_roots.erase(p_root->get_instance_id());
+	}
+#endif
+}
+
+bool SceneTree::is_in_edited_document(const Node *p_node) const {
+#ifdef TOOLS_ENABLED
+	if (edited_document_roots.is_empty()) {
+		return false;
+	}
+	// Up to whichever document holds it. A walk rather than a look at the
+	// node's viewport: a scene may have viewports of its own inside it.
+	for (const Node *n = p_node; n; n = n->get_parent()) {
+		if (edited_document_roots.has(n->get_instance_id())) {
+			return true;
+		}
+	}
+#endif
+	return false;
+}
+
 Node *SceneTree::get_edited_scene_root() const {
 #ifdef TOOLS_ENABLED
 	return edited_scene_root;
