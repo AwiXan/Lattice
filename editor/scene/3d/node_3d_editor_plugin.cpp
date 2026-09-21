@@ -10525,6 +10525,17 @@ void Node3DEditor::_node_removed(Node *p_node) {
 }
 
 void Node3DEditor::_register_all_gizmos() {
+	// Once for the whole editor. This is called from entering the tree, and a
+	// view enters the tree again whenever it is moved - into a pane, into a
+	// window, between them. Registering again put every plugin in the shared
+	// list twice, then three times, so every node grew a second and third set
+	// of the same gizmos: handles drawn over themselves, and every click tested
+	// against each copy.
+	if (built_in_gizmos_registered) {
+		return;
+	}
+	built_in_gizmos_registered = true;
+
 	add_gizmo_plugin(Ref<Camera3DGizmoPlugin>(memnew(Camera3DGizmoPlugin)));
 	add_gizmo_plugin(Ref<Light3DGizmoPlugin>(memnew(Light3DGizmoPlugin)));
 	add_gizmo_plugin(Ref<AudioStreamPlayer3DGizmoPlugin>(memnew(AudioStreamPlayer3DGizmoPlugin)));
@@ -11696,6 +11707,7 @@ Node3DEditor::~Node3DEditor() {
 		// they outlived the servers that own what they point at.
 		gizmo_plugins_by_priority.clear();
 		gizmo_plugins_by_name.clear();
+		built_in_gizmos_registered = false;
 		origin_mat.unref();
 		for (int i = 0; i < 3; i++) {
 			grid_mat[i].unref();

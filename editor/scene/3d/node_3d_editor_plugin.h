@@ -897,6 +897,9 @@ private:
 	// editor-wide rather than per view. That is what makes two views of one
 	// scene share its gizmos while views of different scenes each get their own.
 	static Vector<Ref<EditorNode3DGizmoPlugin>> gizmo_plugins_by_priority;
+	// Whether the editor's own gizmo plugins are in the shared lists. They go in
+	// once, however many times a view enters the tree.
+	static inline bool built_in_gizmos_registered = false;
 	static Vector<Ref<EditorNode3DGizmoPlugin>> gizmo_plugins_by_name;
 
 	// Which document this view edits. -1 follows whichever one is current,
