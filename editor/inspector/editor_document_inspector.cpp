@@ -30,6 +30,8 @@
 
 #include "editor_document_inspector.h"
 
+#include "scene/gui/line_edit.h"
+
 #include "editor/editor_data.h"
 #include "editor/editor_node.h"
 #include "editor/inspector/editor_inspector.h"
@@ -94,9 +96,18 @@ void EditorDocumentInspector::bind_panel(Control *p_panel, int p_document_id) {
 EditorDocumentInspector::EditorDocumentInspector() {
 	set_v_size_flags(SIZE_EXPAND_FILL);
 
-	inspector = memnew(EditorInspector);
+	// The same inspector the Inspector dock is, made the same way: categories
+	// for each class the object is, the documentation on hover, the script and
+	// its metadata, and a filter above it. It was a bare EditorInspector, which
+	// showed every property in one heap with no way to look for one.
+	filter = memnew(LineEdit);
+	filter->set_placeholder(TTRC("Filter Properties"));
+	filter->set_clear_button_enabled(true);
+	filter->set_h_size_flags(SIZE_EXPAND_FILL);
+	add_child(filter);
+
+	inspector = EditorInspector::create_default_inspector(filter);
 	inspector->set_v_size_flags(SIZE_EXPAND_FILL);
-	inspector->set_use_folding(!bool(EDITOR_GET("interface/inspector/disable_folding")));
 	add_child(inspector);
 
 	set_process(true);

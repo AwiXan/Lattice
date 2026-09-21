@@ -33,9 +33,11 @@
 #include "core/object/callable_mp.h"
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/debugger/editor_debugger_tree.h"
+#include "editor/editor_data.h"
 #include "editor/editor_node.h"
 #include "editor/scene/scene_tree_editor.h"
 #include "scene/gui/button.h"
+#include "scene/gui/line_edit.h"
 #include "scene/gui/option_button.h"
 
 void EditorScenePanel::_mode_pressed(bool p_remote) {
@@ -61,7 +63,43 @@ void EditorScenePanel::set_remote(bool p_remote) {
 void EditorScenePanel::_show_current() {
 	local_tree->set_visible(!remote);
 	remote_tree->set_visible(remote);
+	// The filter narrows the scene being edited; the running one is read-only
+	// and changes under it, so there is nothing for it to hold on to there.
+	filter->set_visible(!remote);
 	_update_sessions();
+}
+
+void EditorScenePanel::_filter_changed(const String &p_text) {
+	local_tree->set_filter(p_text);
+}
+
+void EditorScenePanel::_local_node_selected() {
+	Node *node = local_tree->get_selected();
+	if (!node) {
+		return;
+	}
+
+	EditorNode *editor = EditorNode::get_singleton();
+	EditorData &editor_data = EditorNode::get_editor_data();
+
+	// Picking a node here is working on this panel's scene, so the editor comes
+	// to it first - the same as clicking into a view does - or the node would be
+	// handed to an inspector that is looking at some other scene.
+	Node *root = editor_data.get_document_root_for(node);
+	for (int i = 0; root && i < editor_data.get_edited_scene_count(); i++) {
+		if (editor_data.get_edited_scene_root(i) == root) {
+			if (i != editor_data.get_edited_scene()) {
+				editor->set_current_scene_index(i);
+			}
+			break;
+		}
+	}
+
+	// What the Scene dock does with a pick. Without it the node was selected -
+	// the views outlined it - but nobody told the inspector.
+	if (editor->get_editor_selection_history()->get_current() != node->get_instance_id()) {
+		editor->push_node_item(node);
+	}
 }
 
 void EditorScenePanel::_session_selected(int p_index) {
@@ -112,7 +150,9 @@ void EditorScenePanel::_update_theme() {
 		return;
 	}
 	local_button->set_button_icon(base->get_editor_theme_icon(SNAME("PackedScene")));
-	remote_button->set_button_icon(base->get_editor_theme_icon(SNAME("RemoteDebug")));
+	// What the run bar shows for a running game, rather than RemoteDebug, which
+	// reads as a broken file to anyone not steeped in the debugger's menus.
+	remote_button->set_button_icon(base->get_editor_theme_icon(SNAME("PlayScene")));
 }
 
 void EditorScenePanel::_notification(int p_what) {
@@ -201,8 +241,18 @@ EditorScenePanel::EditorScenePanel() {
 	session_button->hide();
 	bar->add_child(session_button);
 
+	filter = memnew(LineEdit);
+	filter->set_placeholder(TTRC("Filter Nodes"));
+	filter->set_clear_button_enabled(true);
+	filter->set_h_size_flags(SIZE_EXPAND_FILL);
+	filter->connect(SceneStringName(text_changed), callable_mp(this, &EditorScenePanel::_filter_changed));
+	bar->add_child(filter);
+
 	local_tree = Object::cast_to<SceneTreeEditor>(SceneTreeEditor::create_panel());
 	local_tree->set_v_size_flags(SIZE_EXPAND_FILL);
+	// Deferred, as the Scene dock does it: the tree reports a pick while it is
+	// still in the middle of changing its own selection.
+	local_tree->connect("node_selected", callable_mp(this, &EditorScenePanel::_local_node_selected), CONNECT_DEFERRED);
 	add_child(local_tree);
 
 	remote_tree = memnew(EditorDebuggerTree);

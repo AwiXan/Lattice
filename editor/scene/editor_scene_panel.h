@@ -34,6 +34,7 @@
 
 class Button;
 class EditorDebuggerTree;
+class LineEdit;
 class OptionButton;
 class SceneTreeEditor;
 
@@ -55,6 +56,8 @@ class EditorScenePanel : public VBoxContainer {
 	// Which running game to watch. Only shown when there is more than one, and
 	// the first entry follows whichever session is in front.
 	OptionButton *session_button = nullptr;
+	// Narrows the local tree the way the Scene dock's filter does.
+	LineEdit *filter = nullptr;
 
 	SceneTreeEditor *local_tree = nullptr;
 	EditorDebuggerTree *remote_tree = nullptr;
@@ -63,6 +66,8 @@ class EditorScenePanel : public VBoxContainer {
 
 	void _mode_pressed(bool p_remote);
 	void _session_selected(int p_index);
+	void _filter_changed(const String &p_text);
+	void _local_node_selected();
 	void _update_sessions();
 	void _update_theme();
 	void _show_current();

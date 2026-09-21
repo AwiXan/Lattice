@@ -33,6 +33,7 @@
 #include "scene/gui/box_container.h"
 
 class EditorInspector;
+class LineEdit;
 
 // An inspector showing whatever one open document is on.
 //
@@ -46,6 +47,7 @@ class EditorDocumentInspector : public VBoxContainer {
 	GDCLASS(EditorDocumentInspector, VBoxContainer);
 
 	EditorInspector *inspector = nullptr;
+	LineEdit *filter = nullptr;
 
 	// The document this panel follows, as a history id; -1 means it follows
 	// whichever document is current, which is how the editor's own inspector
