@@ -535,6 +535,8 @@ void EditorDockManager::load_docks_from_config(Ref<ConfigFile> p_layout, const S
 	for (EditorDock *dock : all_docks) {
 		dock_map[dock->get_effective_layout_key()] = dock;
 	}
+	// Which docks got their own settings back below; see the end.
+	HashSet<EditorDock *> settings_loaded;
 
 	// Load docks by slot. Index -1 is for docks that have no slot.
 	for (int i = -1; i < EditorDock::DOCK_SLOT_MAX; i++) {
@@ -556,6 +558,7 @@ void EditorDockManager::load_docks_from_config(Ref<ConfigFile> p_layout, const S
 			if (!dock->enabled) {
 				// Don't open disabled docks.
 				dock->load_layout_from_config(p_layout, section_name);
+				settings_loaded.insert(dock);
 				continue;
 			}
 
@@ -573,9 +576,20 @@ void EditorDockManager::load_docks_from_config(Ref<ConfigFile> p_layout, const S
 				}
 			}
 			dock->load_layout_from_config(p_layout, section_name);
+			settings_loaded.insert(dock);
 
 			dock->dock_slot_index = i;
 			dock->previous_tab_index = i >= 0 ? j : 0;
+		}
+	}
+
+	// Every dock writes its own settings when the layout is saved, but only the
+	// ones found in a slot's list were given them back here. A dock a pane was
+	// showing is in no slot's list, so it came back with none: the FileSystem
+	// forgot it was split, how big its icons were, how it sorted, every time.
+	for (EditorDock *dock : all_docks) {
+		if (!settings_loaded.has(dock)) {
+			dock->load_layout_from_config(p_layout, p_section + "/" + dock->get_effective_layout_key());
 		}
 	}
 
@@ -770,10 +784,10 @@ Control *EditorDockManager::_lend_dock_panel(EditorDock *p_dock) {
 	// which is why being taken out is not the same as being closed.
 	_move_dock(p_dock, nullptr);
 	p_dock->is_open = true;
-	if (p_dock->current_layout != EditorDock::DOCK_LAYOUT_VERTICAL) {
-		p_dock->update_layout(EditorDock::DOCK_LAYOUT_VERTICAL);
-		p_dock->current_layout = EditorDock::DOCK_LAYOUT_VERTICAL;
-	}
+	// Its layout is left as it was. Switching it to the side-dock layout on the
+	// way in reset the FileSystem to a bare tree every time it came from the
+	// bottom, and a pane is neither a side nor a bottom anyway: how it should
+	// look is whatever the user set it to.
 	p_dock->show();
 	update_docks_menu();
 	_update_layout();
