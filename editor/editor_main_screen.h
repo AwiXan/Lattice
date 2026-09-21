@@ -101,6 +101,9 @@ private:
 	// A pane asking for one of its panels to be somewhere else: out of the main
 	// window if it is in it, back into it if it is not.
 	void _panel_float_requested(EditorPane *p_pane, int p_panel, EditorPaneTree *p_tree);
+	// The pane showing a panel of this type, in the main window or any other,
+	// and the window it is in, if it is not the main one.
+	EditorPane *_pane_showing(const StringName &p_type, EditorPaneWindow **r_window = nullptr) const;
 	void _pane_window_closed(EditorPaneWindow *p_window);
 	void _watch_tree(EditorPaneTree *p_tree);
 	// Closes a window, bringing whatever it still holds back with it.

@@ -114,6 +114,35 @@ void EditorMainScreen::_restore_panes(const Dictionary &p_layout) {
 	}
 }
 
+EditorPane *EditorMainScreen::_pane_showing(const StringName &p_type, EditorPaneWindow **r_window) const {
+	auto search = [&p_type](EditorPaneTree *p_tree) -> EditorPane * {
+		for (EditorPane *pane : p_tree->get_panes()) {
+			for (int i = 0; i < pane->get_panel_count(); i++) {
+				if (pane->get_panel_type_at(i) == p_type) {
+					return pane;
+				}
+			}
+		}
+		return nullptr;
+	};
+	if (pane_tree) {
+		EditorPane *found = search(pane_tree);
+		if (found) {
+			return found;
+		}
+	}
+	for (EditorPaneWindow *window : pane_windows) {
+		EditorPane *found = search(window->get_pane_tree());
+		if (found) {
+			if (r_window) {
+				*r_window = window;
+			}
+			return found;
+		}
+	}
+	return nullptr;
+}
+
 void EditorMainScreen::_watch_tree(EditorPaneTree *p_tree) {
 	p_tree->connect(SNAME("panel_float_requested"), callable_mp(this, &EditorMainScreen::_panel_float_requested).bind(p_tree));
 }
@@ -316,26 +345,53 @@ void EditorMainScreen::select(int p_index) {
 	EditorPlugin *new_editor = editor_table[p_index];
 	ERR_FAIL_NULL(new_editor);
 
-	if (selected_plugin == new_editor) {
-		return;
-	}
-
-	// Nothing is hidden any more. A main screen the user has put in a pane
-	// stays there; choosing another one puts that one somewhere too, rather
-	// than swapping what a single space shows.
+	// Shown every time it is asked for, not only when it was not the one
+	// selected already. Selected used to mean "on screen"; now it only means
+	// "last asked for", and the panel may have been closed since - which is why
+	// opening a second script after closing the first showed nothing at all.
+	const bool changed = selected_plugin != new_editor;
 	selected_plugin = new_editor;
 	const StringName type = selected_plugin->get_main_screen_panel_type() != StringName()
 			? selected_plugin->get_main_screen_panel_type()
 			: _main_panel_type_id(selected_plugin);
-	EditorPane *pane = pane_tree ? pane_tree->get_active_pane() : nullptr;
-	if (pane && EditorPanelRegistry::has_type(type)) {
-		pane->show_panel_of_type(type);
+
+	if (EditorPanelRegistry::has_type(type)) {
+		// The pane being worked in, if it has one; otherwise wherever one is
+		// already showing, in this window or another - there is one script
+		// editor, and a request for it that tried to make a second in the pane
+		// last used was quietly refused - and only failing both, a new one here.
+		EditorPane *active = pane_tree ? pane_tree->get_active_pane() : nullptr;
+		EditorPaneWindow *window = nullptr;
+		EditorPane *pane = nullptr;
+		if (active) {
+			for (int i = 0; i < active->get_panel_count(); i++) {
+				if (active->get_panel_type_at(i) == type) {
+					pane = active;
+					break;
+				}
+			}
+		}
+		if (!pane) {
+			pane = _pane_showing(type, &window);
+		}
+		if (!pane) {
+			pane = active;
+		}
+		if (pane) {
+			pane->show_panel_of_type(type);
+			if (window) {
+				window->grab_window_focus();
+			}
+		}
 	} else {
 		// Nothing can show it - an addon that keeps its view to itself - so it
 		// falls back to the way it always worked.
 		selected_plugin->make_visible(true);
 	}
 	selected_plugin->selected_notify();
+	if (!changed) {
+		return;
+	}
 	// A scene dropped on a pane becomes this kind of view, unless the pane it
 	// lands on is already showing one and has its own answer. A main screen
 	// that is not a document view - the script editor, the asset library -

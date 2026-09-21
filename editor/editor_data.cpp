@@ -1148,6 +1148,12 @@ void EditorData::clear_edited_scenes() {
 		if (edited_scene[i].root) {
 			memdelete(edited_scene[i].root);
 		}
+		// Each document has a selection history of its own, which holds on to
+		// what was selected in it - a script opened once was still referenced
+		// when the editor quit, and reported as leaked.
+		if (edited_scene[i].history) {
+			memdelete(edited_scene[i].history);
+		}
 	}
 	edited_scene.clear();
 	SceneTree::get_singleton()->set_edited_scene_root(nullptr);
