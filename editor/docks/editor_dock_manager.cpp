@@ -33,6 +33,7 @@
 #include "core/object/callable_mp.h"
 #include "editor/docks/dock_tab_container.h"
 #include "editor/docks/editor_dock.h"
+#include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_panel_registry.h"
 #include "editor/gui/editor_pane.h"
@@ -565,14 +566,14 @@ void EditorDockManager::load_docks_from_config(Ref<ConfigFile> p_layout, const S
 			if (allow_floating_docks && floating_docks_dump.has(name)) {
 				_restore_dock_to_saved_window(dock, floating_docks_dump[name]);
 			} else if (i >= 0 && !(dock->transient && !dock->is_open)) {
-				// Safe to include transient open docks here because they won't be in the closed dock dump.
-				if (closed_docks.has(name)) {
+				// There are no dock slots to put it back in: a dock is shown by a
+				// pane or not at all, and the panes put back their own. A layout
+				// saved before still says where each one used to be, and that is
+				// kept for as long as anything reads it.
+				if (!lent_docks.has(dock)) {
 					dock->is_open = false;
 					dock->hide();
 					_move_dock(dock, closed_dock_parent);
-				} else {
-					dock->is_open = true;
-					_move_dock(dock, dock_slots[i], 0, false);
 				}
 			}
 			dock->load_layout_from_config(p_layout, section_name);
@@ -682,23 +683,11 @@ void EditorDockManager::open_dock(EditorDock *p_dock, bool p_set_current) {
 		return;
 	}
 
-	p_dock->is_open = true;
-
-	// Open dock to its previous location.
-	if (p_dock->dock_slot_index != EditorDock::DOCK_SLOT_NONE) {
-		DockTabContainer *slot = dock_slots[p_dock->dock_slot_index];
-		int tab_index = p_dock->previous_tab_index;
-		if (tab_index < 0) {
-			tab_index = slot->get_tab_count();
-		}
-
-		_move_dock(p_dock, slot, tab_index, p_set_current && slot->can_switch_dock());
-	} else {
-		_open_dock_in_window(p_dock, true, true);
-		return;
-	}
-
-	_update_layout();
+	// Nowhere to open it: there are no dock slots, and a dock no pane has is
+	// not put in one unasked - opening is what running a game does to the
+	// Output, and what selecting an AnimationPlayer does to the Animation
+	// dock, every time. Wherever the user has put one, it was brought forward
+	// above; asked for by name, it is focus_dock() that finds it a pane.
 }
 
 void EditorDockManager::make_dock_floating(EditorDock *p_dock) {
@@ -757,9 +746,15 @@ void EditorDockManager::focus_dock(EditorDock *p_dock) {
 		return;
 	}
 
-	if (!p_dock->is_open) {
-		p_dock->emit_signal("opened");
-		open_dock(p_dock, false);
+	if (!lent_docks.has(p_dock) && !p_dock->dock_window) {
+		// Asked for by name - from the menu, "Show in FileSystem", a node's
+		// signal icon - so it is shown, and a pane is the only place that can.
+		const bool was_open = p_dock->is_open;
+		EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+		if (main_screen && main_screen->show_panel(get_dock_panel_type_id(p_dock)) && !was_open) {
+			p_dock->emit_signal("opened");
+		}
+		return;
 	}
 
 	_make_dock_visible(p_dock, true);
@@ -799,19 +794,13 @@ void EditorDockManager::_return_dock_panel(Control *p_panel, EditorDock *p_dock)
 	lent_docks.erase(p_dock);
 	p_dock->is_open = false;
 
-	// Away from whoever was showing it, then back where it belongs. A dock with
-	// no slot to go back to is put away rather than made into a window nobody
-	// asked for.
+	// Away from whoever was showing it, and put away: there is no slot for it
+	// to go back to, and a window nobody asked for is no better.
 	_move_dock(p_dock, nullptr);
-	if (p_dock->dock_slot_index == EditorDock::DOCK_SLOT_NONE) {
-		_move_dock(p_dock, closed_dock_parent);
-		p_dock->hide();
-		update_docks_menu();
-		_update_layout();
-		return;
-	}
-	open_dock(p_dock, false);
+	_move_dock(p_dock, closed_dock_parent);
+	p_dock->hide();
 	update_docks_menu();
+	_update_layout();
 }
 
 void EditorDockManager::add_dock(EditorDock *p_dock) {
@@ -837,13 +826,11 @@ void EditorDockManager::add_dock(EditorDock *p_dock) {
 	p_dock->connect("_tab_style_changed", callable_mp(this, &EditorDockManager::_queue_update_tab_style).bind(p_dock));
 	p_dock->connect("renamed", callable_mp(this, &EditorDockManager::_queue_update_tab_style).bind(p_dock));
 
-	if (p_dock->default_slot != EditorDock::DOCK_SLOT_NONE) {
-		open_dock(p_dock, false);
-	} else {
-		closed_dock_parent->add_child(p_dock);
-		p_dock->hide();
-		_update_layout();
-	}
+	// Put away until a pane shows it. Its default slot is only remembered.
+	p_dock->is_open = false;
+	_move_dock(p_dock, closed_dock_parent);
+	p_dock->hide();
+	_update_layout();
 }
 
 void EditorDockManager::remove_dock(EditorDock *p_dock) {

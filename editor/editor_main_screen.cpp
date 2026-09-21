@@ -114,6 +114,42 @@ void EditorMainScreen::_restore_panes(const Dictionary &p_layout) {
 	}
 }
 
+bool EditorMainScreen::show_panel(const StringName &p_type) {
+	if (!EditorPanelRegistry::has_type(p_type)) {
+		return false;
+	}
+	// The pane being worked in, if it has one; otherwise wherever one is
+	// already showing, in this window or another - there is one script editor,
+	// one of each dock, and a request for one that tried to make a second in
+	// the pane last used was quietly refused - and only failing both, a new one
+	// here.
+	EditorPane *active = pane_tree ? pane_tree->get_active_pane() : nullptr;
+	EditorPaneWindow *window = nullptr;
+	EditorPane *pane = nullptr;
+	if (active) {
+		for (int i = 0; i < active->get_panel_count(); i++) {
+			if (active->get_panel_type_at(i) == p_type) {
+				pane = active;
+				break;
+			}
+		}
+	}
+	if (!pane) {
+		pane = _pane_showing(p_type, &window);
+	}
+	if (!pane) {
+		pane = active;
+	}
+	if (!pane) {
+		return false;
+	}
+	pane->show_panel_of_type(p_type);
+	if (window) {
+		window->grab_window_focus();
+	}
+	return true;
+}
+
 EditorPane *EditorMainScreen::_pane_showing(const StringName &p_type, EditorPaneWindow **r_window) const {
 	auto search = [&p_type](EditorPaneTree *p_tree) -> EditorPane * {
 		for (EditorPane *pane : p_tree->get_panes()) {
@@ -355,35 +391,7 @@ void EditorMainScreen::select(int p_index) {
 			? selected_plugin->get_main_screen_panel_type()
 			: _main_panel_type_id(selected_plugin);
 
-	if (EditorPanelRegistry::has_type(type)) {
-		// The pane being worked in, if it has one; otherwise wherever one is
-		// already showing, in this window or another - there is one script
-		// editor, and a request for it that tried to make a second in the pane
-		// last used was quietly refused - and only failing both, a new one here.
-		EditorPane *active = pane_tree ? pane_tree->get_active_pane() : nullptr;
-		EditorPaneWindow *window = nullptr;
-		EditorPane *pane = nullptr;
-		if (active) {
-			for (int i = 0; i < active->get_panel_count(); i++) {
-				if (active->get_panel_type_at(i) == type) {
-					pane = active;
-					break;
-				}
-			}
-		}
-		if (!pane) {
-			pane = _pane_showing(type, &window);
-		}
-		if (!pane) {
-			pane = active;
-		}
-		if (pane) {
-			pane->show_panel_of_type(type);
-			if (window) {
-				window->grab_window_focus();
-			}
-		}
-	} else {
+	if (!show_panel(type)) {
 		// Nothing can show it - an addon that keeps its view to itself - so it
 		// falls back to the way it always worked.
 		selected_plugin->make_visible(true);

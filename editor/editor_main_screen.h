@@ -133,6 +133,11 @@ public:
 	void select_prev();
 	void select_by_name(const String &p_name);
 	void select(int p_index);
+
+	// Brings a panel of this type to the front: the one in the pane being
+	// worked in, else one anywhere else - another window is raised - else a new
+	// one in the pane being worked in. False when nothing could show it.
+	bool show_panel(const StringName &p_type);
 	int get_selected_index() const;
 	int get_plugin_index(EditorPlugin *p_editor) const;
 	EditorPlugin *get_selected_plugin() const;
