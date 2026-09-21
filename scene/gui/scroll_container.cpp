@@ -208,9 +208,16 @@ void ScrollContainer::gui_input(const Ref<InputEvent> &p_gui_input) {
 	// Only the wheel is smoothed. Anything else - a drag, a click on the bar,
 	// the keyboard - means to put the view somewhere now, and fighting it for
 	// the next few frames would feel like a bug.
+	//
+	// Except the mouse just moving, which puts the view nowhere. It reaches
+	// here whenever what is under the cursor lets it through - an inspector's
+	// rows do - so the scroll stopped dead halfway, over and over, just because
+	// the hand on the wheel was not perfectly still. A touch drag that does move
+	// the view moves the bars, and the smoothing sees that and gives way.
 	if (smoothing.is_active()) {
 		const bool is_wheel = mb.is_valid() && (mb->get_button_index() == MouseButton::WHEEL_UP || mb->get_button_index() == MouseButton::WHEEL_DOWN || mb->get_button_index() == MouseButton::WHEEL_LEFT || mb->get_button_index() == MouseButton::WHEEL_RIGHT);
-		if (!is_wheel) {
+		const bool is_motion = Ref<InputEventMouseMotion>(p_gui_input).is_valid();
+		if (!is_wheel && !is_motion) {
 			_stop_smoothing();
 		}
 	}
