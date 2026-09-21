@@ -36,11 +36,12 @@
 #include "editor/editor_string_names.h"
 #include "editor/gui/editor_pane_tree.h"
 #include "editor/gui/editor_panel_button.h"
+#include "editor/gui/editor_panel_picker.h"
+#include "editor/settings/editor_settings.h"
 #include "scene/gui/button.h"
 #include "scene/gui/label.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/panel.h"
-#include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/flow_container.h"
 #include "scene/gui/panel_container.h"
@@ -191,42 +192,42 @@ void EditorPane::_update_palette() {
 		return;
 	}
 
-	// What a pane offers, split by what the thing is bound to. A view of a
-	// scene - 2D, 3D, the tree, the inspector - is something to arrange around
-	// what is being edited, so it gets a button that can also be dragged
-	// somewhere. Everything else - the script editor, the game view, the
-	// FileSystem, Signals, Groups - is a place to go rather than a thing to
-	// arrange, so they share one menu and cost a button's worth of room between
-	// them.
-	//
-	// A panel showing a resource is in neither: it is opened by dragging that
-	// resource here, and a menu of every file would be a file browser.
+	// Three tiers, so the header stays a handful of icons however many kinds of
+	// panel there are. The few a pane is most often for - the 2D and 3D views -
+	// get buttons of their own, which can also be dragged somewhere. The ones
+	// reached for all the time are in the "+" menu, which lists whatever the
+	// interface/panes/quick_panels setting names. Everything else is one click
+	// further, in a window made for looking through them.
 	Vector<StringName> wanted;
-	Vector<StringName> elsewhere;
 	for (const StringName &id : EditorPanelRegistry::get_type_ids()) {
 		const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(id);
-		if (!type || type->binding == EditorPanelRegistry::BINDING_RESOURCE) {
-			continue;
-		}
-		if (type->binding == EditorPanelRegistry::BINDING_DOCUMENT) {
+		if (type && type->featured) {
 			wanted.push_back(id);
-		} else {
-			elsewhere.push_back(id);
 		}
 	}
-	// Alphabetical, because the order types happen to register in is no order
-	// at all to a reader.
-	elsewhere.sort_custom<StringName::AlphCompare>();
 
 	if (more_button) {
 		PopupMenu *popup = more_button->get_popup();
 		popup->clear();
-		for (const StringName &id : elsewhere) {
+		more_types.clear();
+		const PackedStringArray quick = EDITOR_GET("interface/panes/quick_panels");
+		for (const String &name : quick) {
+			const StringName id = StringName(name);
 			const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(id);
-			popup->add_icon_item(_icon_of(id), type->title.is_empty() ? String(id) : type->title);
+			if (!type || type->featured) {
+				// Gone, or already a button of its own.
+				continue;
+			}
+			popup->add_icon_item(_icon_of(id), type->title.is_empty() ? name : type->title);
+			more_types.push_back(id);
 		}
-		more_types = elsewhere;
-		more_button->set_visible(!elsewhere.is_empty());
+		if (!more_types.is_empty()) {
+			popup->add_separator();
+		}
+		// Not a panel: the way to all the others. Its index is one past the
+		// last quick panel, which is how a pick tells the two apart.
+		Control *base = EditorNode::get_singleton()->get_gui_base();
+		popup->add_icon_item(base->get_editor_theme_icon(SNAME("GuiTabMenuHl")), TTR("More..."));
 	}
 
 	if (wanted == palette_types && palette->get_child_count() > 0) {
@@ -264,10 +265,12 @@ void EditorPane::_update_palette() {
 }
 
 void EditorPane::_more_selected(int p_index) {
-	if (p_index < 0 || p_index >= more_types.size()) {
+	if (p_index >= 0 && p_index < more_types.size()) {
+		_palette_pressed(more_types[p_index]);
 		return;
 	}
-	_palette_pressed(more_types[p_index]);
+	// Past the quick panels and the separator: "More...".
+	EditorPanelPicker::get_shared()->pick(callable_mp(this, &EditorPane::_palette_pressed));
 }
 
 void EditorPane::_palette_pressed(const StringName &p_type) {

@@ -562,6 +562,14 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 
 	// Scrolling.
 	EDITOR_SETTING(Variant::BOOL, PROPERTY_HINT_NONE, "interface/scrolling/smooth_scrolling", true, "")
+
+	// Panes.
+	// What a pane's "+" menu lists before "More...": the panels reached for all
+	// the time. Anything registered can go here - a dock, a main screen, an
+	// addon's panel - by the id a saved layout uses for it.
+	_initial_set("interface/panes/quick_panels", PackedStringArray({ "dock_Scene", "dock_Inspector", "main_Game", "main_Script" }));
+	// What closing a window does with what is in it.
+	EDITOR_SETTING(Variant::INT, PROPERTY_HINT_ENUM, "interface/panes/when_a_window_closes", 0, "Close What It Holds,Bring It Back to the Main Window")
 	EDITOR_SETTING(Variant::FLOAT, PROPERTY_HINT_RANGE, "interface/scrolling/smooth_scrolling_speed", 16.0, "2,40,0.5")
 
 	bool is_android_editor = false;

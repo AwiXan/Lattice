@@ -88,6 +88,10 @@ public:
 		// as the pane holds it. A pane never frees a lent panel - it gives it
 		// back, and whoever lent it decides where it goes.
 		bool lent = false;
+		// Offered as a button of its own in every pane's header, rather than
+		// only in the menu. For the few things a pane is most often for - the 2D
+		// and 3D views - so the header stays a handful of icons.
+		bool featured = false;
 		// How well a panel of this type suits a resource, asked as
 		// (String path, StringName resource_class) and answered with a number.
 		// Zero, or unset, means it cannot show that resource at all. The highest

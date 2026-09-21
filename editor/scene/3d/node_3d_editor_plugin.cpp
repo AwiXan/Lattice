@@ -12106,6 +12106,7 @@ Node3DEditorPlugin::Node3DEditorPlugin() {
 		type.title = TTRC("3D");
 		type.icon = "3D";
 		type.binding = EditorPanelRegistry::BINDING_DOCUMENT;
+		type.featured = true;
 		type.create = callable_mp(this, &Node3DEditorPlugin::create_main_screen_view);
 		type.release = callable_mp(this, &Node3DEditorPlugin::release_main_screen_view);
 		type.bind = callable_mp_static(&EditorDocumentView::bind_panel);

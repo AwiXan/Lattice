@@ -187,7 +187,12 @@ void EditorMainScreen::_panel_float_requested(EditorPane *p_pane, int p_panel, E
 }
 
 void EditorMainScreen::_pane_window_closed(EditorPaneWindow *p_window) {
-	_close_pane_window(p_window, true);
+	// Closing a window closes what is in it, the way closing a window does
+	// everywhere else. Whatever cannot be closed - a dock, the script editor -
+	// goes back where it lives. interface/panes/when_a_window_closes turns this
+	// into bringing everything back instead, for those who would rather.
+	const bool bring_back = int(EDITOR_GET("interface/panes/when_a_window_closes")) == 1;
+	_close_pane_window(p_window, bring_back);
 }
 
 void EditorMainScreen::_close_pane_window(EditorPaneWindow *p_window, bool p_keep_panels) {
@@ -597,7 +602,7 @@ void EditorMainScreen::add_main_plugin(EditorPlugin *p_editor) {
 		EditorPanelRegistry::PanelType type;
 		type.id = _main_panel_type_id(p_editor);
 		type.title = p_editor->get_plugin_name();
-		type.icon = has_theme_icon(p_editor->get_plugin_name(), EditorStringName(EditorIcons)) ? StringName(p_editor->get_plugin_name()) : StringName();
+		type.icon = StringName(p_editor->get_plugin_name());
 		type.icon_texture = p_editor->get_plugin_icon();
 		type.binding = EditorPanelRegistry::BINDING_CONTEXT;
 		type.lent = true;

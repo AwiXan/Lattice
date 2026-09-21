@@ -6401,6 +6401,7 @@ CanvasItemEditorPlugin::CanvasItemEditorPlugin() {
 		type.title = TTRC("2D");
 		type.icon = "2D";
 		type.binding = EditorPanelRegistry::BINDING_DOCUMENT;
+		type.featured = true;
 		type.create = callable_mp(this, &CanvasItemEditorPlugin::create_main_screen_view);
 		type.release = callable_mp(this, &CanvasItemEditorPlugin::release_main_screen_view);
 		type.bind = callable_mp_static(&EditorDocumentView::bind_panel);
