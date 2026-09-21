@@ -423,16 +423,25 @@ void InspectorDock::_edit_back() {
 	}
 }
 
+EditorInspector *InspectorDock::_get_menu_inspector() const {
+	EditorInspector *other = ObjectDB::get_instance<EditorInspector>(menu_inspector);
+	return other ? other : inspector;
+}
+
+void InspectorDock::set_menu_inspector(EditorInspector *p_inspector) {
+	menu_inspector = p_inspector && p_inspector != inspector ? p_inspector->get_instance_id() : ObjectID();
+}
+
 void InspectorDock::_menu_collapseall() {
-	inspector->collapse_all_folding();
+	_get_menu_inspector()->collapse_all_folding();
 }
 
 void InspectorDock::_menu_expandall() {
-	inspector->expand_all_folding();
+	_get_menu_inspector()->expand_all_folding();
 }
 
 void InspectorDock::_menu_expand_revertable() {
-	inspector->expand_revertable();
+	_get_menu_inspector()->expand_revertable();
 }
 
 void InspectorDock::_info_pressed() {
@@ -710,7 +719,7 @@ InspectorDock::InspectorDock(EditorData &p_editor_data) {
 	set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_inspector", TTRC("Open Inspector Dock")));
 	set_default_slot(EditorDock::DOCK_SLOT_RIGHT_UL);
 
-	VBoxContainer *main_vb = memnew(VBoxContainer);
+	main_vb = memnew(VBoxContainer);
 	add_child(main_vb);
 
 	editor_data = &p_editor_data;

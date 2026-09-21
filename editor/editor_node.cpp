@@ -4685,7 +4685,7 @@ void EditorNode::set_preview_locale(const String &p_locale) {
 
 Dictionary EditorNode::_get_main_scene_state() {
 	Dictionary state;
-	state["scene_tree_offset"] = SceneTreeDock::get_singleton()->get_tree_editor()->get_scene_tree()->get_vscroll_bar()->get_value();
+	state["scene_tree_offset"] = SceneTreeDock::get_singleton()->get_own_tree_editor()->get_scene_tree()->get_vscroll_bar()->get_value();
 	state["property_edit_offset"] = InspectorDock::get_inspector_singleton()->get_scroll_offset();
 	state["node_filter"] = SceneTreeDock::get_singleton()->get_filter();
 	return state;
@@ -4707,7 +4707,7 @@ void EditorNode::_set_main_scene_state(const Dictionary &p_state) {
 	}
 
 	if (p_state.has("scene_tree_offset")) {
-		SceneTreeDock::get_singleton()->get_tree_editor()->get_scene_tree()->get_vscroll_bar()->set_value(p_state["scene_tree_offset"]);
+		SceneTreeDock::get_singleton()->get_own_tree_editor()->get_scene_tree()->get_vscroll_bar()->set_value(p_state["scene_tree_offset"]);
 	}
 	if (p_state.has("property_edit_offset")) {
 		InspectorDock::get_inspector_singleton()->set_scroll_offset(p_state["property_edit_offset"]);
@@ -9271,6 +9271,9 @@ EditorNode::EditorNode() {
 
 	memnew(SceneTreeDock(get_scene_root(), editor_selection, editor_data));
 	editor_dock_manager->add_dock(SceneTreeDock::get_singleton());
+	// The Scene panel is the dock's tree as many times as there are panes for
+	// it, with all the dock does; the dock itself is not offered beside it.
+	EditorPanelRegistry::set_replacement(EditorDockManager::get_dock_panel_type_id(SceneTreeDock::get_singleton()), "scene_tree");
 
 	memnew(ImportDock);
 	editor_dock_manager->add_dock(ImportDock::get_singleton());
@@ -9284,6 +9287,8 @@ EditorNode::EditorNode() {
 
 	memnew(InspectorDock(editor_data));
 	editor_dock_manager->add_dock(InspectorDock::get_singleton());
+	// The same for the Inspector.
+	EditorPanelRegistry::set_replacement(EditorDockManager::get_dock_panel_type_id(InspectorDock::get_singleton()), "inspector");
 
 	memnew(SignalsDock);
 	editor_dock_manager->add_dock(SignalsDock::get_singleton());

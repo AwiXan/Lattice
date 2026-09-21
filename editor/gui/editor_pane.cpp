@@ -212,10 +212,11 @@ void EditorPane::_update_palette() {
 		more_types.clear();
 		const PackedStringArray quick = EDITOR_GET("interface/panes/quick_panels");
 		for (const String &name : quick) {
-			const StringName id = StringName(name);
+			const StringName id = EditorPanelRegistry::resolve(StringName(name));
 			const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(id);
-			if (!type || type->featured) {
-				// Gone, or already a button of its own.
+			if (!type || type->featured || more_types.has(id)) {
+				// Gone, already a button of its own, or listed once already under
+				// another of its names.
 				continue;
 			}
 			popup->add_icon_item(_icon_of(id), type->title.is_empty() ? name : type->title);
@@ -408,7 +409,9 @@ int EditorPane::add_panel(const StringName &p_type, const Variant &p_subject) {
 	}
 
 	PanelEntry entry;
-	entry.type = p_type;
+	// By the id it answers to now, so that an old name and a new one for the
+	// same thing are seen to be the same panel.
+	entry.type = EditorPanelRegistry::resolve(p_type);
 	entry.subject = p_subject;
 	entry.control = control;
 	control->set_v_size_flags(SIZE_EXPAND_FILL);
@@ -501,8 +504,9 @@ void EditorPane::set_panel_type(const StringName &p_type, const Variant &p_subje
 }
 
 int EditorPane::show_panel_of_type(const StringName &p_type) {
+	const StringName type = EditorPanelRegistry::resolve(p_type);
 	for (int i = 0; i < panels.size(); i++) {
-		if (panels[i].type == p_type) {
+		if (panels[i].type == type) {
 			set_current_panel(i);
 			return i;
 		}

@@ -30,10 +30,13 @@
 
 #pragma once
 
+#include "editor/gui/editor_button_mirror.h"
 #include "scene/gui/box_container.h"
 
 class EditorInspector;
+class EditorObjectSelector;
 class LineEdit;
+class Resource;
 
 // An inspector showing whatever one open document is on.
 //
@@ -43,9 +46,18 @@ class LineEdit;
 // inspector. A pane cannot call that. What it can do is what the scene tree
 // does: ask its document what it is on, which is that document's inspection
 // history, and show it.
+//
+// The chrome is the dock's all the same. Its rows of buttons are copied here,
+// and pressing one brings the editor to this panel's document and presses the
+// dock's, whose buttons act on what the current document is on - which is what
+// this panel is showing. Only the path to the object is this panel's own, and
+// the filter, which narrows this inspector.
 class EditorDocumentInspector : public VBoxContainer {
 	GDCLASS(EditorDocumentInspector, VBoxContainer);
 
+	VBoxContainer *toolbars = nullptr;
+	EditorButtonMirror toolbar_mirror;
+	EditorObjectSelector *object_selector = nullptr;
 	EditorInspector *inspector = nullptr;
 	LineEdit *filter = nullptr;
 
@@ -57,6 +69,10 @@ class EditorDocumentInspector : public VBoxContainer {
 	ObjectID shown;
 
 	void _update();
+	void _activate();
+	void _build_toolbars();
+	bool _replace_in_toolbar(Node *p_original, Control *p_to);
+	void _resource_selected(const Ref<Resource> &p_resource, const String &p_property);
 
 protected:
 	void _notification(int p_what);

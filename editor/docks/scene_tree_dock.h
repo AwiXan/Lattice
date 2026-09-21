@@ -130,7 +130,13 @@ class SceneTreeDock : public EditorDock {
 
 	PanelContainer *button_panel = nullptr;
 	Button *edit_local, *edit_remote;
+	// Whichever view of the scene was worked in last: the dock's own tree, or
+	// one of the others attached to it. A rename, a paste, a context menu is
+	// about the tree it was asked for in.
 	SceneTreeEditor *scene_tree = nullptr;
+	SceneTreeEditor *own_tree = nullptr;
+	LocalVector<SceneTreeEditor *> tree_views;
+	LocalVector<SceneTreeEditor *> _get_all_tree_views() const;
 	Tree *remote_tree = nullptr;
 
 	void _tool_selected(int p_tool, bool p_confirm_override = false);
@@ -340,6 +346,20 @@ public:
 	void perform_node_renames(Node *p_base, HashMap<Node *, NodePath> *p_renames, HashMap<Ref<Animation>, HashSet<int>> *r_rem_anims = nullptr, LocalVector<Pair<StringName, StringName>> *r_folded_group_renames = nullptr);
 	void perform_node_replace(Node *p_base, Node *p_node, Node *p_by_node);
 	SceneTreeEditor *get_tree_editor() { return scene_tree; }
+	SceneTreeEditor *get_own_tree_editor() { return own_tree; }
+
+	// Other views of the scene besides the dock's own tree, each served by this
+	// dock the way its own tree is: the context menu, dropping onto it,
+	// renaming in it, the dialogs it opens. There can be any number of them -
+	// a pane each - and the one worked in last is the one the dock acts on.
+	void attach_tree_view(SceneTreeEditor *p_view);
+	void detach_tree_view(SceneTreeEditor *p_view);
+	void set_active_tree_view(SceneTreeEditor *p_view);
+	// The row of buttons above the dock's own tree, and what it offers a scene
+	// with no root yet, for a view to offer the same without knowing what each
+	// of them does.
+	Control *get_toolbar() const;
+	Control *get_create_root_options() const { return create_root_dialog; }
 	EditorData *get_editor_data() { return editor_data; }
 
 	void add_remote_tree_editor(Tree *p_remote);

@@ -74,6 +74,12 @@ class InspectorDock : public EditorDock {
 	EditorData *editor_data = nullptr;
 
 	EditorInspector *inspector = nullptr;
+	// Everything above the inspector, row by row.
+	VBoxContainer *main_vb = nullptr;
+	// The inspector the property menu's folding options act on, when it was
+	// opened for one other than the dock's own.
+	ObjectID menu_inspector;
+	EditorInspector *_get_menu_inspector() const;
 
 	Object *current = nullptr;
 
@@ -156,6 +162,12 @@ public:
 	void update(Object *p_object);
 	Container *get_addon_area();
 	EditorInspector *get_inspector() { return inspector; }
+
+	// For a panel offering the dock's buttons as its own: the rows they are
+	// in, and which inspector "Expand All" and the like should act on when the
+	// menu is opened from there.
+	Control *get_toolbars() const { return main_vb; }
+	void set_menu_inspector(EditorInspector *p_inspector);
 
 	EditorPropertyNameProcessor::Style get_property_name_style() const;
 

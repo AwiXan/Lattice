@@ -171,9 +171,18 @@ public:
 	static Dictionary save_panel_state(const StringName &p_id, Control *p_panel);
 	static void load_panel_state(const StringName &p_id, Control *p_panel, const Dictionary &p_state);
 
+	// A type another stands in for. Asked for by the old id - a saved layout,
+	// a quick list, a dock asked for by name - the new one answers, and the old
+	// one is no longer offered beside it. The new one takes the old one's title
+	// and icon: it is what people know it by.
+	static void set_replacement(const StringName &p_id, const StringName &p_by);
+	// The id to use for p_id: itself, or whatever stands in for it.
+	static StringName resolve(const StringName &p_id);
+
 	static void cleanup();
 
 private:
 	static inline HashMap<StringName, PanelType> types;
 	static inline HashMap<int, StringName> default_types;
+	static inline HashMap<StringName, StringName> replacements;
 };

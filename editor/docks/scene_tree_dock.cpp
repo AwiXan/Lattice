@@ -268,6 +268,11 @@ void SceneTreeDock::shortcut_input(const Ref<InputEvent> &p_event) {
 }
 
 void SceneTreeDock::_scene_tree_gui_input(Ref<InputEvent> p_event) {
+	const Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid() && mb->is_pressed()) {
+		scene_tree = own_tree;
+	}
+
 	Ref<InputEventKey> key = p_event;
 
 	if (key.is_null() || !key->is_pressed() || key->is_echo()) {
@@ -1332,16 +1337,25 @@ void SceneTreeDock::_tool_selected(int p_tool, bool p_confirm_override) {
 			EditorNode::get_singleton()->get_editor_main_screen()->select(EditorMainScreen::EDITOR_SCRIPT);
 		} break;
 		case TOOL_AUTO_EXPAND: {
-			scene_tree->set_auto_expand_selected(!EDITOR_GET("docks/scene_tree/auto_expand_to_selected"), true);
+			const bool enable = !EDITOR_GET("docks/scene_tree/auto_expand_to_selected");
+			for (SceneTreeEditor *tree : _get_all_tree_views()) {
+				tree->set_auto_expand_selected(enable, tree == scene_tree);
+			}
 		} break;
 		case TOOL_CENTER_PARENT: {
 			EditorSettings::get_singleton()->set("docks/scene_tree/center_node_on_reparent", !EDITOR_GET("docks/scene_tree/center_node_on_reparent"));
 		} break;
 		case TOOL_HIDE_FILTERED_OUT_PARENTS: {
-			scene_tree->set_hide_filtered_out_parents(!EDITOR_GET("docks/scene_tree/hide_filtered_out_parents"), true);
+			const bool enable = !EDITOR_GET("docks/scene_tree/hide_filtered_out_parents");
+			for (SceneTreeEditor *tree : _get_all_tree_views()) {
+				tree->set_hide_filtered_out_parents(enable, tree == scene_tree);
+			}
 		} break;
 		case TOOL_ACCESSIBILITY_WARNINGS: {
-			scene_tree->set_accessibility_warnings(!EDITOR_GET("docks/scene_tree/accessibility_warnings"), true);
+			const bool enable = !EDITOR_GET("docks/scene_tree/accessibility_warnings");
+			for (SceneTreeEditor *tree : _get_all_tree_views()) {
+				tree->set_accessibility_warnings(enable, tree == scene_tree);
+			}
 		} break;
 		case TOOL_SCENE_EDITABLE_CHILDREN: {
 			if (!profile_allow_editing) {
@@ -1477,7 +1491,9 @@ void SceneTreeDock::_tool_selected(int p_tool, bool p_confirm_override) {
 				if (node) {
 					node->set_scene_inherited_state(Ref<SceneState>());
 					editor_data->reload_scene_from_memory(editor_data->get_edited_scene(), true);
-					scene_tree->clear_cache();
+					for (SceneTreeEditor *tree : _get_all_tree_views()) {
+						tree->clear_cache();
+					}
 					InspectorDock::get_inspector_singleton()->update_tree();
 				}
 			}
@@ -1781,9 +1797,11 @@ void SceneTreeDock::_notification(int p_what) {
 
 		case NOTIFICATION_ENTER_TREE: {
 			clear_inherit_confirm->connect(SceneStringName(confirmed), callable_mp(this, &SceneTreeDock::_tool_selected).bind(TOOL_SCENE_CLEAR_INHERITANCE_CONFIRM, false));
-			scene_tree->set_auto_expand_selected(EDITOR_GET("docks/scene_tree/auto_expand_to_selected"), false);
-			scene_tree->set_hide_filtered_out_parents(EDITOR_GET("docks/scene_tree/hide_filtered_out_parents"), false);
-			scene_tree->set_accessibility_warnings(EDITOR_GET("docks/scene_tree/accessibility_warnings"), false);
+			for (SceneTreeEditor *tree : _get_all_tree_views()) {
+				tree->set_auto_expand_selected(EDITOR_GET("docks/scene_tree/auto_expand_to_selected"), false);
+				tree->set_hide_filtered_out_parents(EDITOR_GET("docks/scene_tree/hide_filtered_out_parents"), false);
+				tree->set_accessibility_warnings(EDITOR_GET("docks/scene_tree/accessibility_warnings"), false);
+			}
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
@@ -1792,9 +1810,11 @@ void SceneTreeDock::_notification(int p_what) {
 
 		case EditorSettings::NOTIFICATION_EDITOR_SETTINGS_CHANGED: {
 			if (EditorSettings::get_singleton()->check_changed_settings_in_group("docks/scene_tree")) {
-				scene_tree->set_auto_expand_selected(EDITOR_GET("docks/scene_tree/auto_expand_to_selected"), false);
-				scene_tree->set_hide_filtered_out_parents(EDITOR_GET("docks/scene_tree/hide_filtered_out_parents"), false);
-				scene_tree->set_accessibility_warnings(EDITOR_GET("docks/scene_tree/accessibility_warnings"), false);
+				for (SceneTreeEditor *tree : _get_all_tree_views()) {
+					tree->set_auto_expand_selected(EDITOR_GET("docks/scene_tree/auto_expand_to_selected"), false);
+					tree->set_hide_filtered_out_parents(EDITOR_GET("docks/scene_tree/hide_filtered_out_parents"), false);
+					tree->set_accessibility_warnings(EDITOR_GET("docks/scene_tree/accessibility_warnings"), false);
+				}
 			}
 			if (EditorSettings::get_singleton()->check_changed_settings_in_group("interface/editor/timers")) {
 				inspect_hovered_node_delay->set_wait_time(EDITOR_GET("interface/editor/timers/dragging_hover_wait_seconds"));
@@ -2762,7 +2782,9 @@ void SceneTreeDock::_toggle_placeholder_from_selection() {
 			placeholder = !placeholder;
 
 			node->set_scene_instance_load_placeholder(placeholder);
-			scene_tree->update_tree();
+			for (SceneTreeEditor *tree : _get_all_tree_views()) {
+				tree->update_tree();
+			}
 		}
 	}
 }
@@ -4210,9 +4232,9 @@ void SceneTreeDock::_update_tree_menu() {
 }
 
 void SceneTreeDock::_filter_changed(const String &p_filter) {
-	scene_tree->set_filter(p_filter);
+	own_tree->set_filter(p_filter);
 
-	String warning = scene_tree->get_filter_term_warning();
+	String warning = own_tree->get_filter_term_warning();
 	if (!warning.is_empty()) {
 		filter->add_theme_icon_override(SNAME("clear"), get_editor_theme_icon(SNAME("NodeWarning")));
 		filter->set_tooltip_text(warning);
@@ -4281,7 +4303,7 @@ String SceneTreeDock::get_filter() {
 
 void SceneTreeDock::set_filter(const String &p_filter) {
 	filter->set_text(p_filter);
-	scene_tree->set_filter(p_filter);
+	own_tree->set_filter(p_filter);
 }
 
 void SceneTreeDock::save_branch_to_file(const String &p_directory) {
@@ -4657,8 +4679,10 @@ void SceneTreeDock::paste_node_as_replacement() {
 	}
 	ur->commit_action(false);
 	// FIXME: This shouldn't be needed, but children of the pasted node do not appear immediately for some reason.
-	scene_tree->clear_cache();
-	scene_tree->update_tree();
+	for (SceneTreeEditor *tree : _get_all_tree_views()) {
+		tree->clear_cache();
+		tree->update_tree();
+	}
 }
 
 List<Node *> SceneTreeDock::get_node_clipboard() const {
@@ -4692,7 +4716,7 @@ void SceneTreeDock::hide_tab_buttons() {
 
 void SceneTreeDock::_remote_tree_selected() {
 	main_mc->set_theme_type_variation("NoBorderHorizontalBottom");
-	scene_tree->hide();
+	own_tree->hide();
 	create_root_dialog->hide();
 	if (remote_tree) {
 		remote_tree->show();
@@ -4719,11 +4743,11 @@ void SceneTreeDock::_update_create_root_dialog_visibility() {
 	if (edited_scene == nullptr) {
 		main_mc->set_theme_type_variation("");
 		create_root_dialog->show();
-		scene_tree->hide();
+		own_tree->hide();
 	} else {
 		main_mc->set_theme_type_variation("NoBorderHorizontalBottom");
 		create_root_dialog->hide();
-		scene_tree->show();
+		own_tree->show();
 	}
 }
 
@@ -4787,13 +4811,17 @@ void SceneTreeDock::_feature_profile_changed() {
 		button_3d->set_visible(profile_allow_3d);
 		button_add->set_visible(profile_allow_editing);
 		button_instance->set_visible(profile_allow_editing);
-		scene_tree->set_can_rename(profile_allow_editing);
+		for (SceneTreeEditor *tree : _get_all_tree_views()) {
+			tree->set_can_rename(profile_allow_editing);
+		}
 
 	} else {
 		button_3d->set_visible(true);
 		button_add->set_visible(true);
 		button_instance->set_visible(true);
-		scene_tree->set_can_rename(true);
+		for (SceneTreeEditor *tree : _get_all_tree_views()) {
+			tree->set_can_rename(true);
+		}
 		profile_allow_editing = true;
 		profile_allow_script_editing = true;
 	}
@@ -5144,6 +5172,7 @@ SceneTreeDock::SceneTreeDock(Node *p_scene_root, EditorSelection *p_editor_selec
 	create_root_dialog->hide();
 
 	scene_tree = memnew(SceneTreeEditor(false, true, true));
+	own_tree = scene_tree;
 	main_mc->add_child(scene_tree);
 	scene_tree->get_scene_tree()->set_scroll_hint_mode(Tree::SCROLL_HINT_MODE_TOP);
 	scene_tree->connect("rmb_pressed", callable_mp(this, &SceneTreeDock::_tree_rmb));
@@ -5251,6 +5280,84 @@ SceneTreeDock::SceneTreeDock(Node *p_scene_root, EditorSelection *p_editor_selec
 	EDITOR_DEF("_use_favorites_root_selection", false);
 
 	Resource::_update_configuration_warning = _update_configuration_warning;
+}
+
+LocalVector<SceneTreeEditor *> SceneTreeDock::_get_all_tree_views() const {
+	LocalVector<SceneTreeEditor *> views;
+	views.push_back(own_tree);
+	for (SceneTreeEditor *view : tree_views) {
+		views.push_back(view);
+	}
+	return views;
+}
+
+void SceneTreeDock::attach_tree_view(SceneTreeEditor *p_view) {
+	ERR_FAIL_NULL(p_view);
+	if (p_view == own_tree || tree_views.has(p_view)) {
+		return;
+	}
+	tree_views.push_back(p_view);
+
+	// Everything that makes the dock's tree more than a list of nodes: renaming
+	// with undo, the buttons on each row, what dropping onto it does.
+	p_view->set_as_scene_tree_dock();
+	p_view->set_auto_expand_selected(EDITOR_GET("docks/scene_tree/auto_expand_to_selected"), false);
+	p_view->set_hide_filtered_out_parents(EDITOR_GET("docks/scene_tree/hide_filtered_out_parents"), false);
+	p_view->set_accessibility_warnings(EDITOR_GET("docks/scene_tree/accessibility_warnings"), false);
+	p_view->set_can_rename(profile_allow_editing);
+
+	// Wired as the dock's own tree is, except for picking a node: a view may be
+	// showing a scene other than the current one, and brings the editor to it
+	// before anything is done there, so it picks for itself.
+	p_view->connect("rmb_pressed", callable_mp(this, &SceneTreeDock::_tree_rmb));
+	p_view->connect("node_renamed", callable_mp(this, &SceneTreeDock::_node_renamed), CONNECT_DEFERRED);
+	p_view->connect("node_prerename", callable_mp(this, &SceneTreeDock::_node_prerenamed));
+	p_view->connect("open", callable_mp(this, &SceneTreeDock::_load_request));
+	p_view->connect("open_script", callable_mp(this, &SceneTreeDock::_script_open_request));
+	p_view->connect("nodes_rearranged", callable_mp(this, &SceneTreeDock::_nodes_dragged));
+	p_view->connect("files_dropped", callable_mp(this, &SceneTreeDock::_files_dropped));
+	p_view->connect("script_dropped", callable_mp(this, &SceneTreeDock::_script_dropped));
+	p_view->connect("nodes_dragged", callable_mp(this, &SceneTreeDock::_nodes_drag_begin));
+	p_view->get_scene_tree()->connect("item_icon_double_clicked", callable_mp(this, &SceneTreeDock::_focus_node));
+
+	CanvasItemEditorPlugin *canvas_item_plugin = Object::cast_to<CanvasItemEditorPlugin>(editor_data->get_editor_by_name("2D"));
+	if (canvas_item_plugin) {
+		canvas_item_plugin->get_canvas_item_editor()->connect("item_lock_status_changed", callable_mp(p_view, &SceneTreeEditor::_update_tree).bind(false));
+		canvas_item_plugin->get_canvas_item_editor()->connect("item_group_status_changed", callable_mp(p_view, &SceneTreeEditor::_update_tree).bind(false));
+		p_view->connect("node_changed", callable_mp((CanvasItem *)canvas_item_plugin->get_canvas_item_editor()->get_viewport_control(), &CanvasItem::queue_redraw));
+	}
+
+	// With the dock's own tree nowhere on screen, a view that is on screen is
+	// the better answer to "which tree" - F2 renames in the tree being looked at.
+	if (scene_tree == own_tree && !own_tree->is_visible_in_tree()) {
+		scene_tree = p_view;
+	}
+}
+
+void SceneTreeDock::detach_tree_view(SceneTreeEditor *p_view) {
+	tree_views.erase(p_view);
+	if (scene_tree != p_view) {
+		return;
+	}
+	// Another view still on screen is the next best thing, and the dock's own
+	// tree the last resort.
+	scene_tree = own_tree;
+	for (int i = int(tree_views.size()) - 1; i >= 0; i--) {
+		if (tree_views[i]->is_visible_in_tree()) {
+			scene_tree = tree_views[i];
+			break;
+		}
+	}
+}
+
+void SceneTreeDock::set_active_tree_view(SceneTreeEditor *p_view) {
+	if (p_view == own_tree || tree_views.has(p_view)) {
+		scene_tree = p_view;
+	}
+}
+
+Control *SceneTreeDock::get_toolbar() const {
+	return Object::cast_to<Control>(filter->get_parent());
 }
 
 SceneTreeDock::~SceneTreeDock() {

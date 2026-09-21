@@ -115,7 +115,9 @@ void EditorMainScreen::_restore_panes(const Dictionary &p_layout) {
 }
 
 bool EditorMainScreen::show_panel(const StringName &p_type) {
-	if (!EditorPanelRegistry::has_type(p_type)) {
+	// A dock asked for by name may have something standing in for it.
+	const StringName type = EditorPanelRegistry::resolve(p_type);
+	if (!EditorPanelRegistry::has_type(type)) {
 		return false;
 	}
 	// The pane being worked in, if it has one; otherwise wherever one is
@@ -128,14 +130,14 @@ bool EditorMainScreen::show_panel(const StringName &p_type) {
 	EditorPane *pane = nullptr;
 	if (active) {
 		for (int i = 0; i < active->get_panel_count(); i++) {
-			if (active->get_panel_type_at(i) == p_type) {
+			if (active->get_panel_type_at(i) == type) {
 				pane = active;
 				break;
 			}
 		}
 	}
 	if (!pane) {
-		pane = _pane_showing(p_type, &window);
+		pane = _pane_showing(type, &window);
 	}
 	if (!pane) {
 		pane = active;
@@ -143,7 +145,7 @@ bool EditorMainScreen::show_panel(const StringName &p_type) {
 	if (!pane) {
 		return false;
 	}
-	pane->show_panel_of_type(p_type);
+	pane->show_panel_of_type(type);
 	if (window) {
 		window->grab_window_focus();
 	}

@@ -36,6 +36,14 @@
 
 void EditorPanelRegistry::register_type(const PanelType &p_type) {
 	ERR_FAIL_COND_MSG(p_type.id == StringName(), "A panel type needs an id to be asked for by.");
+	if (replacements.has(p_type.id)) {
+		// Something already stands in for it.
+		return;
+	}
+	if (replacements.has(p_type.id)) {
+		// Something already stands in for it.
+		return;
+	}
 	ERR_FAIL_COND_MSG(!p_type.create.is_valid(), vformat("The panel type '%s' has no way to build a panel.", p_type.id));
 	ERR_FAIL_COND_MSG(types.has(p_type.id), vformat("A panel type '%s' is already registered.", p_type.id));
 	ERR_FAIL_COND_MSG(p_type.lent && !p_type.release.is_valid(),
@@ -68,12 +76,36 @@ StringName EditorPanelRegistry::get_default_type_for(Binding p_binding) {
 }
 
 bool EditorPanelRegistry::has_type(const StringName &p_id) {
-	return types.has(p_id);
+	return types.has(resolve(p_id));
 }
 
 const EditorPanelRegistry::PanelType *EditorPanelRegistry::get_type(const StringName &p_id) {
-	HashMap<StringName, PanelType>::ConstIterator it = types.find(p_id);
+	HashMap<StringName, PanelType>::ConstIterator it = types.find(resolve(p_id));
 	return it ? &it->value : nullptr;
+}
+
+void EditorPanelRegistry::set_replacement(const StringName &p_id, const StringName &p_by) {
+	ERR_FAIL_COND(p_id == p_by);
+	const PanelType *replaced = types.getptr(p_id);
+	PanelType *by = types.getptr(p_by);
+	if (replaced && by) {
+		if (!replaced->title.is_empty()) {
+			by->title = replaced->title;
+		}
+		if (replaced->icon != StringName()) {
+			by->icon = replaced->icon;
+		}
+		if (replaced->icon_texture.is_valid()) {
+			by->icon_texture = replaced->icon_texture;
+		}
+	}
+	types.erase(p_id);
+	replacements[p_id] = p_by;
+}
+
+StringName EditorPanelRegistry::resolve(const StringName &p_id) {
+	const StringName *by = replacements.getptr(p_id);
+	return by ? *by : p_id;
 }
 
 Vector<StringName> EditorPanelRegistry::get_type_ids() {
@@ -133,7 +165,7 @@ StringName EditorPanelRegistry::find_type_for_resource(const String &p_path) {
 }
 
 bool EditorPanelRegistry::open_resource(const StringName &p_id, Control *p_panel, const String &p_path) {
-	const PanelType *type = types.getptr(p_id);
+	const PanelType *type = get_type(p_id);
 	if (!type || !type->open.is_valid()) {
 		return false;
 	}
@@ -142,7 +174,7 @@ bool EditorPanelRegistry::open_resource(const StringName &p_id, Control *p_panel
 }
 
 Dictionary EditorPanelRegistry::save_panel_state(const StringName &p_id, Control *p_panel) {
-	const PanelType *type = types.getptr(p_id);
+	const PanelType *type = get_type(p_id);
 	if (!type || !type->save_state.is_valid() || !p_panel) {
 		return Dictionary();
 	}
@@ -150,7 +182,7 @@ Dictionary EditorPanelRegistry::save_panel_state(const StringName &p_id, Control
 }
 
 void EditorPanelRegistry::load_panel_state(const StringName &p_id, Control *p_panel, const Dictionary &p_state) {
-	const PanelType *type = types.getptr(p_id);
+	const PanelType *type = get_type(p_id);
 	if (!type || !type->load_state.is_valid() || !p_panel || p_state.is_empty()) {
 		return;
 	}
@@ -158,7 +190,7 @@ void EditorPanelRegistry::load_panel_state(const StringName &p_id, Control *p_pa
 }
 
 bool EditorPanelRegistry::release_panel(const StringName &p_id, Control *p_panel) {
-	const PanelType *type = types.getptr(p_id);
+	const PanelType *type = get_type(p_id);
 	if (!type || !type->release.is_valid()) {
 		// Either nobody wants it back, or whoever lent it is gone - at which
 		// point the caller freeing it is the right thing.
@@ -175,4 +207,5 @@ void EditorPanelRegistry::cleanup() {
 	// the time the editor is torn down.
 	default_types.clear();
 	types.clear();
+	replacements.clear();
 }
