@@ -909,6 +909,17 @@ private:
 	int bound_document_id = -1;
 	int _bound_document_index() const;
 
+	// Where each camera was, for every document this view has shown, so that
+	// looking away from a scene and back finds it where it was left - not
+	// wherever the scene before it had its camera. A document this view has
+	// never shown starts where that document was last looked at from.
+	HashMap<int, Array> cameras_by_document;
+	int shown_document = -1;
+	int _shown_document_id() const;
+	Array _save_cameras() const;
+	void _restore_cameras(const Array &p_cameras);
+	void _switch_cameras();
+
 	// Owns everything the views instance into the shared world: it alone answers
 	// the _spatial_editor_group broadcast, so a node never has the same gizmo
 	// added twice, and it alone creates and frees the grid and origin lines.

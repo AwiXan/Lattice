@@ -7653,12 +7653,75 @@ static void _count_preview_blockers(Node *p_node, uint32_t &r_world_env_count, u
 	}
 }
 
+int Node3DEditor::_shown_document_id() const {
+	if (bound_document_id >= 0 && _bound_document_index() >= 0) {
+		return bound_document_id;
+	}
+	EditorData &editor_data = EditorNode::get_editor_data();
+	const int current = editor_data.get_edited_scene();
+	if (current < 0 || current >= editor_data.get_edited_scene_count()) {
+		return -1;
+	}
+	return editor_data.get_scene_history_id(current);
+}
+
+Array Node3DEditor::_save_cameras() const {
+	Array cameras;
+	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+		cameras.push_back(viewports[i] ? viewports[i]->get_state() : Dictionary());
+	}
+	return cameras;
+}
+
+void Node3DEditor::_restore_cameras(const Array &p_cameras) {
+	for (uint32_t i = 0; i < VIEWPORTS_COUNT && i < (uint32_t)p_cameras.size(); i++) {
+		const Dictionary camera = p_cameras[i];
+		if (viewports[i] && !camera.is_empty()) {
+			viewports[i]->set_state(camera);
+		}
+	}
+}
+
+void Node3DEditor::_switch_cameras() {
+	const int now = _shown_document_id();
+	if (now == shown_document) {
+		return;
+	}
+	if (shown_document >= 0) {
+		cameras_by_document[shown_document] = _save_cameras();
+	}
+	shown_document = now;
+	if (now < 0) {
+		return;
+	}
+
+	const Array *seen = cameras_by_document.getptr(now);
+	if (seen) {
+		_restore_cameras(*seen);
+		return;
+	}
+	// Never shown here before: start where the document itself says it was last
+	// looked at from, which is what it saved when it was closed.
+	EditorData &editor_data = EditorNode::get_editor_data();
+	const int idx = editor_data.get_scene_index_by_history_id(now);
+	if (idx < 0) {
+		return;
+	}
+	const Dictionary states = editor_data.get_scene_editor_states(idx);
+	const Dictionary state = states.get("3D", Dictionary());
+	const Array cameras = state.get("viewports", Array());
+	if (!cameras.is_empty()) {
+		_restore_cameras(cameras);
+	}
+}
+
 void Node3DEditor::update_editing_world() {
 	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
 		if (viewports[i]) {
 			viewports[i]->update_editing_world();
 		}
 	}
+	_switch_cameras();
 
 	const Ref<World3D> world = get_editing_world();
 	if (world.is_null()) {

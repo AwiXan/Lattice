@@ -76,9 +76,6 @@ private:
 	// being told about the change does not start over.
 	bool changing_context = false;
 
-	// The first pane's view while it is being held to one document, remembered
-	// rather than looked up: which plugin is selected can change under it.
-	EditorDocumentView *pinned_primary_view = nullptr;
 
 	// Main screens that a pane is showing instead of the main screen itself.
 	// There is one of each, so one that is out cannot be lent again - and

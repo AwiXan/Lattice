@@ -401,26 +401,12 @@ VBoxContainer *EditorMainScreen::get_control() const {
 }
 
 void EditorMainScreen::_panes_changed() {
-	// With more than one pane open, the main screen has to be held to a document
-	// or pointing another pane elsewhere - which makes that document current -
-	// would drag the main screen along and leave both showing the same scene.
-	EditorDocumentView *primary_view = selected_plugin ? selected_plugin->get_main_screen_view() : nullptr;
-	const bool several = is_split_view_enabled();
-
-	if (primary_view && primary_view->supports_document_binding()) {
-		EditorData &editor_data = EditorNode::get_editor_data();
-		if (several && primary_view->get_bound_document() < 0 && editor_data.get_edited_scene_count() > 0) {
-			primary_view->bind_document(editor_data.get_scene_history_id(editor_data.get_edited_scene()));
-			pinned_primary_view = primary_view;
-			// Something has to be what the tab bar acts on, and until the user
-			// works in a pane it is the one that was there first.
-			active_view = primary_view;
-		} else if (!several && pinned_primary_view) {
-			pinned_primary_view->bind_document(-1);
-			pinned_primary_view = nullptr;
-			active_view = nullptr;
-		}
-	}
+	// Which scene a view shows is its pane's business, written down in the pane
+	// and nowhere else. This used to hold the first view to a scene whenever
+	// there were several panes and let go of it when there was one again - from
+	// the outside, without the pane knowing - so a view could be following the
+	// current scene while its header said it was pinned to another, and choosing
+	// "follow" in that header then did nothing, because it already was.
 }
 
 bool EditorMainScreen::is_split_view_enabled() const {
@@ -502,19 +488,11 @@ void EditorMainScreen::view_activated(EditorDocumentView *p_view) {
 }
 
 void EditorMainScreen::current_document_changed() {
-	if (changing_context || !active_view) {
-		return;
-	}
-	// A view that follows the current document needs no telling.
-	if (active_view->get_bound_document() < 0) {
-		return;
-	}
-	// The pane being worked in is what the tab bar acts on: picking a scene up
-	// there shows it in that pane, and leaves the other panes where they are.
-	EditorData &editor_data = EditorNode::get_editor_data();
-	if (editor_data.get_edited_scene_count() > 0) {
-		active_view->bind_document(editor_data.get_scene_history_id(editor_data.get_edited_scene()));
-	}
+	// Nothing to do, on purpose. A view following the current document finds
+	// out by itself; a view pointed at a scene stays on it. This used to point
+	// the pane last worked in at whatever the tab bar picked, which overrode a
+	// choice made in that pane's own header - and did it behind the pane's back,
+	// so the header still named the old scene while the view showed the new.
 }
 
 StringName EditorMainScreen::_main_panel_type_id(const EditorPlugin *p_editor) {
