@@ -549,6 +549,69 @@ void EditorPaneTree::shortcut_input(const Ref<InputEvent> &p_event) {
 	}
 }
 
+Rect2 EditorPaneTree::get_edge_target_rect(EditorPane::DropZone p_zone) const {
+	if (get_panes().size() < 2 || maximized.is_valid()) {
+		return Rect2();
+	}
+	const real_t size = 34 * EDSCALE;
+	const real_t margin = 8 * EDSCALE;
+	const Size2 all = get_size();
+	// Clear of the tabs along the top, which a drop at the top edge would
+	// otherwise be fighting for.
+	const Slot *first = _first_leaf(root);
+	const real_t top = (first && first->pane ? first->pane->get_body_rect().position.y : 0) + margin;
+	switch (p_zone) {
+		case EditorPane::DROP_LEFT:
+			return Rect2(Point2(margin, (all.y - size) * 0.5), Size2(size, size));
+		case EditorPane::DROP_RIGHT:
+			return Rect2(Point2(all.x - margin - size, (all.y - size) * 0.5), Size2(size, size));
+		case EditorPane::DROP_TOP:
+			return Rect2(Point2((all.x - size) * 0.5, top), Size2(size, size));
+		case EditorPane::DROP_BOTTOM:
+			return Rect2(Point2((all.x - size) * 0.5, all.y - margin - size), Size2(size, size));
+		default:
+			return Rect2();
+	}
+}
+
+EditorPane::DropZone EditorPaneTree::get_edge_target_at(const Point2 &p_point) const {
+	const EditorPane::DropZone edges[] = { EditorPane::DROP_LEFT, EditorPane::DROP_RIGHT, EditorPane::DROP_TOP, EditorPane::DROP_BOTTOM };
+	for (const EditorPane::DropZone edge : edges) {
+		const Rect2 rect = get_edge_target_rect(edge);
+		if (rect.has_area() && rect.has_point(p_point)) {
+			return edge;
+		}
+	}
+	return EditorPane::DROP_NONE;
+}
+
+EditorPane *EditorPaneTree::split_root(bool p_vertical, bool p_before, real_t p_share) {
+	set_maximized_pane(nullptr);
+
+	EditorPane *new_pane = memnew(EditorPane);
+	_wire_pane(new_pane);
+	add_child(new_pane);
+
+	// Everything there is becomes one side of a new branch at the top.
+	Slot *fresh = memnew(Slot);
+	fresh->pane = new_pane;
+	Slot *branch = memnew(Slot);
+	branch->vertical = p_vertical;
+	branch->first = p_before ? fresh : root;
+	branch->second = p_before ? root : fresh;
+	const real_t share = CLAMP(p_share, (real_t)0.05, (real_t)0.95);
+	branch->ratio = p_before ? share : 1.0 - share;
+	fresh->parent = branch;
+	root->parent = branch;
+	root = branch;
+
+	_update_closable();
+	update_minimum_size();
+	queue_sort();
+	emit_signal(SNAME("layout_changed"));
+	return new_pane;
+}
+
 void EditorPaneTree::drop_empty_panes() {
 	// Repeated, because closing one collapses a branch and can leave the next
 	// one somewhere else in the arrangement.

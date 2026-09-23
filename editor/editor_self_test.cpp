@@ -413,6 +413,69 @@ void EditorSelfTest::_dock_menus_follow_focus() {
 	_check(menus.size() > 0 && not_following.is_empty(), "the Scene dock's menus belong to the window they are opened from" + (not_following.is_empty() ? String() : " - not:" + not_following));
 }
 
+void EditorSelfTest::_compass_prepare() {
+	_tree()->set_maximized_pane(_tree()->get_first_pane());
+}
+
+void EditorSelfTest::_compass_targets() {
+	EditorPane *pane = _tree()->get_first_pane();
+	const Rect2 into = pane->get_compass_target_rect(EditorPane::DROP_INTO);
+	const Rect2 left = pane->get_compass_target_rect(EditorPane::DROP_LEFT);
+	_tree()->set_maximized_pane(nullptr);
+	_check(into.has_area() && left.has_area(), "a pane with room for it has a compass");
+	_check(pane->get_compass_zone_at(into.get_center()) == EditorPane::DROP_INTO && pane->get_compass_zone_at(left.get_center()) == EditorPane::DROP_LEFT, "its targets say where a panel goes");
+	_check(pane->get_compass_zone_at(pane->get_body_rect().position + Vector2(4, 4)) == EditorPane::DROP_NONE, "and away from them the edges decide, as before");
+}
+
+void EditorSelfTest::_whole_side() {
+	EditorPaneTree *tree = _tree();
+	const Rect2 left = tree->get_edge_target_rect(EditorPane::DROP_LEFT);
+	_check(tree->get_panes().size() > 1 && left.has_area() && tree->get_edge_target_at(left.get_center()) == EditorPane::DROP_LEFT, "with more than one pane, each edge of the arrangement has a target");
+	panes_before_shader = tree->get_panes().size();
+	EditorPane *fresh = tree->split_root(false, true, 0.3);
+	shader_pane = fresh ? fresh->get_instance_id() : ObjectID();
+}
+
+void EditorSelfTest::_whole_side_check() {
+	EditorPaneTree *tree = _tree();
+	EditorPane *fresh = ObjectDB::get_instance<EditorPane>(shader_pane);
+	const EditorPaneTree::Place place = fresh ? tree->get_place_of(fresh) : EditorPaneTree::Place();
+	const Rect2 whole = Rect2(Point2(), tree->get_size());
+	_check(fresh && tree->get_panes().size() == panes_before_shader + 1 && place.before && !place.vertical && Math::abs(place.ratio - 0.3) < 0.01, "a whole side gets a new pane beside everything there is");
+	_check(fresh && Math::abs(fresh->get_rect().size.y - whole.size.y) < 1 && fresh->get_rect().position.x < 1, "running the full height of the left side");
+	if (fresh) {
+		tree->close_pane(fresh);
+	}
+}
+
+void EditorSelfTest::_drop_from_another_window() {
+	// What following a drag into another window comes down to: the pointer,
+	// in screen coordinates, handed to that window's hint.
+	EditorPaneTree *tree = _tree();
+	Vector<EditorPane *> panes = tree->get_panes();
+	if (panes.size() < 2) {
+		_check(false, "two panes to drag between");
+		return;
+	}
+	EditorPane *from = panes[0];
+	EditorPane *to = panes[panes.size() - 1];
+	const StringName moving = from->get_panel_type_at(from->get_current_panel());
+	const int from_count = from->get_panel_count();
+	Dictionary data;
+	data["type"] = "editor_pane_panel";
+	data["pane"] = (int64_t)from->get_instance_id();
+	data["index"] = from->get_current_panel();
+	// Over the middle of the target pane: into it.
+	const Point2 at = to->get_screen_position() + to->get_body_rect().get_center();
+	const bool taken = tree->get_drop_hint()->drop_external(at, data);
+	bool arrived = false;
+	for (int i = 0; i < to->get_panel_count(); i++) {
+		arrived = arrived || to->get_panel_type_at(i) == moving;
+	}
+	_check(taken && arrived && from->get_panel_count() == from_count - 1, "a panel dropped from another window lands in the pane under the pointer");
+	_check(!tree->get_drop_hint()->is_visible(), "and the hint that showed it is put away");
+}
+
 void EditorSelfTest::_finish() {
 	remove_error_handler(&error_handler);
 	const uint32_t error_count = errors.get();
@@ -482,6 +545,11 @@ EditorSelfTest::EditorSelfTest() {
 	_add("drop zones hold steady", callable_mp(this, &EditorSelfTest::_drop_zones_hold_steady));
 	_add("tab lands where marked", callable_mp(this, &EditorSelfTest::_tab_lands_where_marked));
 	_add("dock menus follow focus", callable_mp(this, &EditorSelfTest::_dock_menus_follow_focus));
+	_add("compass prepare", callable_mp(this, &EditorSelfTest::_compass_prepare));
+	_add("compass targets", callable_mp(this, &EditorSelfTest::_compass_targets));
+	_add("whole side", callable_mp(this, &EditorSelfTest::_whole_side));
+	_add("whole side check", callable_mp(this, &EditorSelfTest::_whole_side_check));
+	_add("drop from another window", callable_mp(this, &EditorSelfTest::_drop_from_another_window));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
 }
 

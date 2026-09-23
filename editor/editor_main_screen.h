@@ -128,6 +128,14 @@ private:
 	// A pane for a panel of this type that is not showing anywhere.
 	EditorPane *_pane_for_new(const StringName &p_type, const PanelPlace *p_place);
 	EditorPaneWindow *_window_of(const EditorPane *p_pane) const;
+
+	ObjectID drag_viewport;
+	Variant drag_data;
+	ObjectID drag_hint;
+	void _watch_drag();
+	EditorPaneTree *_tree_in_window(const Window *p_window) const;
+	Window *_window_at(const Point2i &p_screen_position) const;
+	void _tear_off(const Variant &p_data, const Point2i &p_screen_position);
 	void _pane_window_closed(EditorPaneWindow *p_window);
 	void _watch_tree(EditorPaneTree *p_tree);
 	// Closes a window, bringing whatever it still holds back with it.
@@ -184,7 +192,14 @@ public:
 
 	// Sends a panel to a window of its own, and hands back the window it went
 	// to. Null if the editor cannot open windows at all.
-	EditorPaneWindow *open_panel_in_window(EditorPane *p_from, int p_panel);
+	// p_rect, when it has an area, is where on screen the window goes.
+	EditorPaneWindow *open_panel_in_window(EditorPane *p_from, int p_panel, const Rect2i &p_rect = Rect2i());
+
+	// A panel is being dragged in p_viewport. The engine tells only that
+	// window about it, so this follows the pointer into the others - showing
+	// where it would land there and taking the drop - and, when it is let go
+	// outside every window of the editor, gives it a window of its own there.
+	void begin_panel_drag(Viewport *p_viewport, const Variant &p_data);
 	int get_pane_window_count() const { return pane_windows.size(); }
 
 	// Splitting shows a second view of the plugin currently selected, pointed

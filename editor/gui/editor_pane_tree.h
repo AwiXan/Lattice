@@ -30,9 +30,9 @@
 
 #pragma once
 
+#include "editor/gui/editor_pane.h"
 #include "scene/gui/container.h"
 
-class EditorPane;
 class EditorPaneDropHint;
 
 // Panes arranged by splitting, with no fixed number of them.
@@ -164,6 +164,18 @@ public:
 	void set_maximized_pane(EditorPane *p_pane);
 	EditorPane *get_maximized_pane() const;
 	void toggle_maximized(EditorPane *p_pane);
+
+	// Targets at the middle of each edge of the whole arrangement, shown while
+	// a panel is dragged, for it to take a full side rather than a side of one
+	// pane. Tree-local; empty when there is only one pane, where the two are
+	// the same thing.
+	Rect2 get_edge_target_rect(EditorPane::DropZone p_zone) const;
+	EditorPane::DropZone get_edge_target_at(const Point2 &p_point) const;
+	// A new, empty pane beside everything there is, taking p_share of the
+	// room.
+	EditorPane *split_root(bool p_vertical, bool p_before, real_t p_share);
+
+	EditorPaneDropHint *get_drop_hint() const { return drop_hint; }
 
 	// Splits a pane in two, side by side or one above the other, and returns the
 	// pane that appeared. p_before puts the new pane first, which is what a drop

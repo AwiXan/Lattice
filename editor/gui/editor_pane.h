@@ -82,6 +82,13 @@ public:
 	// The part of this pane a panel actually occupies, which is everything
 	// below the header.
 	Rect2 get_body_rect() const;
+
+	// The five targets drawn in the middle of a pane while a panel is dragged
+	// over it - into it, or split off to one side - so that where it goes can
+	// be aimed at rather than found by feeling for the edges. Pane-local; an
+	// empty rectangle when the pane is too small to hold them.
+	Rect2 get_compass_target_rect(DropZone p_zone) const;
+	DropZone get_compass_zone_at(const Point2 &p_point) const;
 	bool is_point_on_header(const Point2 &p_point) const;
 
 	// Whether a drag is offering a panel at all. Answered without asking any
@@ -278,6 +285,9 @@ class EditorPaneDropHint : public Control {
 	mutable EditorPane *target = nullptr;
 	mutable EditorPane::DropZone zone = EditorPane::DROP_NONE;
 	mutable bool on_header = false;
+	// Aiming at a target on an edge of the whole arrangement rather than at a
+	// pane; `zone` says which edge.
+	mutable bool at_edge = false;
 
 	Ref<StyleBoxFlat> landing;
 	Ref<StyleBoxFlat> outline;
@@ -293,9 +303,12 @@ class EditorPaneDropHint : public Control {
 	Rect2 shown_outline;
 	real_t shown_alpha = 0.0;
 
+	Ref<StyleBoxFlat> target_box;
+
 	EditorPane *_pane_at(const Point2 &p_point) const;
 	void _forget();
 	void _aim();
+	void _draw_target(const Rect2 &p_rect, EditorPane::DropZone p_zone, bool p_edge, bool p_hot);
 
 protected:
 	void _notification(int p_what);
@@ -304,6 +317,14 @@ protected:
 
 public:
 	void watch(EditorPaneTree *p_tree) { tree = p_tree; }
+
+	// A drag started in another window, which this one is never told about by
+	// the engine: whoever watches that drag feeds the pointer in here, in
+	// screen coordinates, so this window can show and take the drop all the
+	// same.
+	void track_external(const Point2 &p_screen_position, const Variant &p_data);
+	bool drop_external(const Point2 &p_screen_position, const Variant &p_data);
+	void end_external();
 
 	EditorPaneDropHint();
 };

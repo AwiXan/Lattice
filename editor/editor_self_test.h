@@ -97,6 +97,11 @@ class EditorSelfTest : public Node {
 	void _drop_zones_hold_steady();
 	void _tab_lands_where_marked();
 	void _dock_menus_follow_focus();
+	void _compass_prepare();
+	void _compass_targets();
+	void _whole_side();
+	void _whole_side_check();
+	void _drop_from_another_window();
 	void _finish();
 
 	// Kept between steps.

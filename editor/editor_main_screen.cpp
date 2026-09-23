@@ -41,12 +41,18 @@
 #include "editor/editor_string_names.h"
 #include "editor/plugins/editor_plugin.h"
 #include "editor/settings/editor_settings.h"
+#include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
 #include "scene/main/window.h"
+#include "servers/display/display_server.h"
 #include "scene/gui/button.h"
 
 void EditorMainScreen::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_INTERNAL_PROCESS: {
+			_watch_drag();
+		} break;
+
 		case NOTIFICATION_READY: {
 			set_accessibility_region(true);
 			// What a fresh editor shows. A saved arrangement replaces it a moment
@@ -335,7 +341,7 @@ void EditorMainScreen::_watch_tree(EditorPaneTree *p_tree) {
 	p_tree->connect(SNAME("panel_float_requested"), callable_mp(this, &EditorMainScreen::_panel_float_requested).bind(p_tree));
 }
 
-EditorPaneWindow *EditorMainScreen::open_panel_in_window(EditorPane *p_from, int p_panel) {
+EditorPaneWindow *EditorMainScreen::open_panel_in_window(EditorPane *p_from, int p_panel, const Rect2i &p_rect) {
 	ERR_FAIL_NULL_V(p_from, nullptr);
 	if (!EditorNode::get_singleton()->is_multi_window_enabled()) {
 		return nullptr;
@@ -363,11 +369,115 @@ EditorPaneWindow *EditorMainScreen::open_panel_in_window(EditorPane *p_from, int
 	window->update_title();
 	// A third of the editor, near where it came from, which is what the docks
 	// do when they are made floating.
-	const Size2i size = EditorNode::get_singleton()->get_window()->get_size() / 2;
-	const Point2i at = p_from->get_screen_position();
-	window->restore_window(Rect2i(at, size), EditorNode::get_singleton()->get_gui_base()->get_window()->get_current_screen());
+	if (p_rect.has_area()) {
+		window->restore_window(p_rect, DisplayServer::get_singleton()->get_screen_from_rect(Rect2(p_rect)));
+	} else {
+		const Size2i size = EditorNode::get_singleton()->get_window()->get_size() / 2;
+		const Point2i at = p_from->get_screen_position();
+		window->restore_window(Rect2i(at, size), EditorNode::get_singleton()->get_gui_base()->get_window()->get_current_screen());
+	}
 	window->grab_window_focus();
 	return window;
+}
+
+void EditorMainScreen::begin_panel_drag(Viewport *p_viewport, const Variant &p_data) {
+	ERR_FAIL_NULL(p_viewport);
+	drag_viewport = p_viewport->get_instance_id();
+	// Kept: by the time the drag is known to be over, the viewport has let go
+	// of what was being dragged.
+	drag_data = p_data;
+	drag_hint = ObjectID();
+	set_process_internal(true);
+}
+
+Window *EditorMainScreen::_window_at(const Point2i &p_screen_position) const {
+	const DisplayServerEnums::WindowID id = DisplayServer::get_singleton()->get_window_at_screen_position(p_screen_position);
+	if (id == DisplayServerEnums::INVALID_WINDOW_ID) {
+		return nullptr;
+	}
+	return Object::cast_to<Window>(ObjectDB::get_instance(DisplayServer::get_singleton()->window_get_attached_instance_id(id)));
+}
+
+EditorPaneTree *EditorMainScreen::_tree_in_window(const Window *p_window) const {
+	if (!p_window) {
+		return nullptr;
+	}
+	if (pane_tree && pane_tree->get_window() == p_window) {
+		return pane_tree;
+	}
+	for (EditorPaneWindow *window : pane_windows) {
+		if (window->get_pane_tree()->get_window() == p_window) {
+			return window->get_pane_tree();
+		}
+	}
+	return nullptr;
+}
+
+void EditorMainScreen::_watch_drag() {
+	Viewport *viewport = ObjectDB::get_instance<Viewport>(drag_viewport);
+	const Point2i mouse = DisplayServer::get_singleton()->mouse_get_position();
+	// Another of the editor's windows under the pointer: the one the drag
+	// started in looks after itself.
+	Window *under = _window_at(mouse);
+	EditorPaneTree *tree = under != viewport ? _tree_in_window(under) : nullptr;
+	EditorPaneDropHint *hint = tree ? tree->get_drop_hint() : nullptr;
+	EditorPaneDropHint *previous = ObjectDB::get_instance<EditorPaneDropHint>(drag_hint);
+	if (previous && previous != hint) {
+		previous->end_external();
+	}
+	drag_hint = hint ? hint->get_instance_id() : ObjectID();
+
+	if (viewport && viewport->gui_is_dragging()) {
+		if (hint) {
+			hint->track_external(mouse, drag_data);
+		}
+		return;
+	}
+
+	// The drag is over.
+	set_process_internal(false);
+	const Variant data = drag_data;
+	drag_data = Variant();
+	drag_viewport = ObjectID();
+	drag_hint = ObjectID();
+	if (!viewport || viewport->gui_is_drag_successful()) {
+		if (hint) {
+			hint->end_external();
+		}
+		return;
+	}
+	if (hint) {
+		hint->drop_external(mouse, data);
+		return;
+	}
+	if (!under) {
+		// Let go outside every window of the editor, the way a browser tab is
+		// torn off.
+		_tear_off(data, mouse);
+	}
+}
+
+void EditorMainScreen::_tear_off(const Variant &p_data, const Point2i &p_screen_position) {
+	if (p_data.get_type() != Variant::DICTIONARY) {
+		return;
+	}
+	const Dictionary data = p_data;
+	if (String(data.get("type", "")) != "editor_pane_panel") {
+		// A scene tab or a file: a description of something, not a panel that
+		// already exists to be moved.
+		return;
+	}
+	EditorPane *pane = ObjectDB::get_instance<EditorPane>(ObjectID(uint64_t(int64_t(data.get("pane", 0)))));
+	const int index = data.get("index", -1);
+	if (!pane || index < 0 || index >= pane->get_panel_count()) {
+		return;
+	}
+	// The size it had, near where it was let go, with the pointer on its
+	// title bar as if it had been carried there.
+	Control *panel = pane->get_panel_at(index);
+	const Size2i size = (panel ? Size2i(panel->get_size()) : Size2i()).max(Size2i(Size2(480, 320) * EDSCALE));
+	const Point2i at = p_screen_position - Point2i(Size2(60, 12) * EDSCALE);
+	open_panel_in_window(pane, index, Rect2i(at, size));
 }
 
 void EditorMainScreen::_panel_float_requested(EditorPane *p_pane, int p_panel, EditorPaneTree *p_tree) {

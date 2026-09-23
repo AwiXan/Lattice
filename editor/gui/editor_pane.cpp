@@ -811,6 +811,48 @@ EditorPane::DropZone EditorPane::get_drop_zone_at(const Point2 &p_point, DropZon
 	return best < band ? nearest : DROP_INTO;
 }
 
+Rect2 EditorPane::get_compass_target_rect(DropZone p_zone) const {
+	const Rect2 body = get_body_rect();
+	const real_t size = 34 * EDSCALE;
+	const real_t gap = 6 * EDSCALE;
+	const real_t room = 3 * size + 2 * gap + 32 * EDSCALE;
+	if (body.size.x < room || body.size.y < room) {
+		return Rect2();
+	}
+	const Point2 center = body.get_center();
+	Point2 offset;
+	switch (p_zone) {
+		case DROP_INTO:
+			break;
+		case DROP_LEFT:
+			offset.x = -(size + gap);
+			break;
+		case DROP_RIGHT:
+			offset.x = size + gap;
+			break;
+		case DROP_TOP:
+			offset.y = -(size + gap);
+			break;
+		case DROP_BOTTOM:
+			offset.y = size + gap;
+			break;
+		default:
+			return Rect2();
+	}
+	return Rect2(center + offset - Vector2(size, size) * 0.5, Vector2(size, size));
+}
+
+EditorPane::DropZone EditorPane::get_compass_zone_at(const Point2 &p_point) const {
+	const DropZone zones[] = { DROP_INTO, DROP_LEFT, DROP_RIGHT, DROP_TOP, DROP_BOTTOM };
+	for (const DropZone zone : zones) {
+		const Rect2 rect = get_compass_target_rect(zone);
+		if (rect.has_area() && rect.has_point(p_point)) {
+			return zone;
+		}
+	}
+	return DROP_NONE;
+}
+
 bool EditorPane::is_panel_drag(const Variant &p_data) {
 	if (p_data.get_type() != Variant::DICTIONARY) {
 		return false;
@@ -826,7 +868,11 @@ bool EditorPane::can_accept_drop(const Point2 &p_point, const Variant &p_data) c
 	}
 	// Putting a pane's panel back into the pane it is already in changes
 	// nothing - unless it is being put somewhere else in the order.
-	if (drop.source == this && get_drop_zone_at(p_point) == DROP_INTO && !is_point_on_header(p_point)) {
+	DropZone zone = get_compass_zone_at(p_point);
+	if (zone == DROP_NONE) {
+		zone = get_drop_zone_at(p_point);
+	}
+	if (drop.source == this && zone == DROP_INTO && !is_point_on_header(p_point)) {
 		return false;
 	}
 	return true;
@@ -1100,15 +1146,107 @@ EditorPane *EditorPaneDropHint::_pane_at(const Point2 &p_point) const {
 }
 
 void EditorPaneDropHint::_forget() {
-	if (target || zone != EditorPane::DROP_NONE) {
+	if (target || zone != EditorPane::DROP_NONE || at_edge) {
 		target = nullptr;
 		zone = EditorPane::DROP_NONE;
 		on_header = false;
+		at_edge = false;
 		_aim();
 	}
 }
 
+void EditorPaneDropHint::track_external(const Point2 &p_screen_position, const Variant &p_data) {
+	if (!is_visible()) {
+		move_to_front();
+		show();
+	}
+	can_drop_data(p_screen_position - get_screen_position(), p_data);
+}
+
+bool EditorPaneDropHint::drop_external(const Point2 &p_screen_position, const Variant &p_data) {
+	const Point2 local = p_screen_position - get_screen_position();
+	const bool taken = can_drop_data(local, p_data);
+	if (taken) {
+		drop_data(local, p_data);
+	}
+	end_external();
+	return taken;
+}
+
+void EditorPaneDropHint::end_external() {
+	_forget();
+	shown_alpha = 0.0;
+	set_process_internal(false);
+	hide();
+}
+
+void EditorPaneDropHint::_draw_target(const Rect2 &p_rect, EditorPane::DropZone p_zone, bool p_edge, bool p_hot) {
+	// A little picture of a pane with the part the panel would take filled in:
+	// read at a glance, whatever the theme.
+	target_box->set_border_color(accent * Color(1, 1, 1, (p_hot ? 1.0 : 0.6) * shown_alpha));
+	target_box->set_bg_color(Color(0, 0, 0, (p_hot ? 0.75 : 0.55) * shown_alpha));
+	draw_style_box(target_box, p_rect);
+
+	const Rect2 inner = p_rect.grow(-7 * EDSCALE);
+	const Color line = accent * Color(1, 1, 1, 0.9 * shown_alpha);
+	draw_rect(inner, line, false, Math::round(1 * EDSCALE));
+	// A side of one pane is half of it; a side of everything, a narrower strip
+	// against the edge.
+	const real_t share = p_edge ? 0.34 : 0.5;
+	Rect2 filled = inner;
+	switch (p_zone) {
+		case EditorPane::DROP_LEFT:
+			filled.size.x *= share;
+			break;
+		case EditorPane::DROP_RIGHT:
+			filled.position.x += filled.size.x * (1.0 - share);
+			filled.size.x *= share;
+			break;
+		case EditorPane::DROP_TOP:
+			filled.size.y *= share;
+			break;
+		case EditorPane::DROP_BOTTOM:
+			filled.position.y += filled.size.y * (1.0 - share);
+			filled.size.y *= share;
+			break;
+		default:
+			break;
+	}
+	draw_rect(filled, accent * Color(1, 1, 1, (p_hot ? 0.85 : 0.45) * shown_alpha));
+}
+
 void EditorPaneDropHint::_aim() {
+	if (at_edge && tree) {
+		// A whole side of the arrangement: the new pane takes a third of it.
+		const Rect2 all = Rect2(Point2(), get_size());
+		wanted_outline = all;
+		Rect2 side = all;
+		switch (zone) {
+			case EditorPane::DROP_LEFT:
+				side.size.x *= 0.3;
+				break;
+			case EditorPane::DROP_RIGHT:
+				side.position.x += side.size.x * 0.7;
+				side.size.x *= 0.3;
+				break;
+			case EditorPane::DROP_TOP:
+				side.size.y *= 0.3;
+				break;
+			default:
+				side.position.y += side.size.y * 0.7;
+				side.size.y *= 0.3;
+				break;
+		}
+		wanted_landing = side;
+		wanted_alpha = 1.0;
+		if (shown_alpha < 0.05) {
+			shown_landing = wanted_landing;
+			shown_outline = wanted_outline;
+		}
+		set_process_internal(true);
+		queue_redraw();
+		return;
+	}
 	if (!target || zone == EditorPane::DROP_NONE) {
 		// Fading out where it was, rather than vanishing.
 		wanted_alpha = 0.0;
@@ -1152,6 +1290,27 @@ void EditorPaneDropHint::_aim() {
 }
 
 bool EditorPaneDropHint::can_drop_data(const Point2 &p_point, const Variant &p_data) const {
+	// A whole side of the arrangement first: its targets sit over the panes.
+	if (tree && EditorPane::is_panel_drag(p_data)) {
+		const Point2 in_tree = tree->get_global_transform().affine_inverse().xform(get_global_transform().xform(p_point));
+		const EditorPane::DropZone edge = tree->get_edge_target_at(in_tree);
+		if (edge != EditorPane::DROP_NONE) {
+			if (!at_edge || zone != edge) {
+				at_edge = true;
+				target = nullptr;
+				zone = edge;
+				on_header = false;
+				const_cast<EditorPaneDropHint *>(this)->_aim();
+			}
+			return true;
+		}
+	}
+	if (at_edge) {
+		at_edge = false;
+		target = nullptr;
+		zone = EditorPane::DROP_NONE;
+	}
+
 	EditorPane *pane = _pane_at(p_point);
 	if (!pane) {
 		const_cast<EditorPaneDropHint *>(this)->_forget();
@@ -1164,7 +1323,12 @@ bool EditorPaneDropHint::can_drop_data(const Point2 &p_point, const Variant &p_d
 		return false;
 	}
 
-	const EditorPane::DropZone now = pane->get_drop_zone_at(in_pane, pane == target ? zone : EditorPane::DROP_NONE);
+	// A target on the compass says exactly where; anywhere else the nearest
+	// edge does, as it always has.
+	EditorPane::DropZone now = pane->get_compass_zone_at(in_pane);
+	if (now == EditorPane::DROP_NONE) {
+		now = pane->get_drop_zone_at(in_pane, pane == target ? zone : EditorPane::DROP_NONE);
+	}
 	const bool header_now = pane->is_point_on_header(in_pane);
 	if (pane != target || now != zone || header_now != on_header) {
 		target = pane;
@@ -1180,6 +1344,21 @@ bool EditorPaneDropHint::can_drop_data(const Point2 &p_point, const Variant &p_d
 }
 
 void EditorPaneDropHint::drop_data(const Point2 &p_point, const Variant &p_data) {
+	if (at_edge && tree) {
+		// A whole side: a new pane beside everything there is, and the panel
+		// goes into it.
+		const EditorPane::DropZone edge = zone;
+		_forget();
+		const bool vertical = edge == EditorPane::DROP_TOP || edge == EditorPane::DROP_BOTTOM;
+		const bool before = edge == EditorPane::DROP_LEFT || edge == EditorPane::DROP_TOP;
+		EditorPane *fresh = tree->split_root(vertical, before, 0.3);
+		if (fresh) {
+			fresh->accept_drop(Point2(), p_data, EditorPane::DROP_INTO);
+			tree->drop_empty_panes();
+		}
+		return;
+	}
+
 	EditorPane *pane = _pane_at(p_point);
 	if (!pane) {
 		return;
@@ -1211,6 +1390,11 @@ void EditorPaneDropHint::_notification(int p_what) {
 			// been rebuilt since.
 			move_to_front();
 			show();
+			// And followed into other windows, which the engine does not do.
+			EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+			if (main_screen) {
+				main_screen->begin_panel_drag(get_viewport(), get_viewport()->gui_get_drag_data());
+			}
 		} break;
 
 		case NOTIFICATION_DRAG_END: {
@@ -1253,6 +1437,29 @@ void EditorPaneDropHint::_notification(int p_what) {
 			landing->set_border_color(accent * Color(1, 1, 1, shown_alpha));
 			draw_style_box(landing, shown_landing.grow(-2 * EDSCALE));
 
+			// The targets: a whole side of the arrangement, and the compass in
+			// the pane being aimed at, each lit when it is the one aimed at.
+			if (tree && tree->get_panes().size() > 1) {
+				const EditorPane::DropZone edges[] = { EditorPane::DROP_LEFT, EditorPane::DROP_RIGHT, EditorPane::DROP_TOP, EditorPane::DROP_BOTTOM };
+				const Transform2D tree_to_here = get_global_transform().affine_inverse() * tree->get_global_transform();
+				for (const EditorPane::DropZone edge : edges) {
+					const Rect2 rect = tree->get_edge_target_rect(edge);
+					if (rect.has_area()) {
+						_draw_target(tree_to_here.xform(rect), edge, true, at_edge && zone == edge);
+					}
+				}
+			}
+			if (target && !on_header && !at_edge) {
+				const Transform2D pane_to_here = get_global_transform().affine_inverse() * target->get_global_transform();
+				const EditorPane::DropZone zones[] = { EditorPane::DROP_INTO, EditorPane::DROP_LEFT, EditorPane::DROP_RIGHT, EditorPane::DROP_TOP, EditorPane::DROP_BOTTOM };
+				for (const EditorPane::DropZone target_zone : zones) {
+					const Rect2 rect = target->get_compass_target_rect(target_zone);
+					if (rect.has_area()) {
+						_draw_target(pane_to_here.xform(rect), target_zone, false, zone == target_zone);
+					}
+				}
+			}
+
 			// Over the tabs, the bar says where between them it would go.
 			if (on_header && target) {
 				const Transform2D to_here = get_global_transform().affine_inverse() * target->get_global_transform();
@@ -1277,6 +1484,10 @@ EditorPaneDropHint::EditorPaneDropHint() {
 	outline->set_bg_color(Color(0, 0, 0, 0));
 	outline->set_draw_center(false);
 	outline->set_border_width_all(Math::round(1 * EDSCALE));
+
+	target_box.instantiate();
+	target_box->set_border_width_all(Math::round(1 * EDSCALE));
+	target_box->set_corner_radius_all(Math::round(4 * EDSCALE));
 }
 
 EditorPane::EditorPane() {
