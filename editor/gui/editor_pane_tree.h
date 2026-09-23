@@ -122,6 +122,9 @@ class EditorPaneTree : public Container {
 	static Slot *_first_leaf(Slot *p_slot);
 	static Slot *_last_leaf(Slot *p_slot);
 	EditorPane *_pane_for_shortcut() const;
+	// The pane on the given side of p_from that the keyboard would go to:
+	// wholly on that side, and beside it rather than off at an angle.
+	EditorPane *_pane_towards(const EditorPane *p_from, Side p_side) const;
 
 protected:
 	void _notification(int p_what);

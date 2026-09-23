@@ -528,6 +528,47 @@ EditorPane *EditorPaneTree::_pane_for_shortcut() const {
 	return get_active_pane();
 }
 
+EditorPane *EditorPaneTree::_pane_towards(const EditorPane *p_from, Side p_side) const {
+	const Rect2 from = p_from->get_rect();
+	const bool across = p_side == SIDE_LEFT || p_side == SIDE_RIGHT;
+	EditorPane *best = nullptr;
+	real_t best_score = 0;
+	for (EditorPane *pane : get_panes()) {
+		if (pane == p_from || !pane->is_visible()) {
+			continue;
+		}
+		const Rect2 rect = pane->get_rect();
+		real_t gap = 0;
+		switch (p_side) {
+			case SIDE_LEFT:
+				gap = from.position.x - rect.get_end().x;
+				break;
+			case SIDE_RIGHT:
+				gap = rect.position.x - from.get_end().x;
+				break;
+			case SIDE_TOP:
+				gap = from.position.y - rect.get_end().y;
+				break;
+			case SIDE_BOTTOM:
+				gap = rect.position.y - from.get_end().y;
+				break;
+		}
+		if (gap < -1) {
+			continue;
+		}
+		// Beside it: the spans across the direction of travel overlapping.
+		// One off at an angle is only taken when nothing is beside it.
+		const real_t overlap = across ? MIN(from.get_end().y, rect.get_end().y) - MAX(from.position.y, rect.position.y) : MIN(from.get_end().x, rect.get_end().x) - MAX(from.position.x, rect.position.x);
+		const real_t offset = across ? Math::abs(rect.get_center().y - from.get_center().y) : Math::abs(rect.get_center().x - from.get_center().x);
+		const real_t score = gap + (overlap > 0 ? offset * 0.1 : 100000 + offset);
+		if (!best || score < best_score) {
+			best = pane;
+			best_score = score;
+		}
+	}
+	return best;
+}
+
 void EditorPaneTree::shortcut_input(const Ref<InputEvent> &p_event) {
 	ERR_FAIL_COND(p_event.is_null());
 	if (!p_event->is_pressed() || p_event->is_echo()) {
@@ -546,6 +587,50 @@ void EditorPaneTree::shortcut_input(const Ref<InputEvent> &p_event) {
 		if (main_screen && main_screen->reopen_closed_panel()) {
 			accept_event();
 		}
+		return;
+	}
+
+	const struct {
+		const char *shortcut;
+		Side side;
+	} directions[] = {
+		{ "editor/focus_pane_left", SIDE_LEFT },
+		{ "editor/focus_pane_right", SIDE_RIGHT },
+		{ "editor/focus_pane_up", SIDE_TOP },
+		{ "editor/focus_pane_down", SIDE_BOTTOM },
+	};
+	for (const auto &direction : directions) {
+		if (ED_IS_SHORTCUT(direction.shortcut, p_event)) {
+			EditorPane *from = _pane_for_shortcut();
+			EditorPane *to = from ? _pane_towards(from, direction.side) : nullptr;
+			if (to) {
+				set_active_pane(to);
+				to->focus_current_panel();
+			}
+			accept_event();
+			return;
+		}
+	}
+
+	EditorPane *pane = nullptr;
+	if (ED_IS_SHORTCUT("editor/next_pane_tab", p_event)) {
+		pane = _pane_for_shortcut();
+		if (pane) {
+			pane->cycle_panel(1);
+		}
+	} else if (ED_IS_SHORTCUT("editor/previous_pane_tab", p_event)) {
+		pane = _pane_for_shortcut();
+		if (pane) {
+			pane->cycle_panel(-1);
+		}
+	} else if (ED_IS_SHORTCUT("editor/close_pane_tab", p_event)) {
+		pane = _pane_for_shortcut();
+		if (pane) {
+			pane->close_current_panel();
+		}
+	}
+	if (pane) {
+		accept_event();
 	}
 }
 

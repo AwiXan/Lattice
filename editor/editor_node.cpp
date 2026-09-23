@@ -6694,7 +6694,7 @@ void EditorNode::_update_layouts_menu() {
 	editor_layouts->add_shortcut(ED_SHORTCUT("layout/delete", TTRC("Delete Layout...")), LAYOUT_DELETE);
 	editor_layouts->add_separator();
 	for (int i = 1; i <= 9; i++) {
-		ED_SHORTCUT("layout/switch_" + itos(i), vformat(TTR("Switch to Layout %d"), i), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::ALT | Key(int(Key::KEY_0) + i));
+		ED_SHORTCUT("layout/switch_" + itos(i), vformat(TTR("Switch to Layout %d"), i), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | KeyModifierMask::ALT | Key(int(Key::KEY_0) + i));
 	}
 
 	Ref<ConfigFile> config;
@@ -9336,7 +9336,7 @@ EditorNode::EditorNode() {
 	workspace_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
 	workspace_button->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 	workspace_button->set_tooltip_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);
-	workspace_button->set_tooltip_text(TTRC("Workspace: a saved arrangement of panels and windows.\nSwitching keeps what was changed in the one being left. Ctrl+Alt+1-9 switch to the first nine."));
+	workspace_button->set_tooltip_text(TTRC("Workspace: a saved arrangement of panels and windows.\nSwitching keeps what was changed in the one being left. Ctrl+Shift+Alt+1-9 switch to the first nine."));
 	workspace_button->set_accessibility_name(TTRC("Workspace"));
 	workspace_button->connect(SceneStringName(item_selected), callable_mp(this, &EditorNode::_workspace_selected));
 	right_menu_hb->add_child(workspace_button);

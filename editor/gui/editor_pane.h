@@ -266,6 +266,13 @@ public:
 	void set_closable(bool p_closable);
 	// Whether this pane is the one shown over all the others.
 	void set_maximized(bool p_maximized);
+	// Gives the keyboard to what the current panel is mostly made of - its
+	// tree, its view, its inspector - rather than to the first field in it.
+	void focus_current_panel();
+	// The tab next to the current one, round the end.
+	void cycle_panel(int p_direction);
+	// Closes the current tab the way its close button does.
+	void close_current_panel();
 	bool is_header_visible() const;
 
 	EditorPane();

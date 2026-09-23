@@ -499,6 +499,44 @@ void EditorPane::_tab_bar_input(const Ref<InputEvent> &p_event) {
 	}
 }
 
+void EditorPane::focus_current_panel() {
+	Control *panel = get_panel();
+	if (!panel) {
+		return;
+	}
+	Control *best = panel->get_focus_mode() == FOCUS_ALL ? panel : nullptr;
+	real_t best_area = best ? best->get_size().x * best->get_size().y : 0;
+	TypedArray<Node> controls = panel->find_children("*", "Control", true, false);
+	for (int i = 0; i < controls.size(); i++) {
+		Control *control = Object::cast_to<Control>(controls[i]);
+		if (!control || control->get_focus_mode() != FOCUS_ALL || !control->is_visible_in_tree()) {
+			continue;
+		}
+		const real_t area = control->get_size().x * control->get_size().y;
+		if (area > best_area) {
+			best = control;
+			best_area = area;
+		}
+	}
+	if (best) {
+		best->grab_focus();
+	}
+}
+
+void EditorPane::cycle_panel(int p_direction) {
+	if (panels.size() < 2) {
+		return;
+	}
+	set_current_panel(Math::posmod(current + p_direction, panels.size()));
+	focus_current_panel();
+}
+
+void EditorPane::close_current_panel() {
+	if (current >= 0 && current < panels.size()) {
+		_tab_close_pressed(current);
+	}
+}
+
 void EditorPane::_restore_pressed() {
 	EditorPaneTree *tree = _get_pane_tree();
 	if (tree) {

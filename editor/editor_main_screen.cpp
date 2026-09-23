@@ -1000,8 +1000,18 @@ void EditorMainScreen::remove_main_plugin(EditorPlugin *p_editor) {
 
 EditorMainScreen::EditorMainScreen() {
 	ED_SHORTCUT("editor/toggle_maximize_pane", TTRC("Maximize or Restore Pane"), KeyModifierMask::CMD_OR_CTRL | Key::SPACE);
-	// Not Ctrl+Shift+T: the script editor has that for reopening a script.
-	ED_SHORTCUT("editor/reopen_closed_panel", TTRC("Reopen Closed Panel"), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::ALT | Key::T);
+	// Working with panes is Ctrl+Shift+Alt, which the editor leaves nearly
+	// alone: Ctrl+Shift+T reopens a script, and Ctrl+Alt with T, arrows or
+	// digits already trims whitespace, duplicates lines and splits 3D views.
+	const KeyModifierMask panes = KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | KeyModifierMask::ALT;
+	ED_SHORTCUT("editor/reopen_closed_panel", TTRC("Reopen Closed Panel"), panes | Key::T);
+	ED_SHORTCUT("editor/focus_pane_left", TTRC("Focus the Pane to the Left"), panes | Key::LEFT);
+	ED_SHORTCUT("editor/focus_pane_right", TTRC("Focus the Pane to the Right"), panes | Key::RIGHT);
+	ED_SHORTCUT("editor/focus_pane_up", TTRC("Focus the Pane Above"), panes | Key::UP);
+	ED_SHORTCUT("editor/focus_pane_down", TTRC("Focus the Pane Below"), panes | Key::DOWN);
+	ED_SHORTCUT("editor/next_pane_tab", TTRC("Next Tab in Pane"), panes | Key::PAGEDOWN);
+	ED_SHORTCUT("editor/previous_pane_tab", TTRC("Previous Tab in Pane"), panes | Key::PAGEUP);
+	ED_SHORTCUT("editor/close_pane_tab", TTRC("Close Tab in Pane"), panes | Key::W);
 
 	pane_tree = memnew(EditorPaneTree);
 	add_child(pane_tree);

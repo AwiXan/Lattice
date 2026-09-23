@@ -659,6 +659,52 @@ void EditorSelfTest::_panel_from_palette_shown() {
 	_check(_pane_showing("dock_FileSystem") != nullptr, "a panel can be shown from the Command Palette, by name");
 }
 
+static Ref<InputEventKey> _pane_key(Key p_key) {
+	Ref<InputEventKey> key;
+	key.instantiate();
+	key->set_keycode(p_key);
+	key->set_ctrl_pressed(true);
+	key->set_shift_pressed(true);
+	key->set_alt_pressed(true);
+	key->set_pressed(true);
+	return key;
+}
+
+void EditorSelfTest::_keys_prepare() {
+	EditorPaneTree *tree = _tree();
+	while (tree->get_panes().size() > 1) {
+		tree->close_pane(tree->get_panes()[tree->get_panes().size() - 1]);
+	}
+	EditorPane *left = tree->get_first_pane();
+	left->set_panel_type("view_3d");
+	EditorPane *right = tree->split_pane(left, false, false, false);
+	right->add_panel("scene_tree");
+	right->add_panel("inspector");
+	shader_pane = right->get_instance_id();
+	tree->set_active_pane(left);
+	left->focus_current_panel();
+}
+
+void EditorSelfTest::_keys_move() {
+	EditorNode::get_singleton()->get_window()->push_input(_pane_key(Key::RIGHT));
+	EditorPane *right = ObjectDB::get_instance<EditorPane>(shader_pane);
+	const Control *focus = EditorNode::get_singleton()->get_viewport()->gui_get_focus_owner();
+	_check(right && _tree()->get_active_pane() == right && focus && right->is_ancestor_of(focus), "Ctrl+Shift+Alt+Right moves the keyboard to the pane on the right");
+}
+
+void EditorSelfTest::_keys_tabs() {
+	EditorPane *right = ObjectDB::get_instance<EditorPane>(shader_pane);
+	if (!right) {
+		return;
+	}
+	const int before = right->get_current_panel();
+	EditorNode::get_singleton()->get_window()->push_input(_pane_key(Key::PAGEDOWN));
+	_check(right->get_current_panel() == (before + 1) % right->get_panel_count(), "Ctrl+Shift+Alt+PageDown goes to its next tab");
+	const int count = right->get_panel_count();
+	EditorNode::get_singleton()->get_window()->push_input(_pane_key(Key::W));
+	_check(right->get_panel_count() == count - 1, "and Ctrl+Shift+Alt+W closes the tab it is on");
+}
+
 void EditorSelfTest::_finish() {
 	remove_error_handler(&error_handler);
 	const uint32_t error_count = errors.get();
@@ -747,6 +793,9 @@ EditorSelfTest::EditorSelfTest() {
 	_add("scene colors", callable_mp(this, &EditorSelfTest::_scene_colors));
 	_add("panel from palette", callable_mp(this, &EditorSelfTest::_panel_from_palette));
 	_add("panel from palette shown", callable_mp(this, &EditorSelfTest::_panel_from_palette_shown));
+	_add("keys prepare", callable_mp(this, &EditorSelfTest::_keys_prepare));
+	_add("keys move", callable_mp(this, &EditorSelfTest::_keys_move));
+	_add("keys tabs", callable_mp(this, &EditorSelfTest::_keys_tabs));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
 }
 
