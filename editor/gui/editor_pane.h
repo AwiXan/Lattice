@@ -75,7 +75,10 @@ public:
 
 	// Where a drop at this point would land. The header is not part of it: a
 	// tab let go over the tabs joins them, wherever along the bar it was.
-	DropZone get_drop_zone_at(const Point2 &p_point) const;
+	// p_current is the zone being shown already, which the pointer has to
+	// leave by a margin before another is chosen: along a boundary the answer
+	// would otherwise flicker from one pixel to the next.
+	DropZone get_drop_zone_at(const Point2 &p_point, DropZone p_current = DROP_NONE) const;
 	// The part of this pane a panel actually occupies, which is everything
 	// below the header.
 	Rect2 get_body_rect() const;
@@ -93,7 +96,9 @@ public:
 	// what the hint calls, because during a drag the thing under the mouse is
 	// the hint and not what the pane is showing.
 	bool can_accept_drop(const Point2 &p_point, const Variant &p_data) const;
-	bool accept_drop(const Point2 &p_point, const Variant &p_data);
+	// p_zone is the one the drop hint showed, so the panel lands where it was
+	// seen to be going; without it the zone is worked out afresh.
+	bool accept_drop(const Point2 &p_point, const Variant &p_data, DropZone p_zone = DROP_NONE);
 	// Shows a file here, in whichever kind of panel suits it. Returns false if
 	// nothing registered can show that kind of file.
 	bool open_resource(const String &p_path);
@@ -189,6 +194,10 @@ private:
 		bool is_valid() const { return source || type != StringName(); }
 	};
 	PanelDrop _read_drop(const Variant &p_data) const;
+	// Where between the tabs a panel let go at this point of the bar goes: the
+	// gap the bar's own drop mark is drawn in.
+	int _tab_insert_index_at(const Point2 &p_in_bar) const;
+	Control *_make_drag_preview(int p_index) const;
 	StringName _type_for_subject(const Variant &p_subject) const;
 	Variant _subject_for_type(const StringName &p_type) const;
 	bool _accept_drop(const PanelDrop &p_drop, DropZone p_zone, int p_tab_index);
@@ -274,8 +283,19 @@ class EditorPaneDropHint : public Control {
 	Ref<StyleBoxFlat> outline;
 	Color accent;
 
+	// What is on screen glides to what the pointer is over now, rather than
+	// jumping: the eye follows where the panel is going instead of hunting for
+	// where the highlight went.
+	Rect2 wanted_landing;
+	Rect2 wanted_outline;
+	real_t wanted_alpha = 0.0;
+	Rect2 shown_landing;
+	Rect2 shown_outline;
+	real_t shown_alpha = 0.0;
+
 	EditorPane *_pane_at(const Point2 &p_point) const;
 	void _forget();
+	void _aim();
 
 protected:
 	void _notification(int p_what);

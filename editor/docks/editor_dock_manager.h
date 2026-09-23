@@ -136,6 +136,7 @@ private:
 	// Registered for every dock, which is what lets a pane, a saved layout or a
 	// window ask for one without knowing this class exists.
 	Control *_lend_dock_panel(EditorDock *p_dock);
+	void _node_added(Node *p_node);
 	void _return_dock_panel(Control *p_panel, EditorDock *p_dock);
 
 public:

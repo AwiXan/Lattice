@@ -93,6 +93,10 @@ class EditorSelfTest : public Node {
 	void _maximize();
 	void _maximize_by_shortcut();
 	void _restore_by_shortcut();
+	void _drop_zones_prepare();
+	void _drop_zones_hold_steady();
+	void _tab_lands_where_marked();
+	void _dock_menus_follow_focus();
 	void _finish();
 
 	// Kept between steps.

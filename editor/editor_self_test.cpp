@@ -43,6 +43,7 @@
 #include "editor/gui/editor_pane_tree.h"
 #include "editor/scene/editor_scene_panel.h"
 #include "editor/scene/scene_tree_editor.h"
+#include "editor/themes/editor_scale.h"
 #include "scene/animation/animation_player.h"
 #include "scene/gui/button.h"
 #include "scene/gui/dialogs.h"
@@ -343,6 +344,75 @@ void EditorSelfTest::_restore_by_shortcut() {
 	_check(_tree()->get_maximized_pane() == nullptr, "and Ctrl+Space again puts it back");
 }
 
+void EditorSelfTest::_drop_zones_prepare() {
+	// Room to aim in, whatever the other panes took: laid out next frame.
+	_tree()->set_maximized_pane(_tree()->get_first_pane());
+}
+
+void EditorSelfTest::_drop_zones_hold_steady() {
+	EditorPane *pane = _tree()->get_first_pane();
+	const Rect2 body = pane->get_body_rect();
+	_tree()->set_maximized_pane(nullptr);
+	if (body.size.x < 200 || body.size.y < 200) {
+		_check(false, vformat("a pane is big enough to aim at (%s)", body.size));
+		return;
+	}
+	// Just inside the left band, then a little past where it ends.
+	const real_t band = MIN(body.size.x * 0.3, 180.0 * EDSCALE);
+	const Point2 inside = body.position + Point2(band - 4 * EDSCALE, body.size.y * 0.5);
+	const Point2 past = body.position + Point2(band + 8 * EDSCALE, body.size.y * 0.5);
+	_check(pane->get_drop_zone_at(inside) == EditorPane::DROP_LEFT, "near the left edge, a drop splits to the left");
+	_check(pane->get_drop_zone_at(past, EditorPane::DROP_LEFT) == EditorPane::DROP_LEFT, "and it stays that way a little past the edge of the band");
+	_check(pane->get_drop_zone_at(past) == EditorPane::DROP_INTO, "where coming from anywhere else it would join the pane");
+}
+
+void EditorSelfTest::_tab_lands_where_marked() {
+	EditorPane *pane = _tree()->get_first_pane();
+	const StringName fillers[] = { "inspector", "scene_tree", "view_3d" };
+	for (const StringName &type : fillers) {
+		if (pane->get_panel_count() >= 3) {
+			break;
+		}
+		bool has = false;
+		for (int i = 0; i < pane->get_panel_count(); i++) {
+			has = has || pane->get_panel_type_at(i) == type;
+		}
+		if (!has) {
+			pane->add_panel(type);
+		}
+	}
+	if (pane->get_panel_count() < 3) {
+		_check(false, "a pane with three tabs to reorder");
+		return;
+	}
+	const StringName first = pane->get_panel_type_at(0);
+	const StringName second = pane->get_panel_type_at(1);
+
+	// Let go past the middle of the second tab: the mark says after it.
+	TabBar *bar = pane->get_tab_bar();
+	const Rect2 tab = bar->get_tab_rect(1);
+	const Point2 in_bar = tab.get_center() + Vector2(tab.size.x * 0.25, 0);
+	const Point2 in_pane = pane->get_global_transform().affine_inverse().xform(bar->get_global_transform().xform(in_bar));
+	Dictionary data;
+	data["type"] = "editor_pane_panel";
+	data["pane"] = (int64_t)pane->get_instance_id();
+	data["index"] = 0;
+	pane->accept_drop(in_pane, data);
+	_check(pane->get_panel_type_at(0) == second && pane->get_panel_type_at(1) == first, "a tab let go past the middle of another lands after it, where the mark was");
+}
+
+void EditorSelfTest::_dock_menus_follow_focus() {
+	TypedArray<Node> menus = SceneTreeDock::get_singleton()->find_children("*", "PopupMenu", true, false);
+	String not_following;
+	for (int i = 0; i < menus.size(); i++) {
+		Window *menu = Object::cast_to<Window>(menus[i]);
+		if (!menu->is_transient_to_focused()) {
+			not_following += " " + String(menu->get_parent()->get_name()) + "/" + String(menu->get_name());
+		}
+	}
+	_check(menus.size() > 0 && not_following.is_empty(), "the Scene dock's menus belong to the window they are opened from" + (not_following.is_empty() ? String() : " - not:" + not_following));
+}
+
 void EditorSelfTest::_finish() {
 	remove_error_handler(&error_handler);
 	const uint32_t error_count = errors.get();
@@ -408,6 +478,10 @@ EditorSelfTest::EditorSelfTest() {
 	_add("maximize", callable_mp(this, &EditorSelfTest::_maximize));
 	_add("maximize by shortcut", callable_mp(this, &EditorSelfTest::_maximize_by_shortcut));
 	_add("restore by shortcut", callable_mp(this, &EditorSelfTest::_restore_by_shortcut));
+	_add("drop zones prepare", callable_mp(this, &EditorSelfTest::_drop_zones_prepare));
+	_add("drop zones hold steady", callable_mp(this, &EditorSelfTest::_drop_zones_hold_steady));
+	_add("tab lands where marked", callable_mp(this, &EditorSelfTest::_tab_lands_where_marked));
+	_add("dock menus follow focus", callable_mp(this, &EditorSelfTest::_dock_menus_follow_focus));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
 }
 

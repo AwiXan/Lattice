@@ -47,6 +47,7 @@
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_container.h"
+#include "scene/main/scene_tree.h"
 #include "scene/main/window.h"
 #include "servers/display/display_server.h"
 
@@ -954,8 +955,27 @@ PopupMenu *EditorDockManager::get_docks_menu() {
 	return docks_menu;
 }
 
+void EditorDockManager::_node_added(Node *p_node) {
+	// A dock can be in a window of its own now, or be serving a panel that is:
+	// whatever it pops up belongs to the window it is opened from, so that a
+	// menu opened there does not open behind it, nor bring the main window
+	// forward when it closes. Looked at as each window arrives, since a dock
+	// builds some of its menus long after it is added.
+	Window *window = Object::cast_to<Window>(p_node);
+	if (!window) {
+		return;
+	}
+	for (Node *n = p_node->get_parent(); n; n = n->get_parent()) {
+		if (Object::cast_to<EditorDock>(n)) {
+			window->set_transient_to_focused(true);
+			return;
+		}
+	}
+}
+
 EditorDockManager::EditorDockManager() {
 	singleton = this;
+	SceneTree::get_singleton()->connect("node_added", callable_mp(this, &EditorDockManager::_node_added));
 
 	closed_dock_parent = memnew(Control);
 	closed_dock_parent->hide();

@@ -54,6 +54,10 @@ void EditorButtonMirror::_pressed(ObjectID p_original, ObjectID p_copy, const Ca
 		// on screen.
 		menu_button->emit_signal(SNAME("about_to_popup"));
 		PopupMenu *popup = menu_button->get_popup();
+		// Belonging to the window it was opened from, which is where the copy
+		// is: owned by the one the original is in, it could open behind that
+		// window, and closing it would bring the other one to the front.
+		popup->set_transient_to_focused(true);
 		const Rect2 rect = copy->get_screen_rect();
 		popup->reset_size();
 		popup->set_position(rect.position + Vector2(0, rect.size.height));

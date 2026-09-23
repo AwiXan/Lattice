@@ -51,6 +51,8 @@
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/separator.h"
 #include "scene/gui/tab_bar.h"
+#include "scene/gui/texture_rect.h"
+#include "scene/resources/image_texture.h"
 
 void EditorPane::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("split_requested", PropertyInfo(Variant::BOOL, "vertical")));
@@ -739,7 +741,7 @@ bool EditorPane::is_point_on_header(const Point2 &p_point) const {
 	return header_panel && header_panel->is_visible() && header_panel->get_rect().has_point(p_point);
 }
 
-EditorPane::DropZone EditorPane::get_drop_zone_at(const Point2 &p_point) const {
+EditorPane::DropZone EditorPane::get_drop_zone_at(const Point2 &p_point, DropZone p_current) const {
 	// Over the tabs is always "join these", whatever part of the bar it is.
 	if (is_point_on_header(p_point)) {
 		return DROP_INTO;
@@ -764,19 +766,49 @@ EditorPane::DropZone EditorPane::get_drop_zone_at(const Point2 &p_point) const {
 	const real_t bottom = body.size.y - at.y;
 
 	const real_t best = MIN(MIN(left, right), MIN(top, bottom));
-	if (best == left && left < band_x) {
-		return DROP_LEFT;
+	DropZone nearest = DROP_BOTTOM;
+	real_t band = band_y;
+	if (best == left) {
+		nearest = DROP_LEFT;
+		band = band_x;
+	} else if (best == right) {
+		nearest = DROP_RIGHT;
+		band = band_x;
+	} else if (best == top) {
+		nearest = DROP_TOP;
 	}
-	if (best == right && right < band_x) {
-		return DROP_RIGHT;
+
+	// Staying put is favored by a margin, so a hand that is not perfectly still
+	// on a boundary does not make the hint jump back and forth under it.
+	const real_t margin = 16 * EDSCALE;
+	switch (p_current) {
+		case DROP_LEFT:
+		case DROP_RIGHT:
+		case DROP_TOP:
+		case DROP_BOTTOM: {
+			real_t distance = bottom;
+			real_t current_band = band_y;
+			if (p_current == DROP_LEFT) {
+				distance = left;
+				current_band = band_x;
+			} else if (p_current == DROP_RIGHT) {
+				distance = right;
+				current_band = band_x;
+			} else if (p_current == DROP_TOP) {
+				distance = top;
+			}
+			if (distance < current_band + margin && distance <= best + margin) {
+				return p_current;
+			}
+		} break;
+		case DROP_INTO: {
+			// Out of the middle only once well inside an edge's band.
+			return best < MAX(band - margin, band * 0.5) ? nearest : DROP_INTO;
+		}
+		default: {
+		} break;
 	}
-	if (best == top && top < band_y) {
-		return DROP_TOP;
-	}
-	if (best == bottom && bottom < band_y) {
-		return DROP_BOTTOM;
-	}
-	return DROP_INTO;
+	return best < band ? nearest : DROP_INTO;
 }
 
 bool EditorPane::is_panel_drag(const Variant &p_data) {
@@ -800,7 +832,7 @@ bool EditorPane::can_accept_drop(const Point2 &p_point, const Variant &p_data) c
 	return true;
 }
 
-bool EditorPane::accept_drop(const Point2 &p_point, const Variant &p_data) {
+bool EditorPane::accept_drop(const Point2 &p_point, const Variant &p_data, DropZone p_zone) {
 	const PanelDrop drop = _read_drop(p_data);
 	if (!drop.is_valid()) {
 		return false;
@@ -810,13 +842,21 @@ bool EditorPane::accept_drop(const Point2 &p_point, const Variant &p_data) {
 		// Where along the bar it was let go, so a tab can be put in order
 		// rather than only appended.
 		const Point2 in_bar = p_point - header_panel->get_position() - header->get_position() - tab_bar->get_position();
-		int at = tab_bar->get_tab_idx_at_point(in_bar);
-		if (at < 0) {
-			at = panels.size();
-		}
-		return _accept_drop(drop, DROP_INTO, at);
+		return _accept_drop(drop, DROP_INTO, _tab_insert_index_at(in_bar));
 	}
-	return _accept_drop(drop, get_drop_zone_at(p_point), -1);
+	return _accept_drop(drop, p_zone != DROP_NONE ? p_zone : get_drop_zone_at(p_point), -1);
+}
+
+int EditorPane::_tab_insert_index_at(const Point2 &p_in_bar) const {
+	// The same sum TabBar::_draw_tab_drop() does to place its mark: before the
+	// nearest tab, or after it once past its middle. Taking the tab under the
+	// pointer instead put a tab before one the mark said it would follow.
+	const int closest = tab_bar->get_closest_tab_idx_to_point(p_in_bar);
+	if (closest < 0) {
+		return panels.size();
+	}
+	const Rect2 rect = tab_bar->get_tab_rect(closest);
+	return p_in_bar.x > rect.get_center().x ? closest + 1 : closest;
 }
 
 Variant EditorPane::_tab_get_drag_data_fw(const Point2 &p_point, Control *p_from) {
@@ -830,15 +870,58 @@ Variant EditorPane::_tab_get_drag_data_fw(const Point2 &p_point, Control *p_from
 	data["pane"] = (int64_t)get_instance_id();
 	data["index"] = index;
 
-	// Something to see while it is in the air.
-	Panel *preview = memnew(Panel);
-	Label *label = memnew(Label);
-	label->set_text(_title_of(panels[index]));
-	preview->add_child(label);
-	label->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
-	set_drag_preview(preview);
-
+	set_drag_preview(_make_drag_preview(index));
 	return data;
+}
+
+Control *EditorPane::_make_drag_preview(int p_index) const {
+	// What is being carried, recognizably: its tab, and a glimpse of what it
+	// shows as it was when picked up.
+	const PanelEntry &entry = panels[p_index];
+
+	// Kept clear of the pointer, which would otherwise sit on the title.
+	Control *root = memnew(Control);
+	root->set_mouse_filter(MOUSE_FILTER_IGNORE);
+	PanelContainer *card = memnew(PanelContainer);
+	card->set_theme_type_variation("TooltipPanel");
+	card->set_position(Vector2(12, 12) * EDSCALE);
+	card->set_modulate(Color(1, 1, 1, 0.9));
+	root->add_child(card);
+
+	VBoxContainer *box = memnew(VBoxContainer);
+	card->add_child(box);
+	HBoxContainer *title_row = memnew(HBoxContainer);
+	box->add_child(title_row);
+	const Ref<Texture2D> icon = _icon_of(entry.type);
+	if (icon.is_valid()) {
+		TextureRect *icon_rect = memnew(TextureRect);
+		icon_rect->set_texture(icon);
+		icon_rect->set_stretch_mode(TextureRect::STRETCH_KEEP_CENTERED);
+		title_row->add_child(icon_rect);
+	}
+	Label *label = memnew(Label);
+	label->set_text(_title_of(entry));
+	title_row->add_child(label);
+
+	// Only a panel on screen can be looked at, and only a renderer that draws
+	// has anything to show.
+	Viewport *viewport = get_viewport();
+	if (entry.control && entry.control->is_visible_in_tree() && viewport && viewport->get_texture().is_valid()) {
+		const Ref<Image> frame = viewport->get_texture()->get_image();
+		if (frame.is_valid() && !frame->is_empty()) {
+			const Rect2i region = Rect2i(viewport->get_final_transform().xform(entry.control->get_global_rect())).intersection(Rect2i(Point2i(), frame->get_size()));
+			if (region.size.x > 8 && region.size.y > 8) {
+				Ref<Image> glimpse = frame->get_region(region);
+				const real_t width = 220 * EDSCALE;
+				const real_t scale = MIN((real_t)1.0, width / region.size.x);
+				glimpse->resize(MAX(1, int(region.size.x * scale)), MAX(1, int(region.size.y * scale)), Image::INTERPOLATE_BILINEAR);
+				TextureRect *picture = memnew(TextureRect);
+				picture->set_texture(ImageTexture::create_from_image(glimpse));
+				box->add_child(picture);
+			}
+		}
+	}
+	return root;
 }
 
 bool EditorPane::open_resource(const String &p_path) {
@@ -907,11 +990,7 @@ void EditorPane::_tab_drop_data_fw(const Point2 &p_point, const Variant &p_data,
 	}
 	// Where along the bar it was let go, so a tab can be put in order rather
 	// than only appended.
-	int at = tab_bar->get_tab_idx_at_point(p_point);
-	if (at < 0) {
-		at = panels.size();
-	}
-	_accept_drop(drop, DROP_INTO, at);
+	_accept_drop(drop, DROP_INTO, _tab_insert_index_at(p_point));
 }
 
 bool EditorPane::_accept_drop(const PanelDrop &p_drop, DropZone p_zone, int p_tab_index) {
@@ -924,7 +1003,11 @@ bool EditorPane::_accept_drop(const PanelDrop &p_drop, DropZone p_zone, int p_ta
 		if (!p_drop.source) {
 			return add_panel(p_drop.type, p_drop.subject) >= 0;
 		}
-		const bool moved = p_drop.source->transfer_panel_to(this, p_drop.source_index, p_tab_index);
+		int at = p_tab_index;
+		if (p_drop.source == this && at > p_drop.source_index) {
+			at--;
+		}
+		const bool moved = p_drop.source->transfer_panel_to(this, p_drop.source_index, at);
 		if (tree) {
 			tree->drop_empty_panes();
 		}
@@ -1021,8 +1104,51 @@ void EditorPaneDropHint::_forget() {
 		target = nullptr;
 		zone = EditorPane::DROP_NONE;
 		on_header = false;
-		queue_redraw();
+		_aim();
 	}
+}
+
+void EditorPaneDropHint::_aim() {
+	if (!target || zone == EditorPane::DROP_NONE) {
+		// Fading out where it was, rather than vanishing.
+		wanted_alpha = 0.0;
+		set_process_internal(true);
+		return;
+	}
+
+	const Transform2D to_here = get_global_transform().affine_inverse() * target->get_global_transform();
+	wanted_outline = to_here.xform(Rect2(Point2(), target->get_size()));
+	Rect2 landing_rect = to_here.xform(target->get_body_rect());
+	switch (zone) {
+		case EditorPane::DROP_LEFT:
+			landing_rect.size.x *= 0.5;
+			break;
+		case EditorPane::DROP_RIGHT:
+			landing_rect.position.x += landing_rect.size.x * 0.5;
+			landing_rect.size.x *= 0.5;
+			break;
+		case EditorPane::DROP_TOP:
+			landing_rect.size.y *= 0.5;
+			break;
+		case EditorPane::DROP_BOTTOM:
+			landing_rect.position.y += landing_rect.size.y * 0.5;
+			landing_rect.size.y *= 0.5;
+			break;
+		default:
+			// Joining this pane is about the whole of it, tabs included.
+			landing_rect = wanted_outline;
+			break;
+	}
+	wanted_landing = landing_rect;
+	wanted_alpha = 1.0;
+	if (shown_alpha < 0.05) {
+		// Appearing: in place, fading in, rather than flying in from wherever
+		// it was last.
+		shown_landing = wanted_landing;
+		shown_outline = wanted_outline;
+	}
+	set_process_internal(true);
+	queue_redraw();
 }
 
 bool EditorPaneDropHint::can_drop_data(const Point2 &p_point, const Variant &p_data) const {
@@ -1038,14 +1164,16 @@ bool EditorPaneDropHint::can_drop_data(const Point2 &p_point, const Variant &p_d
 		return false;
 	}
 
-	const EditorPane::DropZone now = pane->get_drop_zone_at(in_pane);
+	const EditorPane::DropZone now = pane->get_drop_zone_at(in_pane, pane == target ? zone : EditorPane::DROP_NONE);
 	const bool header_now = pane->is_point_on_header(in_pane);
-	// Redrawn on every move while over the tabs, because the mark follows the
-	// pointer between them rather than sitting in one place.
-	if (pane != target || now != zone || header_now != on_header || header_now) {
+	if (pane != target || now != zone || header_now != on_header) {
 		target = pane;
 		zone = now;
 		on_header = header_now;
+		const_cast<EditorPaneDropHint *>(this)->_aim();
+	} else if (header_now) {
+		// The mark between the tabs follows the pointer rather than sitting in
+		// one place.
 		const_cast<EditorPaneDropHint *>(this)->queue_redraw();
 	}
 	return true;
@@ -1057,8 +1185,10 @@ void EditorPaneDropHint::drop_data(const Point2 &p_point, const Variant &p_data)
 		return;
 	}
 	const Point2 in_pane = pane->get_global_transform().affine_inverse().xform(get_global_transform().xform(p_point));
+	// Where it was shown to be going, not where a last twitch might put it.
+	const EditorPane::DropZone shown = pane == target ? zone : EditorPane::DROP_NONE;
 	_forget();
-	pane->accept_drop(in_pane, p_data);
+	pane->accept_drop(in_pane, p_data, shown);
 }
 
 void EditorPaneDropHint::_notification(int p_what) {
@@ -1085,51 +1215,47 @@ void EditorPaneDropHint::_notification(int p_what) {
 
 		case NOTIFICATION_DRAG_END: {
 			_forget();
+			shown_alpha = 0.0;
+			set_process_internal(false);
 			hide();
 		} break;
 
+		case NOTIFICATION_INTERNAL_PROCESS: {
+			// The same share of what is left every second, however many frames
+			// that is, so it feels the same at any framerate. Quick: this is to
+			// be followed, not watched.
+			const real_t t = CLAMP(1.0 - Math::exp(-22.0 * get_process_delta_time()), 0.0, 1.0);
+			shown_landing = Rect2(shown_landing.position.lerp(wanted_landing.position, t), shown_landing.size.lerp(wanted_landing.size, t));
+			shown_outline = Rect2(shown_outline.position.lerp(wanted_outline.position, t), shown_outline.size.lerp(wanted_outline.size, t));
+			shown_alpha = Math::lerp(shown_alpha, wanted_alpha, (real_t)CLAMP(t * (real_t)1.5, (real_t)0.0, (real_t)1.0));
+			const bool arrived = shown_landing.position.distance_to(wanted_landing.position) < 0.5 && shown_landing.size.distance_to(wanted_landing.size) < 0.5 && shown_outline.position.distance_to(wanted_outline.position) < 0.5 && Math::abs(shown_alpha - wanted_alpha) < 0.01;
+			if (arrived) {
+				shown_landing = wanted_landing;
+				shown_outline = wanted_outline;
+				shown_alpha = wanted_alpha;
+				set_process_internal(false);
+			}
+			queue_redraw();
+		} break;
+
 		case NOTIFICATION_DRAW: {
-			if (!target || zone == EditorPane::DROP_NONE) {
+			if (shown_alpha <= 0.0) {
 				break;
 			}
 
-			const Transform2D to_here = get_global_transform().affine_inverse() * target->get_global_transform();
-			const Rect2 pane_rect = to_here.xform(Rect2(Point2(), target->get_size()));
-
 			// The pane being aimed at, faintly, so it is clear which one is
 			// being talked about even before the landing place is read.
-			outline->set_border_color(accent * Color(1, 1, 1, 0.35));
-			draw_style_box(outline, pane_rect.grow(-1 * EDSCALE));
+			outline->set_border_color(accent * Color(1, 1, 1, 0.35 * shown_alpha));
+			draw_style_box(outline, shown_outline.grow(-1 * EDSCALE));
 
 			// Where the panel would end up.
-			Rect2 landing_rect = to_here.xform(target->get_body_rect());
-			switch (zone) {
-				case EditorPane::DROP_LEFT:
-					landing_rect.size.x *= 0.5;
-					break;
-				case EditorPane::DROP_RIGHT:
-					landing_rect.position.x += landing_rect.size.x * 0.5;
-					landing_rect.size.x *= 0.5;
-					break;
-				case EditorPane::DROP_TOP:
-					landing_rect.size.y *= 0.5;
-					break;
-				case EditorPane::DROP_BOTTOM:
-					landing_rect.position.y += landing_rect.size.y * 0.5;
-					landing_rect.size.y *= 0.5;
-					break;
-				default:
-					// Joining this pane is about the whole of it, tabs included.
-					landing_rect = pane_rect;
-					break;
-			}
-
-			landing->set_bg_color(accent * Color(1, 1, 1, 0.18));
-			landing->set_border_color(accent);
-			draw_style_box(landing, landing_rect.grow(-2 * EDSCALE));
+			landing->set_bg_color(accent * Color(1, 1, 1, 0.18 * shown_alpha));
+			landing->set_border_color(accent * Color(1, 1, 1, shown_alpha));
+			draw_style_box(landing, shown_landing.grow(-2 * EDSCALE));
 
 			// Over the tabs, the bar says where between them it would go.
-			if (on_header) {
+			if (on_header && target) {
+				const Transform2D to_here = get_global_transform().affine_inverse() * target->get_global_transform();
 				TabBar *bar = target->get_tab_bar();
 				draw_set_transform_matrix(to_here * Transform2D(0, target->get_tab_bar()->get_global_position() - target->get_global_position()));
 				bar->_draw_tab_drop(get_canvas_item());
