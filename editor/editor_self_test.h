@@ -103,6 +103,8 @@ class EditorSelfTest : public Node {
 	void _whole_side();
 	void _whole_side_check();
 	void _drop_from_another_window();
+	void _hidden_inspector_prepare();
+	void _hidden_inspector_idle();
 	void _recovery_offered();
 	void _recovery_restored();
 	void _recovery_copies();

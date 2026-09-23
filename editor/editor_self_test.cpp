@@ -37,6 +37,7 @@
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
+#include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_crash_report.h"
 #include "editor/editor_data.h"
@@ -502,6 +503,28 @@ void EditorSelfTest::_drop_from_another_window() {
 	_check(!tree->get_drop_hint()->is_visible(), "and the hint that showed it is put away");
 }
 
+void EditorSelfTest::_hidden_inspector_prepare() {
+	EditorPane *pane = _tree()->get_first_pane();
+	pane->show_panel_of_type("inspector");
+	Node *root = EditorNode::get_singleton()->get_edited_scene();
+	if (root) {
+		EditorNode::get_singleton()->push_item(root);
+	}
+}
+
+void EditorSelfTest::_hidden_inspector_idle() {
+	// The dock's inspector is still the one the editor edits things in, but
+	// nobody sees it: it should not be building property editors for anyone.
+	const int hidden = InspectorDock::get_inspector_singleton()->find_children("*", "EditorProperty", true, false).size();
+	int shown = 0;
+	EditorPane *pane = _pane_showing("inspector");
+	if (pane) {
+		shown = pane->get_panel()->find_children("*", "EditorProperty", true, false).size();
+		pane->close_panel(pane->get_current_panel());
+	}
+	_check(shown > 0 && hidden == 0, vformat("the hidden Inspector dock builds nothing, the panel does (%d, %d)", hidden, shown));
+}
+
 void EditorSelfTest::_recovery_offered() {
 	// misc/scripts/lattice_selftest.py leaves a copy of scene_b behind, with a
 	// node the file on disk does not have.
@@ -634,6 +657,8 @@ EditorSelfTest::EditorSelfTest() {
 	_add("whole side", callable_mp(this, &EditorSelfTest::_whole_side));
 	_add("whole side check", callable_mp(this, &EditorSelfTest::_whole_side_check));
 	_add("drop from another window", callable_mp(this, &EditorSelfTest::_drop_from_another_window));
+	_add("hidden inspector prepare", callable_mp(this, &EditorSelfTest::_hidden_inspector_prepare));
+	_add("hidden inspector idle", callable_mp(this, &EditorSelfTest::_hidden_inspector_idle));
 	_add("recovery offered", callable_mp(this, &EditorSelfTest::_recovery_offered));
 	_add("recovery restored", callable_mp(this, &EditorSelfTest::_recovery_restored));
 	_add("recovery copies", callable_mp(this, &EditorSelfTest::_recovery_copies));
