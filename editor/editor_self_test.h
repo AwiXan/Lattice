@@ -120,6 +120,10 @@ class EditorSelfTest : public Node {
 	void _keys_prepare();
 	void _keys_move();
 	void _keys_tabs();
+	void _worlds_prepare();
+	void _worlds_check();
+	void _worlds_after_camera_moved();
+	void _worlds_one_view_closed();
 	void _finish();
 
 	// Kept between steps.

@@ -49,6 +49,7 @@
 #include "editor/file_system/editor_file_system.h"
 #include "editor/gui/editor_pane.h"
 #include "editor/gui/editor_pane_tree.h"
+#include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/scene/editor_scene_panel.h"
 #include "editor/scene/scene_tree_editor.h"
 #include "editor/settings/editor_command_palette.h"
@@ -727,6 +728,97 @@ void EditorSelfTest::_keys_tabs() {
 	_check(right->get_panel_count() == count - 1, "and Ctrl+Shift+Alt+W closes the tab it is on");
 }
 
+static int _document_of(const String &p_path) {
+	EditorData &editor_data = EditorNode::get_editor_data();
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		if (editor_data.get_scene_path(i) == p_path) {
+			return editor_data.get_scene_history_id(i);
+		}
+	}
+	return -1;
+}
+
+static Node3DEditor *_view_of(int p_document, int p_nth = 0) {
+	for (Node3DEditor *editor : Node3DEditor::get_instances()) {
+		if (editor->get_bound_document() == p_document && p_nth-- == 0) {
+			return editor;
+		}
+	}
+	return nullptr;
+}
+
+void EditorSelfTest::_worlds_prepare() {
+	if (_document_of("res://scene_b.tscn") < 0) {
+		EditorNode::get_singleton()->load_scene("res://scene_b.tscn");
+	}
+	const int a = _document_of("res://scene_a.tscn");
+	const int b = _document_of("res://scene_b.tscn");
+	EditorPaneTree *tree = _tree();
+	while (tree->get_panes().size() > 1) {
+		tree->close_pane(tree->get_panes()[tree->get_panes().size() - 1]);
+	}
+	// Two views of one scene, and one of another: three views, two worlds.
+	EditorPane *first = tree->get_first_pane();
+	first->set_panel_type("view_3d", a);
+	EditorPane *second = tree->split_pane(first, false, false, false);
+	second->add_panel("view_3d", b);
+	EditorPane *third = tree->split_pane(second, true, false, false);
+	third->add_panel("view_3d", a);
+}
+
+void EditorSelfTest::_worlds_check() {
+	const int a = _document_of("res://scene_a.tscn");
+	const int b = _document_of("res://scene_b.tscn");
+	Node3DEditor *view_a = _view_of(a);
+	Node3DEditor *view_b = _view_of(b);
+	if (!view_a || !view_b || !_view_of(a, 1)) {
+		_check(false, "three 3D views, two of them on one scene");
+		return;
+	}
+	const RID world_a = view_a->get_editing_world()->get_scenario();
+	const RID world_b = view_b->get_editing_world()->get_scenario();
+	_check(world_a != world_b && Node3DEditor::world_has_grid_and_origin(world_a) && Node3DEditor::world_has_grid_and_origin(world_b), "each scene's world has its own grid and origin lines");
+	_check(Node3DEditor::count_preview_suns_in(world_a) == 1 && Node3DEditor::count_preview_suns_in(world_b) == 1, "and one preview sun, however many views show it");
+
+	// The camera of the other scene's view travelling far enough to rebuild
+	// its grid used to take the grid away from this one.
+	Camera3D *camera = view_b->get_editor_viewport(0)->get_camera_3d();
+	camera->set_position(camera->get_position() + Vector3(500, 0, 0));
+	view_b->update_grid();
+}
+
+void EditorSelfTest::_worlds_after_camera_moved() {
+	const int a = _document_of("res://scene_a.tscn");
+	const int b = _document_of("res://scene_b.tscn");
+	Node3DEditor *view_a = _view_of(a);
+	Node3DEditor *view_b = _view_of(b);
+	if (!view_a || !view_b) {
+		return;
+	}
+	_check(Node3DEditor::world_has_grid_and_origin(view_a->get_editing_world()->get_scenario()) && Node3DEditor::world_has_grid_and_origin(view_b->get_editing_world()->get_scenario()), "one scene's camera travelling leaves the other scene its grid");
+	// Closing one of the two views of a scene leaves the other lighting it.
+	EditorPane *pane = nullptr;
+	for (EditorPane *candidate : _tree()->get_panes()) {
+		if (!pane && candidate->get_panel_type() == StringName("view_3d") && candidate->get_panel_subject() == Variant(a)) {
+			pane = candidate;
+		}
+	}
+	if (pane) {
+		_tree()->close_pane(pane);
+	}
+}
+
+void EditorSelfTest::_worlds_one_view_closed() {
+	const int a = _document_of("res://scene_a.tscn");
+	Node3DEditor *view_a = _view_of(a);
+	if (!view_a) {
+		_check(false, "a view of the scene left");
+		return;
+	}
+	const RID world_a = view_a->get_editing_world()->get_scenario();
+	_check(Node3DEditor::world_has_grid_and_origin(world_a) && Node3DEditor::count_preview_suns_in(world_a) == 1, "closing one of two views of a scene leaves the other with its grid and preview sun");
+}
+
 void EditorSelfTest::_finish() {
 	remove_error_handler(&error_handler);
 	const uint32_t error_count = errors.get();
@@ -819,6 +911,10 @@ EditorSelfTest::EditorSelfTest() {
 	_add("keys prepare", callable_mp(this, &EditorSelfTest::_keys_prepare));
 	_add("keys move", callable_mp(this, &EditorSelfTest::_keys_move));
 	_add("keys tabs", callable_mp(this, &EditorSelfTest::_keys_tabs));
+	_add("worlds prepare", callable_mp(this, &EditorSelfTest::_worlds_prepare));
+	_add("worlds check", callable_mp(this, &EditorSelfTest::_worlds_check));
+	_add("worlds after camera moved", callable_mp(this, &EditorSelfTest::_worlds_after_camera_moved));
+	_add("worlds one view closed", callable_mp(this, &EditorSelfTest::_worlds_one_view_closed));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
 }
 

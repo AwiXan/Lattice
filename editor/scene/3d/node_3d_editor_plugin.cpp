@@ -7728,22 +7728,8 @@ void Node3DEditor::update_editing_world() {
 		return;
 	}
 
-	// The grid and origin lines are shared, so only their owner moves them. The
-	// rest of this belongs to the view itself and has to run in every one of
-	// them, or a view that does not own the shared visuals never lights the
-	// document it was just pointed at.
-	if (scene_visuals_owner == this) {
-		const RID scenario = world->get_scenario();
-		if (origin_instance.is_valid()) {
-			RS::get_singleton()->instance_set_scenario(origin_instance, scenario);
-		}
-		// The grid is rebuilt rather than moved: update_grid() only rebuilds when
-		// the camera has travelled far or changed projection, so switching to a
-		// document whose camera happens to sit nearby would leave the grid in the
-		// world of the scene just left.
-		grid_init_draw = false;
-		update_grid();
-	}
+	// The grid and origin lines of the world this view now shows.
+	_acquire_world_visuals(world->get_scenario());
 
 	// Documents stay live in roots of their own, so switching between them
 	// fires no node-removed notifications and these counts would keep counting
@@ -7753,6 +7739,32 @@ void Node3DEditor::update_editing_world() {
 	Node *edited_scene = get_edited_scene();
 	if (edited_scene) {
 		_count_preview_blockers(edited_scene, world_env_count, directional_light_count);
+	}
+
+	// A different world: the old one is lit by one of its other views, if it
+	// has any, and this view shows what the new one is already showing - or,
+	// alone in it, what the scene last had.
+	if (preview_scenario != world->get_scenario()) {
+		_release_preview_owner();
+		preview_scenario = world->get_scenario();
+		Node3DEditor *companion = nullptr;
+		for (Node3DEditor *editor : instances) {
+			if (editor != this && editor->preview_scenario == preview_scenario) {
+				companion = editor;
+				break;
+			}
+		}
+		if (companion) {
+			_set_preview_state(companion->_get_preview_state());
+		} else {
+			EditorData &editor_data = EditorNode::get_editor_data();
+			const int index = bound_document_id < 0 ? editor_data.get_edited_scene() : editor_data.get_scene_index_by_history_id(bound_document_id);
+			const Dictionary states = index >= 0 ? editor_data.get_scene_editor_states(index) : Dictionary();
+			const Dictionary state = states.get("3D", Dictionary());
+			if (state.has("preview_sun_env")) {
+				_set_preview_state(state["preview_sun_env"]);
+			}
+		}
 	}
 
 	// The preview nodes are sitting in the previous document's root; take them
@@ -7985,30 +7997,110 @@ Dictionary Node3DEditor::get_state() const {
 	}
 
 	d["gizmos_status"] = gizmos_status;
-	{
-		Dictionary pd;
-
-		pd["sun_rotation"] = sun_rotation;
-
-		pd["environ_sky_color"] = environ_sky_color->get_pick_color();
-		pd["environ_ground_color"] = environ_ground_color->get_pick_color();
-		pd["environ_energy"] = environ_energy->get_value();
-		pd["environ_glow_enabled"] = environ_glow_button->is_pressed();
-		pd["environ_tonemap_enabled"] = environ_tonemap_button->is_pressed();
-		pd["environ_ao_enabled"] = environ_ao_button->is_pressed();
-		pd["environ_gi_enabled"] = environ_gi_button->is_pressed();
-		pd["sun_shadow_max_distance"] = sun_shadow_max_distance->get_value();
-
-		pd["sun_color"] = sun_color->get_pick_color();
-		pd["sun_energy"] = sun_energy->get_value();
-
-		pd["sun_enabled"] = sun_button->is_pressed();
-		pd["environ_enabled"] = environ_button->is_pressed();
-
-		d["preview_sun_env"] = pd;
-	}
+	d["preview_sun_env"] = _get_preview_state();
 
 	return d;
+}
+
+Dictionary Node3DEditor::_get_preview_state() const {
+	Dictionary pd;
+
+	pd["sun_rotation"] = sun_rotation;
+
+	pd["environ_sky_color"] = environ_sky_color->get_pick_color();
+	pd["environ_ground_color"] = environ_ground_color->get_pick_color();
+	pd["environ_energy"] = environ_energy->get_value();
+	pd["environ_glow_enabled"] = environ_glow_button->is_pressed();
+	pd["environ_tonemap_enabled"] = environ_tonemap_button->is_pressed();
+	pd["environ_ao_enabled"] = environ_ao_button->is_pressed();
+	pd["environ_gi_enabled"] = environ_gi_button->is_pressed();
+	pd["sun_shadow_max_distance"] = sun_shadow_max_distance->get_value();
+
+	pd["sun_color"] = sun_color->get_pick_color();
+	pd["sun_energy"] = sun_energy->get_value();
+
+	pd["sun_enabled"] = sun_button->is_pressed();
+	pd["environ_enabled"] = environ_button->is_pressed();
+	return pd;
+}
+
+void Node3DEditor::_set_preview_state(const Dictionary &p_state) {
+	sun_environ_updating = true;
+	sun_rotation = p_state.get("sun_rotation", sun_rotation);
+
+	environ_sky_color->set_pick_color(p_state.get("environ_sky_color", environ_sky_color->get_pick_color()));
+	environ_ground_color->set_pick_color(p_state.get("environ_ground_color", environ_ground_color->get_pick_color()));
+	environ_energy->set_value_no_signal(p_state.get("environ_energy", environ_energy->get_value()));
+	environ_glow_button->set_pressed_no_signal(p_state.get("environ_glow_enabled", environ_glow_button->is_pressed()));
+	environ_tonemap_button->set_pressed_no_signal(p_state.get("environ_tonemap_enabled", environ_tonemap_button->is_pressed()));
+	environ_ao_button->set_pressed_no_signal(p_state.get("environ_ao_enabled", environ_ao_button->is_pressed()));
+	environ_gi_button->set_pressed_no_signal(p_state.get("environ_gi_enabled", environ_gi_button->is_pressed()));
+	sun_shadow_max_distance->set_value_no_signal(p_state.get("sun_shadow_max_distance", sun_shadow_max_distance->get_value()));
+
+	sun_color->set_pick_color(p_state.get("sun_color", sun_color->get_pick_color()));
+	sun_energy->set_value_no_signal(p_state.get("sun_energy", sun_energy->get_value()));
+
+	sun_button->set_pressed_no_signal(p_state.get("sun_enabled", sun_button->is_pressed()));
+	environ_button->set_pressed_no_signal(p_state.get("environ_enabled", environ_button->is_pressed()));
+	// The angles are shown as well as used.
+	sun_angle_altitude->set_value_no_signal(-Math::rad_to_deg(sun_rotation.x));
+	sun_angle_azimuth->set_value_no_signal(180.0 - Math::rad_to_deg(sun_rotation.y));
+
+	sun_environ_updating = false;
+
+	_preview_settings_changed();
+	_update_preview_environment();
+}
+
+void Node3DEditor::_share_preview_settings() {
+	if (sharing_preview_settings || !preview_scenario.is_valid()) {
+		return;
+	}
+	// The views of one world show one preview - only one of them puts it in -
+	// so they agree on what it is: whichever of them it was changed in.
+	sharing_preview_settings = true;
+	const Dictionary state = _get_preview_state();
+	for (Node3DEditor *editor : instances) {
+		if (editor != this && editor->preview_scenario == preview_scenario) {
+			editor->_set_preview_state(state);
+		}
+	}
+	sharing_preview_settings = false;
+}
+
+bool Node3DEditor::_claim_preview_owner() {
+	const Ref<World3D> world = get_editing_world();
+	if (world.is_null()) {
+		return false;
+	}
+	const RID scenario = world->get_scenario();
+	preview_scenario = scenario;
+	const ObjectID *owner_id = preview_owners.getptr(scenario);
+	Node3DEditor *owner = owner_id ? ObjectDB::get_instance<Node3DEditor>(*owner_id) : nullptr;
+	// Still there, still looking at this world: it is the one lighting it.
+	if (owner && owner != this && owner->preview_scenario == scenario) {
+		return false;
+	}
+	preview_owners[scenario] = get_instance_id();
+	return true;
+}
+
+void Node3DEditor::_release_preview_owner() {
+	if (!preview_scenario.is_valid()) {
+		return;
+	}
+	const RID scenario = preview_scenario;
+	const ObjectID *owner_id = preview_owners.getptr(scenario);
+	if (!owner_id || *owner_id != get_instance_id()) {
+		return;
+	}
+	preview_owners.erase(scenario);
+	// Another view of that world lights it now.
+	for (Node3DEditor *editor : instances) {
+		if (editor != this && editor->preview_scenario == scenario) {
+			callable_mp(editor, &Node3DEditor::_update_preview_environment).call_deferred();
+		}
+	}
 }
 
 void Node3DEditor::set_state(const Dictionary &p_state) {
@@ -8120,7 +8212,8 @@ void Node3DEditor::set_state(const Dictionary &p_state) {
 
 		if (use != view_layout_menu->get_popup()->is_item_checked(view_layout_menu->get_popup()->get_item_index(MENU_VIEW_ORIGIN))) {
 			view_layout_menu->get_popup()->set_item_checked(view_layout_menu->get_popup()->get_item_index(MENU_VIEW_ORIGIN), use);
-			RenderingServer::get_singleton()->instance_set_visible(origin_instance, use);
+			origin_enabled = use;
+			_update_origin_visibility();
 		}
 	}
 
@@ -8145,29 +8238,8 @@ void Node3DEditor::set_state(const Dictionary &p_state) {
 	}
 
 	if (d.has("preview_sun_env")) {
-		sun_environ_updating = true;
-		Dictionary pd = d["preview_sun_env"];
-		sun_rotation = pd["sun_rotation"];
-
-		environ_sky_color->set_pick_color(pd["environ_sky_color"]);
-		environ_ground_color->set_pick_color(pd["environ_ground_color"]);
-		environ_energy->set_value_no_signal(pd["environ_energy"]);
-		environ_glow_button->set_pressed_no_signal(pd["environ_glow_enabled"]);
-		environ_tonemap_button->set_pressed_no_signal(pd["environ_tonemap_enabled"]);
-		environ_ao_button->set_pressed_no_signal(pd["environ_ao_enabled"]);
-		environ_gi_button->set_pressed_no_signal(pd["environ_gi_enabled"]);
-		sun_shadow_max_distance->set_value_no_signal(pd["sun_shadow_max_distance"]);
-
-		sun_color->set_pick_color(pd["sun_color"]);
-		sun_energy->set_value_no_signal(pd["sun_energy"]);
-
-		sun_button->set_pressed(pd["sun_enabled"]);
-		environ_button->set_pressed(pd["environ_enabled"]);
-
-		sun_environ_updating = false;
-
-		_preview_settings_changed();
-		_update_preview_environment();
+		_set_preview_state(d["preview_sun_env"]);
+		_share_preview_settings();
 	} else {
 		_load_default_preview_settings();
 		sun_button->set_pressed(true);
@@ -8554,10 +8626,9 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 			bool is_checked = view_layout_menu->get_popup()->is_item_checked(view_layout_menu->get_popup()->get_item_index(p_option));
 
 			origin_enabled = !is_checked;
-			RenderingServer::get_singleton()->instance_set_visible(origin_instance, origin_enabled);
+			_update_origin_visibility();
 			// Update the grid since its appearance depends on whether the origin is enabled
-			_finish_grid();
-			_init_grid();
+			_rebuild_all_grids();
 
 			view_layout_menu->get_popup()->set_item_checked(view_layout_menu->get_popup()->get_item_index(p_option), origin_enabled);
 		} break;
@@ -8571,8 +8642,7 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 					grid_visible[i] = grid_enabled;
 				}
 			}
-			_finish_grid();
-			_init_grid();
+			_rebuild_all_grids();
 
 			view_layout_menu->get_popup()->set_item_checked(view_layout_menu->get_popup()->get_item_index(p_option), grid_enabled);
 
@@ -8731,7 +8801,7 @@ void Node3DEditor::_init_indicators() {
 	// The manipulator meshes further down are this view's own and are always
 	// built - a view without them crashes the moment one of its viewports tries
 	// to instance them.
-	if (scene_visuals_owner == this && !origin_instance.is_valid()) {
+	if (scene_visuals_owner == this && !origin_multimesh.is_valid()) {
 		origin_enabled = true;
 		grid_enabled = true;
 
@@ -8853,12 +8923,8 @@ void fragment() {
 			}
 		}
 
-		origin_instance = RenderingServer::get_singleton()->instance_create2(origin_multimesh, get_editing_world()->get_scenario());
-		RS::get_singleton()->instance_set_layer_mask(origin_instance, 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
-		RS::get_singleton()->instance_geometry_set_flag(origin_instance, RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-		RS::get_singleton()->instance_geometry_set_flag(origin_instance, RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
-
-		RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(origin_instance, RSE::SHADOW_CASTING_SETTING_OFF);
+		// Instanced into each world by the views looking at it: see
+		// _acquire_world_visuals().
 
 		Ref<Shader> grid_shader = memnew(Shader);
 		grid_shader->set_code(R"(
@@ -8906,8 +8972,6 @@ void fragment() {
 		grid_visible[0] = grid_enable[0];
 		grid_visible[1] = grid_enable[1];
 		grid_visible[2] = grid_enable[2];
-
-		_init_grid();
 	}
 
 	{
@@ -9363,6 +9427,13 @@ void fragment() {
 	}
 
 	_generate_selection_boxes();
+
+	// Now that the shared meshes exist, this view's world gets its grid and
+	// origin lines, or shares them with the views already looking at it.
+	const Ref<World3D> world = get_editing_world();
+	if (world.is_valid()) {
+		_acquire_world_visuals(world->get_scenario());
+	}
 }
 
 void Node3DEditor::_update_gizmos_menu() {
@@ -9420,7 +9491,7 @@ void Node3DEditor::_update_gizmos_menu_theme() {
 	}
 }
 
-void Node3DEditor::_init_grid() {
+void Node3DEditor::_build_world_grid(WorldVisuals &p_visuals, const RID &p_scenario) {
 	if (!grid_enabled) {
 		return;
 	}
@@ -9590,59 +9661,175 @@ void Node3DEditor::_init_grid() {
 		}
 
 		// Create a mesh from the pushed vector points and colors.
-		grid[c] = RenderingServer::get_singleton()->mesh_create();
+		p_visuals.grid_mesh[c] = RenderingServer::get_singleton()->mesh_create();
 		Array d;
 		d.resize(RSE::ARRAY_MAX);
 		d[RSE::ARRAY_VERTEX] = (Vector<Vector3>)grid_points[c];
 		d[RSE::ARRAY_COLOR] = (Vector<Color>)grid_colors[c];
 		d[RSE::ARRAY_NORMAL] = (Vector<Vector3>)grid_normals[c];
-		RenderingServer::get_singleton()->mesh_add_surface_from_arrays(grid[c], RSE::PRIMITIVE_LINES, d);
-		RenderingServer::get_singleton()->mesh_surface_set_material(grid[c], 0, grid_mat[c]->get_rid());
-		grid_instance[c] = RenderingServer::get_singleton()->instance_create2(grid[c], get_editing_world()->get_scenario());
+		RenderingServer::get_singleton()->mesh_add_surface_from_arrays(p_visuals.grid_mesh[c], RSE::PRIMITIVE_LINES, d);
+		RenderingServer::get_singleton()->mesh_surface_set_material(p_visuals.grid_mesh[c], 0, grid_mat[c]->get_rid());
+		p_visuals.grid_instance[c] = RenderingServer::get_singleton()->instance_create2(p_visuals.grid_mesh[c], p_scenario);
 
 		// Yes, the end of this line is supposed to be a.
-		RenderingServer::get_singleton()->instance_set_visible(grid_instance[c], grid_visible[a]);
-		RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(grid_instance[c], RSE::SHADOW_CASTING_SETTING_OFF);
-		RS::get_singleton()->instance_set_layer_mask(grid_instance[c], 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
-		RS::get_singleton()->instance_geometry_set_flag(grid_instance[c], RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-		RS::get_singleton()->instance_geometry_set_flag(grid_instance[c], RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+		RenderingServer::get_singleton()->instance_set_visible(p_visuals.grid_instance[c], grid_visible[a]);
+		RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(p_visuals.grid_instance[c], RSE::SHADOW_CASTING_SETTING_OFF);
+		RS::get_singleton()->instance_set_layer_mask(p_visuals.grid_instance[c], 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
+		RS::get_singleton()->instance_geometry_set_flag(p_visuals.grid_instance[c], RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
+		RS::get_singleton()->instance_geometry_set_flag(p_visuals.grid_instance[c], RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
 	}
+
+	p_visuals.grid_built = true;
+	p_visuals.grid_center = camera_position;
+	p_visuals.grid_projection = camera->get_projection();
 }
 
 void Node3DEditor::_finish_indicators() {
-	// Cleared, not just freed: whether these exist is what says the shared
-	// visuals have been built, and a freed RID still reads as valid.
-	RenderingServer::get_singleton()->free_rid(origin_instance);
+	// The last view is going: every world's visuals go with it, and the shared
+	// meshes after them. Cleared, not just freed: whether these exist is what
+	// says the shared visuals have been built.
+	for (KeyValue<RID, WorldVisuals> &E : world_visuals) {
+		_free_world_grid(E.value);
+		if (E.value.origin_instance.is_valid()) {
+			RenderingServer::get_singleton()->free_rid(E.value.origin_instance);
+		}
+	}
+	world_visuals.clear();
 	RenderingServer::get_singleton()->free_rid(origin_multimesh);
 	RenderingServer::get_singleton()->free_rid(origin_mesh);
-	origin_instance = RID();
 	origin_multimesh = RID();
 	origin_mesh = RID();
-
-	_finish_grid();
 }
 
-void Node3DEditor::_finish_grid() {
-	// Whatever tore the grid down, it has to be buildable again: update_grid()
-	// otherwise waits for the camera to travel before noticing it is gone.
-	grid_init_draw = false;
+void Node3DEditor::_free_world_grid(WorldVisuals &p_visuals) {
 	for (int i = 0; i < 3; i++) {
-		// Cleared, not just freed: the grid belongs to a world now, and code that
-		// moves it between documents has to be able to tell a live RID from one
-		// that was released.
-		if (grid_instance[i].is_valid()) {
-			RenderingServer::get_singleton()->free_rid(grid_instance[i]);
-			grid_instance[i] = RID();
+		if (p_visuals.grid_instance[i].is_valid()) {
+			RenderingServer::get_singleton()->free_rid(p_visuals.grid_instance[i]);
+			p_visuals.grid_instance[i] = RID();
 		}
-		if (grid[i].is_valid()) {
-			RenderingServer::get_singleton()->free_rid(grid[i]);
-			grid[i] = RID();
+		if (p_visuals.grid_mesh[i].is_valid()) {
+			RenderingServer::get_singleton()->free_rid(p_visuals.grid_mesh[i]);
+			p_visuals.grid_mesh[i] = RID();
+		}
+	}
+	p_visuals.grid_built = false;
+}
+
+void Node3DEditor::_acquire_world_visuals(const RID &p_scenario) {
+	if (visuals_scenario == p_scenario) {
+		return;
+	}
+	_release_world_visuals();
+	if (!p_scenario.is_valid() || !origin_multimesh.is_valid()) {
+		// Not built yet: the view that builds them comes by here once it has.
+		return;
+	}
+
+	WorldVisuals &visuals = world_visuals[p_scenario];
+	visuals.users.push_back(get_instance_id());
+	visuals_scenario = p_scenario;
+
+	if (!visuals.origin_instance.is_valid()) {
+		visuals.origin_instance = RenderingServer::get_singleton()->instance_create2(origin_multimesh, p_scenario);
+		RS::get_singleton()->instance_set_layer_mask(visuals.origin_instance, 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
+		RS::get_singleton()->instance_geometry_set_flag(visuals.origin_instance, RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
+		RS::get_singleton()->instance_geometry_set_flag(visuals.origin_instance, RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+		RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(visuals.origin_instance, RSE::SHADOW_CASTING_SETTING_OFF);
+		RenderingServer::get_singleton()->instance_set_visible(visuals.origin_instance, origin_enabled);
+	}
+	if (!visuals.grid_built) {
+		_free_world_grid(visuals);
+		_build_world_grid(visuals, p_scenario);
+	}
+}
+
+void Node3DEditor::_release_world_visuals() {
+	if (!visuals_scenario.is_valid()) {
+		return;
+	}
+	const RID scenario = visuals_scenario;
+	visuals_scenario = RID();
+	WorldVisuals *visuals = world_visuals.getptr(scenario);
+	if (!visuals) {
+		return;
+	}
+	const bool was_keeper = !visuals->users.is_empty() && visuals->users[0] == get_instance_id();
+	visuals->users.erase(get_instance_id());
+
+	// Views that went away without saying so.
+	for (int i = int(visuals->users.size()) - 1; i >= 0; i--) {
+		if (!ObjectDB::get_instance(visuals->users[i])) {
+			visuals->users.remove_at(i);
+		}
+	}
+
+	if (visuals->users.is_empty()) {
+		// Nobody is looking at this world any more.
+		_free_world_grid(*visuals);
+		if (visuals->origin_instance.is_valid()) {
+			RenderingServer::get_singleton()->free_rid(visuals->origin_instance);
+		}
+		world_visuals.erase(scenario);
+		return;
+	}
+	if (was_keeper) {
+		// The grid was around this view's camera; now it is around the next
+		// one's, which is the one that will keep it up to date.
+		Node3DEditor *keeper = ObjectDB::get_instance<Node3DEditor>(visuals->users[0]);
+		_free_world_grid(*visuals);
+		if (keeper) {
+			keeper->_build_world_grid(*visuals, scenario);
+		}
+	}
+}
+
+bool Node3DEditor::world_has_grid_and_origin(const RID &p_scenario) {
+	const WorldVisuals *visuals = world_visuals.getptr(p_scenario);
+	if (!visuals || !visuals->origin_instance.is_valid()) {
+		return false;
+	}
+	for (int i = 0; i < 3; i++) {
+		if (visuals->grid_instance[i].is_valid()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+int Node3DEditor::count_preview_suns_in(const RID &p_scenario) {
+	int count = 0;
+	for (const Node3DEditor *editor : instances) {
+		const DirectionalLight3D *sun = editor->preview_sun;
+		if (sun && ObjectDB::get_instance(editor->preview_sun_id) && sun->is_inside_tree() && sun->get_world_3d().is_valid() && sun->get_world_3d()->get_scenario() == p_scenario) {
+			count++;
+		}
+	}
+	return count;
+}
+
+void Node3DEditor::_rebuild_all_grids() {
+	// What the grid looks like changed - planes turned on or off, colors, the
+	// origin shown or not - so every world's is built again, each around its
+	// own keeper's camera.
+	for (KeyValue<RID, WorldVisuals> &E : world_visuals) {
+		_free_world_grid(E.value);
+		Node3DEditor *keeper = E.value.users.is_empty() ? nullptr : ObjectDB::get_instance<Node3DEditor>(E.value.users[0]);
+		if (keeper) {
+			keeper->_build_world_grid(E.value, E.key);
+		}
+	}
+}
+
+void Node3DEditor::_update_origin_visibility() {
+	for (KeyValue<RID, WorldVisuals> &E : world_visuals) {
+		if (E.value.origin_instance.is_valid()) {
+			RenderingServer::get_singleton()->instance_set_visible(E.value.origin_instance, origin_enabled);
 		}
 	}
 }
 
 void Node3DEditor::update_gizmo_opacity() {
-	if (!origin_instance.is_valid()) {
+	if (!origin_multimesh.is_valid()) {
 		return;
 	}
 
@@ -9668,21 +9855,17 @@ void Node3DEditor::update_gizmo_opacity() {
 }
 
 void Node3DEditor::update_grid() {
-	const Camera3D::ProjectionType current_projection = viewports[0]->camera->get_projection();
-
-	if (current_projection != grid_camera_last_update_perspective) {
-		grid_init_draw = false; // redraw
-		grid_camera_last_update_perspective = current_projection;
+	WorldVisuals *visuals = world_visuals.getptr(visuals_scenario);
+	if (!visuals || visuals->users.is_empty() || visuals->users[0] != get_instance_id()) {
+		// Another view of this world keeps its grid; moving this camera is no
+		// reason to rebuild it - and never in some other world.
+		return;
 	}
-
-	// Gets a orthogonal or perspective position correctly (for the grid comparison)
-	const Vector3 camera_position = get_editor_viewport(0)->camera->get_position();
-
-	if (!grid_init_draw || grid_camera_last_update_position.distance_squared_to(camera_position) >= 100.0f) {
-		_finish_grid();
-		_init_grid();
-		grid_init_draw = true;
-		grid_camera_last_update_position = camera_position;
+	Camera3D *camera = get_editor_viewport(0)->camera;
+	const Vector3 camera_position = camera->get_position();
+	if (!visuals->grid_built || camera->get_projection() != visuals->grid_projection || visuals->grid_center.distance_squared_to(camera_position) >= 100.0f) {
+		_free_world_grid(*visuals);
+		_build_world_grid(*visuals, visuals_scenario);
 	}
 }
 
@@ -10207,8 +10390,7 @@ void Node3DEditor::_notification(int p_what) {
 				gizmo_view_rotation_scale = GIZMO_CIRCLE_SIZE * (float)EDITOR_GET("editors/3d/view_plane_rotation_gizmo_scale");
 
 				// Update grid color by rebuilding grid.
-				_finish_grid();
-				_init_grid();
+				_rebuild_all_grids();
 
 				for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
 					viewports[i]->update_transform_gizmo_view();
@@ -10667,9 +10849,8 @@ void Node3DEditor::clear() {
 		viewports[i]->reset();
 	}
 
-	if (origin_instance.is_valid()) {
-		RenderingServer::get_singleton()->instance_set_visible(origin_instance, true);
-	}
+	origin_enabled = true;
+	_update_origin_visibility();
 
 	view_layout_menu->get_popup()->set_item_checked(view_layout_menu->get_popup()->get_item_index(MENU_VIEW_ORIGIN), true);
 	for (int i = 0; i < 3; ++i) {
@@ -10685,7 +10866,7 @@ void Node3DEditor::clear() {
 
 	view_layout_menu->get_popup()->set_item_checked(view_layout_menu->get_popup()->get_item_index(MENU_VIEW_GRID), true);
 	grid_enabled = true;
-	grid_init_draw = false;
+	_rebuild_all_grids();
 }
 
 void Node3DEditor::_sun_direction_draw() {
@@ -10731,6 +10912,8 @@ void Node3DEditor::_preview_settings_changed() {
 		environment->set_sdfgi_enabled(environ_gi_button->is_pressed());
 		environment->set_tonemapper(environ_tonemap_button->is_pressed() ? Environment::TONE_MAPPER_FILMIC : Environment::TONE_MAPPER_LINEAR);
 	}
+
+	_share_preview_settings();
 }
 
 void Node3DEditor::_load_default_preview_settings() {
@@ -10825,32 +11008,32 @@ void Node3DEditor::_ensure_preview_nodes() {
 void Node3DEditor::_update_preview_environment() {
 	_ensure_preview_nodes();
 
+	// One view per world puts the preview in; the others show the same one.
+	const bool owns = _claim_preview_owner();
+	SubViewport *scene_root = get_scene_root();
+
 	bool disable_light = directional_light_count > 0 || !sun_button->is_pressed();
 
 	sun_button->set_disabled(directional_light_count > 0);
 
+	const bool place_sun = !disable_light && owns && scene_root;
+	if (!place_sun && preview_sun->get_parent()) {
+		preview_sun->get_parent()->remove_child(preview_sun);
+		preview_sun_dangling = true;
+	}
+	if (place_sun && !preview_sun->get_parent()) {
+		// Into the scene root, so the preview lights the world the scene is
+		// actually in rather than the editor window's.
+		scene_root->add_child(preview_sun, true);
+		preview_sun_dangling = false;
+	}
+	sun_state->set_visible(disable_light);
+	sun_vb->set_visible(!disable_light);
 	if (disable_light) {
-		if (preview_sun->get_parent()) {
-			preview_sun->get_parent()->remove_child(preview_sun);
-			sun_state->show();
-			sun_vb->hide();
-			preview_sun_dangling = true;
-		}
-
 		if (directional_light_count > 0) {
 			sun_state->set_text(TTRC("Scene contains\nDirectionalLight3D.\nPreview disabled."));
 		} else {
 			sun_state->set_text(TTRC("Preview disabled."));
-		}
-
-	} else {
-		if (!preview_sun->get_parent()) {
-			// Into the scene root, so the preview lights the world the scene is
-			// actually in rather than the editor window's.
-			get_scene_root()->add_child(preview_sun, true);
-			sun_state->hide();
-			sun_vb->show();
-			preview_sun_dangling = false;
 		}
 	}
 
@@ -10861,25 +11044,22 @@ void Node3DEditor::_update_preview_environment() {
 
 	environ_button->set_disabled(world_env_count > 0);
 
+	const bool place_env = !disable_env && owns && scene_root;
+	if (!place_env && preview_environment->get_parent()) {
+		preview_environment->get_parent()->remove_child(preview_environment);
+		preview_env_dangling = true;
+	}
+	if (place_env && !preview_environment->get_parent()) {
+		scene_root->add_child(preview_environment);
+		preview_env_dangling = false;
+	}
+	environ_state->set_visible(disable_env);
+	environ_vb->set_visible(!disable_env);
 	if (disable_env) {
-		if (preview_environment->get_parent()) {
-			preview_environment->get_parent()->remove_child(preview_environment);
-			environ_state->show();
-			environ_vb->hide();
-			preview_env_dangling = true;
-		}
 		if (world_env_count > 0) {
 			environ_state->set_text(TTRC("Scene contains\nWorldEnvironment.\nPreview disabled."));
 		} else {
 			environ_state->set_text(TTRC("Preview disabled."));
-		}
-
-	} else {
-		if (!preview_environment->get_parent()) {
-			get_scene_root()->add_child(preview_environment);
-			environ_state->hide();
-			environ_vb->show();
-			preview_env_dangling = false;
 		}
 	}
 }
@@ -11744,6 +11924,8 @@ void fragment() {
 }
 Node3DEditor::~Node3DEditor() {
 	instances.erase(this);
+	_release_world_visuals();
+	_release_preview_owner();
 	if (active_instance == this) {
 		// Hand the context to another open space rather than leaving it dangling.
 		active_instance = instances.is_empty() ? nullptr : instances[0];

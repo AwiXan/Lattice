@@ -688,21 +688,54 @@ private:
 
 	ToolMode tool_mode = TOOL_MODE_TRANSFORM;
 
-	// The grid and origin lines are instanced into the world the scene lives in,
-	// so there is one set of them however many views are open - the same way the
-	// four viewports of one view have always shared a single grid.
+	// The grid and origin lines of one world. Every view of that world draws
+	// the same ones - the way the four viewports of one view always shared a
+	// single grid - and every world being looked at has its own. There used to
+	// be one set, moved to whichever world asked last: a view of one scene lost
+	// its grid whenever a view of another moved its camera.
+	struct WorldVisuals {
+		RID grid_mesh[3];
+		RID grid_instance[3];
+		RID origin_instance;
+		// The views showing this world. The grid is built around the camera
+		// of the first of them, which is also the one that rebuilds it as that
+		// camera travels.
+		LocalVector<ObjectID> users;
+		bool grid_built = false;
+		Vector3 grid_center;
+		Camera3D::ProjectionType grid_projection = Camera3D::PROJECTION_PERSPECTIVE;
+	};
+	static inline HashMap<RID, WorldVisuals> world_visuals;
+	// The world whose visuals this view is counted among.
+	RID visuals_scenario;
+	void _acquire_world_visuals(const RID &p_scenario);
+	void _release_world_visuals();
+	void _build_world_grid(WorldVisuals &p_visuals, const RID &p_scenario);
+	static void _free_world_grid(WorldVisuals &p_visuals);
+	static void _rebuild_all_grids();
+	static void _update_origin_visibility();
+
+	// The origin lines are one multimesh, instanced into each world.
 	static inline RID origin_mesh;
 	static inline RID origin_multimesh;
-	static inline RID origin_instance;
 	static inline bool origin_enabled = false;
-	static inline RID grid[3];
-	static inline RID grid_instance[3];
 	static inline bool grid_visible[3] = { false, false, false }; //currently visible
 	static inline bool grid_enable[3] = { false, false, false }; //should be always visible if true
 	static inline bool grid_enabled = false;
-	static inline bool grid_init_draw = false;
-	static inline Camera3D::ProjectionType grid_camera_last_update_perspective = Camera3D::PROJECTION_PERSPECTIVE;
-	static inline Vector3 grid_camera_last_update_position;
+
+	// Which view puts its preview sun and environment into each world: one per
+	// world, or a world shown twice was lit twice, and got whichever
+	// environment went in last.
+	static inline HashMap<RID, ObjectID> preview_owners;
+	RID preview_scenario;
+	bool _claim_preview_owner();
+	void _release_preview_owner();
+	// The preview settings, as a scene's saved state holds them.
+	Dictionary _get_preview_state() const;
+	void _set_preview_state(const Dictionary &p_state);
+	// Tells the other views of this world what the preview settings are now.
+	void _share_preview_settings();
+	static inline bool sharing_preview_settings = false;
 
 	Ref<ArrayMesh> move_gizmo[3], move_plane_gizmo[3], rotate_gizmo[4], scale_gizmo[3], scale_plane_gizmo[3], axis_gizmo[3];
 	Ref<ArrayMesh> trackball_sphere_gizmo;
@@ -861,9 +894,7 @@ private:
 	void _update_gizmos_menu();
 	void _update_gizmos_menu_theme();
 	static void _update_all_gizmos_menus();
-	void _init_grid();
 	void _finish_indicators();
-	void _finish_grid();
 
 	void _toggle_maximize_view(Object *p_viewport);
 	void _viewport_clicked(int p_viewport_idx);
@@ -1042,6 +1073,10 @@ public:
 	// instance, so callers keep the behavior they had when it was a singleton.
 	static Node3DEditor *get_singleton() { return active_instance; }
 	static const Vector<Node3DEditor *> &get_instances() { return instances; }
+	// For the self-test: whether a world has its grid and origin lines, and how
+	// many preview suns are lighting it.
+	static bool world_has_grid_and_origin(const RID &p_scenario);
+	static int count_preview_suns_in(const RID &p_scenario);
 
 	void make_active() { active_instance = this; }
 	bool is_active() const { return active_instance == this; }
