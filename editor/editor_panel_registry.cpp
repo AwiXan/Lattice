@@ -98,6 +98,9 @@ void EditorPanelRegistry::set_replacement(const StringName &p_id, const StringNa
 		if (replaced->icon_texture.is_valid()) {
 			by->icon_texture = replaced->icon_texture;
 		}
+		if (replaced->side != SIDE_NONE) {
+			by->side = replaced->side;
+		}
 	}
 	types.erase(p_id);
 	replacements[p_id] = p_by;

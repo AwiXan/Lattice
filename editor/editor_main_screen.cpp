@@ -140,7 +140,8 @@ bool EditorMainScreen::show_panel(const StringName &p_type) {
 		pane = _pane_showing(type, &window);
 	}
 	if (!pane) {
-		pane = active;
+		pane = _pane_for_new(type, last_places.getptr(type));
+		window = _window_of(pane);
 	}
 	if (!pane) {
 		return false;
@@ -150,6 +151,155 @@ bool EditorMainScreen::show_panel(const StringName &p_type) {
 		window->grab_window_focus();
 	}
 	return true;
+}
+
+EditorPaneWindow *EditorMainScreen::_window_of(const EditorPane *p_pane) const {
+	if (!p_pane) {
+		return nullptr;
+	}
+	for (EditorPaneWindow *window : pane_windows) {
+		if (window->get_pane_tree()->is_ancestor_of(p_pane)) {
+			return window;
+		}
+	}
+	return nullptr;
+}
+
+EditorPane *EditorMainScreen::_pane_for_new(const StringName &p_type, const PanelPlace *p_place) {
+	if (p_place) {
+		// Where it was: the same pane, or the one made again in its place.
+		EditorPane *pane = ObjectDB::get_instance<EditorPane>(p_place->pane);
+		if (!pane) {
+			const ObjectID *remade = remade_panes.getptr(p_place->pane);
+			pane = remade ? ObjectDB::get_instance<EditorPane>(*remade) : nullptr;
+		}
+		if (pane && pane->is_inside_tree()) {
+			return pane;
+		}
+		// That pane is gone; one is made beside what it was beside.
+		EditorPaneTree *tree = ObjectDB::get_instance<EditorPaneTree>(p_place->tree);
+		EditorPane *made = tree ? tree->make_pane_at(p_place->at) : nullptr;
+		if (made) {
+			remade_panes[p_place->pane] = made->get_instance_id();
+			return made;
+		}
+	}
+
+	// Never anywhere yet: beside the pane being worked in, on the side this
+	// kind of panel has always been on - a shader editor below, the FileSystem
+	// to the left - or failing that, in the pane itself.
+	EditorPane *active = pane_tree ? pane_tree->get_active_pane() : nullptr;
+	const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(p_type);
+	if (active && type && type->side != EditorPanelRegistry::SIDE_NONE && active->get_panel_count() > 0) {
+		EditorPaneTree::Place at;
+		at.neighbor = active->get_instance_id();
+		switch (type->side) {
+			case EditorPanelRegistry::SIDE_LEFT: {
+				at.before = true;
+				at.ratio = 0.25;
+			} break;
+			case EditorPanelRegistry::SIDE_RIGHT: {
+				at.ratio = 0.75;
+			} break;
+			case EditorPanelRegistry::SIDE_BOTTOM: {
+				at.vertical = true;
+				at.ratio = 0.65;
+			} break;
+			default: {
+			} break;
+		}
+		EditorPane *made = pane_tree->make_pane_at(at);
+		if (made) {
+			return made;
+		}
+	}
+	return active;
+}
+
+void EditorMainScreen::note_panel_closing(EditorPane *p_pane, int p_index) {
+	ERR_FAIL_NULL(p_pane);
+	const StringName type = p_pane->get_panel_type_at(p_index);
+	if (type == StringName()) {
+		return;
+	}
+
+	PanelPlace place;
+	place.pane = p_pane->get_instance_id();
+	for (Node *n = p_pane->get_parent(); n; n = n->get_parent()) {
+		EditorPaneTree *tree = Object::cast_to<EditorPaneTree>(n);
+		if (tree) {
+			place.tree = tree->get_instance_id();
+			place.at = tree->get_place_of(p_pane);
+			break;
+		}
+	}
+	last_places[type] = place;
+
+	ClosedPanel closed;
+	closed.type = type;
+	closed.subject = p_pane->get_panel_subject_at(p_index);
+	closed.state = EditorPanelRegistry::save_panel_state(type, p_pane->get_panel_at(p_index));
+	closed.title = p_pane->get_panel_title_at(p_index);
+	closed.place = place;
+	closed_panels.push_back(closed);
+	// Enough to undo a few closes in a row; not a history of the session.
+	while (closed_panels.size() > 12) {
+		closed_panels.remove_at(0);
+	}
+}
+
+bool EditorMainScreen::reopen_closed_panel(int p_index) {
+	if (closed_panels.is_empty()) {
+		return false;
+	}
+	const int index = p_index < 0 ? closed_panels.size() - 1 : p_index;
+	ERR_FAIL_INDEX_V(index, closed_panels.size(), false);
+	const ClosedPanel closed = closed_panels[index];
+	closed_panels.remove_at(index);
+
+	const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(closed.type);
+	if (!type) {
+		// Unregistered since - an addon turned off.
+		return false;
+	}
+	if (type->lent) {
+		// There is one of it: if it is showing somewhere already, that is
+		// where it is.
+		EditorPaneWindow *window = nullptr;
+		EditorPane *showing = _pane_showing(closed.type, &window);
+		if (showing) {
+			showing->show_panel_of_type(closed.type);
+			if (window) {
+				window->grab_window_focus();
+			}
+			return true;
+		}
+	}
+
+	EditorPane *pane = _pane_for_new(closed.type, &closed.place);
+	if (!pane) {
+		return false;
+	}
+	const int at = pane->add_panel(closed.type, closed.subject);
+	if (at < 0) {
+		return false;
+	}
+	EditorPanelRegistry::load_panel_state(closed.type, pane->get_panel_at(at), closed.state);
+	EditorPaneWindow *window = _window_of(pane);
+	if (window) {
+		window->grab_window_focus();
+	}
+	return true;
+}
+
+String EditorMainScreen::get_closed_panel_title(int p_index) const {
+	ERR_FAIL_INDEX_V(p_index, closed_panels.size(), String());
+	return closed_panels[p_index].title;
+}
+
+StringName EditorMainScreen::get_closed_panel_type(int p_index) const {
+	ERR_FAIL_INDEX_V(p_index, closed_panels.size(), StringName());
+	return closed_panels[p_index].type;
 }
 
 EditorPane *EditorMainScreen::_pane_showing(const StringName &p_type, EditorPaneWindow **r_window) const {
@@ -259,6 +409,13 @@ void EditorMainScreen::_pane_window_closed(EditorPaneWindow *p_window) {
 	// goes back where it lives. interface/panes/when_a_window_closes turns this
 	// into bringing everything back instead, for those who would rather.
 	const bool bring_back = int(EDITOR_GET("interface/panes/when_a_window_closes")) == 1;
+	if (!bring_back) {
+		for (EditorPane *pane : p_window->get_pane_tree()->get_panes()) {
+			for (int i = pane->get_panel_count() - 1; i >= 0; i--) {
+				note_panel_closing(pane, i);
+			}
+		}
+	}
 	_close_pane_window(p_window, bring_back);
 }
 
@@ -697,6 +854,10 @@ void EditorMainScreen::remove_main_plugin(EditorPlugin *p_editor) {
 }
 
 EditorMainScreen::EditorMainScreen() {
+	ED_SHORTCUT("editor/toggle_maximize_pane", TTRC("Maximize or Restore Pane"), KeyModifierMask::CMD_OR_CTRL | Key::SPACE);
+	// Not Ctrl+Shift+T: the script editor has that for reopening a script.
+	ED_SHORTCUT("editor/reopen_closed_panel", TTRC("Reopen Closed Panel"), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::ALT | Key::T);
+
 	pane_tree = memnew(EditorPaneTree);
 	add_child(pane_tree);
 	pane_tree->connect(SNAME("layout_changed"), callable_mp(this, &EditorMainScreen::_panes_changed));

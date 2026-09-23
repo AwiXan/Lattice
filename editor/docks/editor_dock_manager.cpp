@@ -683,11 +683,30 @@ void EditorDockManager::open_dock(EditorDock *p_dock, bool p_set_current) {
 		return;
 	}
 
-	// Nowhere to open it: there are no dock slots, and a dock no pane has is
-	// not put in one unasked - opening is what running a game does to the
-	// Output, and what selecting an AnimationPlayer does to the Animation
-	// dock, every time. Wherever the user has put one, it was brought forward
-	// above; asked for by name, it is focus_dock() that finds it a pane.
+	// There are no dock slots, and a dock no pane has is not put in one
+	// unasked - opening is what running a game does to the Output, and what
+	// selecting an AnimationPlayer does to the Animation dock, every time.
+	// Wherever the user has put one, it was brought forward above. Asked for -
+	// a shader opened to be edited - it is given a pane.
+	if (opening_on_request > 0 && !lent_docks.has(p_dock) && !p_dock->dock_window) {
+		EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+		if (main_screen && main_screen->show_panel(get_dock_panel_type_id(p_dock))) {
+			p_dock->emit_signal("opened");
+		}
+	}
+}
+
+EditorDockManager::OpeningOnRequest::OpeningOnRequest(bool p_active) :
+		active(p_active && singleton) {
+	if (active) {
+		singleton->opening_on_request++;
+	}
+}
+
+EditorDockManager::OpeningOnRequest::~OpeningOnRequest() {
+	if (active && singleton) {
+		singleton->opening_on_request--;
+	}
 }
 
 void EditorDockManager::make_dock_floating(EditorDock *p_dock) {
@@ -819,6 +838,29 @@ void EditorDockManager::add_dock(EditorDock *p_dock) {
 		type.icon = p_dock->get_icon_name();
 		type.binding = EditorPanelRegistry::BINDING_GLOBAL;
 		type.lent = true;
+		// The side of the editor it has always lived on, for the first time
+		// it is asked for.
+		switch (p_dock->default_slot) {
+			case EditorDock::DOCK_SLOT_LEFT_UL:
+			case EditorDock::DOCK_SLOT_LEFT_BL:
+			case EditorDock::DOCK_SLOT_LEFT_UR:
+			case EditorDock::DOCK_SLOT_LEFT_BR: {
+				type.side = EditorPanelRegistry::SIDE_LEFT;
+			} break;
+			case EditorDock::DOCK_SLOT_RIGHT_UL:
+			case EditorDock::DOCK_SLOT_RIGHT_BL:
+			case EditorDock::DOCK_SLOT_RIGHT_UR:
+			case EditorDock::DOCK_SLOT_RIGHT_BR: {
+				type.side = EditorPanelRegistry::SIDE_RIGHT;
+			} break;
+			case EditorDock::DOCK_SLOT_BOTTOM:
+			case EditorDock::DOCK_SLOT_BOTTOM_L:
+			case EditorDock::DOCK_SLOT_BOTTOM_R: {
+				type.side = EditorPanelRegistry::SIDE_BOTTOM;
+			} break;
+			default: {
+			} break;
+		}
 		type.create = callable_mp(this, &EditorDockManager::_lend_dock_panel).bind(p_dock);
 		type.release = callable_mp(this, &EditorDockManager::_return_dock_panel).bind(p_dock);
 		EditorPanelRegistry::register_type(type);

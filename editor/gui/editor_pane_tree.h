@@ -88,6 +88,8 @@ class EditorPaneTree : public Container {
 	real_t drag_start = 0;
 	real_t drag_start_ratio = 0.5;
 	Slot *hovered = nullptr;
+	// The pane shown over all the others, if one is.
+	ObjectID maximized;
 
 	struct ThemeCache {
 		int separation = 0;
@@ -117,12 +119,16 @@ class EditorPaneTree : public Container {
 	static Variant _subject_to_saved(const StringName &p_type, const Variant &p_subject);
 	static Variant _subject_from_saved(const StringName &p_type, const Variant &p_saved);
 	void _update_closable();
+	static Slot *_first_leaf(Slot *p_slot);
+	static Slot *_last_leaf(Slot *p_slot);
+	EditorPane *_pane_for_shortcut() const;
 
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();
 
 	virtual void gui_input(const Ref<InputEvent> &p_event) override;
+	virtual void shortcut_input(const Ref<InputEvent> &p_event) override;
 
 public:
 	virtual Size2 get_minimum_size() const override;
@@ -138,6 +144,26 @@ public:
 	// The pane last worked in, or the first one if none has been.
 	EditorPane *get_active_pane() const;
 	void set_active_pane(EditorPane *p_pane);
+
+	// Where a pane is, told by what is beside it: the pane on the other side of
+	// the divider, which way they are split, which of them comes first and how
+	// the room is shared. A pane closed since can be made again from this in
+	// the same place, as long as what it was beside is still there.
+	struct Place {
+		ObjectID neighbor;
+		bool vertical = false;
+		bool before = false;
+		real_t ratio = 0.5;
+	};
+	Place get_place_of(const EditorPane *p_pane) const;
+	// A new, empty pane where p_place says; null if what it was beside is gone.
+	EditorPane *make_pane_at(const Place &p_place);
+
+	// One pane over all the others, until it is asked for again. For looking at
+	// one thing big for a moment without undoing the arrangement to do it.
+	void set_maximized_pane(EditorPane *p_pane);
+	EditorPane *get_maximized_pane() const;
+	void toggle_maximized(EditorPane *p_pane);
 
 	// Splits a pane in two, side by side or one above the other, and returns the
 	// pane that appeared. p_before puts the new pane first, which is what a drop

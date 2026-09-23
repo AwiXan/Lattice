@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/templates/hash_set.h"
+#include "editor/gui/editor_pane_tree.h"
 #include "scene/gui/panel_container.h"
 
 class Button;
@@ -104,6 +105,29 @@ private:
 	// The pane showing a panel of this type, in the main window or any other,
 	// and the window it is in, if it is not the main one.
 	EditorPane *_pane_showing(const StringName &p_type, EditorPaneWindow **r_window = nullptr) const;
+
+	// Where a panel was when it was last closed: its pane, or - the pane having
+	// gone with it - the pane beside it and how the two were split.
+	struct PanelPlace {
+		ObjectID tree;
+		ObjectID pane;
+		EditorPaneTree::Place at;
+	};
+	HashMap<StringName, PanelPlace> last_places;
+	struct ClosedPanel {
+		StringName type;
+		Variant subject;
+		Dictionary state;
+		String title;
+		PanelPlace place;
+	};
+	Vector<ClosedPanel> closed_panels;
+	// A pane closed and made again by reopening a panel: whatever else was
+	// closed with it goes to the new one rather than splitting off another.
+	HashMap<ObjectID, ObjectID> remade_panes;
+	// A pane for a panel of this type that is not showing anywhere.
+	EditorPane *_pane_for_new(const StringName &p_type, const PanelPlace *p_place);
+	EditorPaneWindow *_window_of(const EditorPane *p_pane) const;
 	void _pane_window_closed(EditorPaneWindow *p_window);
 	void _watch_tree(EditorPaneTree *p_tree);
 	// Closes a window, bringing whatever it still holds back with it.
@@ -138,6 +162,15 @@ public:
 	// worked in, else one anywhere else - another window is raised - else a new
 	// one in the pane being worked in. False when nothing could show it.
 	bool show_panel(const StringName &p_type);
+
+	// Panels closed by hand, oldest first, to have back where they were.
+	void note_panel_closing(EditorPane *p_pane, int p_index);
+	// The last one closed when p_index is -1. False when there was none, or
+	// it can no longer be shown.
+	bool reopen_closed_panel(int p_index = -1);
+	int get_closed_panel_count() const { return closed_panels.size(); }
+	String get_closed_panel_title(int p_index) const;
+	StringName get_closed_panel_type(int p_index) const;
 	int get_selected_index() const;
 	int get_plugin_index(EditorPlugin *p_editor) const;
 	EditorPlugin *get_selected_plugin() const;

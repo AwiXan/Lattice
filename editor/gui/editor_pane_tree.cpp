@@ -36,8 +36,11 @@
 #include "editor/editor_node.h"
 #include "editor/editor_panel_registry.h"
 #include "editor/editor_string_names.h"
+#include "editor/editor_main_screen.h"
 #include "editor/gui/editor_pane.h"
+#include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
+#include "scene/main/viewport.h"
 
 void EditorPaneTree::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("layout_changed"));
@@ -186,6 +189,10 @@ Rect2 EditorPaneTree::_divider_rect(const Slot *p_slot) const {
 }
 
 EditorPaneTree::Slot *EditorPaneTree::_find_divider(Slot *p_slot, const Point2 &p_point) const {
+	if (maximized.is_valid()) {
+		// There are no dividers on screen to grab.
+		return nullptr;
+	}
 	if (!p_slot || p_slot->is_leaf()) {
 		return nullptr;
 	}
@@ -242,6 +249,12 @@ void EditorPaneTree::_notification(int p_what) {
 
 		case NOTIFICATION_SORT_CHILDREN: {
 			_lay_out(root, Rect2(Point2(), get_size()));
+			EditorPane *maximized_pane = get_maximized_pane();
+			if (maximized_pane) {
+				// Everything else keeps its place, hidden, for when this is
+				// asked for again.
+				fit_child_in_rect(maximized_pane, Rect2(Point2(), get_size()));
+			}
 			// Whatever is not a pane - the drop hint - covers everything, which
 			// is what it is for.
 			for (int i = 0; i < get_child_count(); i++) {
@@ -254,7 +267,9 @@ void EditorPaneTree::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_DRAW: {
-			_draw_dividers(root);
+			if (!get_maximized_pane()) {
+				_draw_dividers(root);
+			}
 		} break;
 
 		case NOTIFICATION_MOUSE_EXIT: {
@@ -348,6 +363,8 @@ EditorPane *EditorPaneTree::split_pane(EditorPane *p_pane, bool p_vertical, bool
 	ERR_FAIL_NULL_V(p_pane, nullptr);
 	Slot *leaf = _leaf_for(p_pane);
 	ERR_FAIL_NULL_V_MSG(leaf, nullptr, "That pane is not in this arrangement.");
+	// A pane appearing is the arrangement changing, and it should be seen.
+	set_maximized_pane(nullptr);
 
 	EditorPane *new_pane = memnew(EditorPane);
 	_wire_pane(new_pane);
@@ -421,6 +438,117 @@ EditorPane *EditorPaneTree::split_with_new_panel(EditorPane *p_target, bool p_ve
 	return fresh;
 }
 
+EditorPaneTree::Slot *EditorPaneTree::_first_leaf(Slot *p_slot) {
+	while (p_slot && !p_slot->is_leaf()) {
+		p_slot = p_slot->first;
+	}
+	return p_slot;
+}
+
+EditorPaneTree::Slot *EditorPaneTree::_last_leaf(Slot *p_slot) {
+	while (p_slot && !p_slot->is_leaf()) {
+		p_slot = p_slot->second;
+	}
+	return p_slot;
+}
+
+EditorPaneTree::Place EditorPaneTree::get_place_of(const EditorPane *p_pane) const {
+	Place place;
+	Slot *leaf = _leaf_for(p_pane);
+	if (!leaf || !leaf->parent) {
+		// The only pane: it is never closed, so it is always where it was.
+		return place;
+	}
+	Slot *branch = leaf->parent;
+	const bool first = branch->first == leaf;
+	// Across the divider and right next to it, which is what this pane was
+	// beside even when the other side is split further.
+	Slot *next = first ? _first_leaf(branch->second) : _last_leaf(branch->first);
+	place.neighbor = next ? next->pane->get_instance_id() : ObjectID();
+	place.vertical = branch->vertical;
+	place.before = first;
+	place.ratio = branch->ratio;
+	return place;
+}
+
+EditorPane *EditorPaneTree::make_pane_at(const Place &p_place) {
+	EditorPane *neighbor = ObjectDB::get_instance<EditorPane>(p_place.neighbor);
+	if (!neighbor || !_leaf_for(neighbor)) {
+		return nullptr;
+	}
+	EditorPane *pane = split_pane(neighbor, p_place.vertical, p_place.before, false);
+	Slot *leaf = pane ? _leaf_for(pane) : nullptr;
+	if (leaf && leaf->parent) {
+		leaf->parent->ratio = CLAMP(p_place.ratio, (real_t)0.05, (real_t)0.95);
+		queue_sort();
+	}
+	return pane;
+}
+
+void EditorPaneTree::set_maximized_pane(EditorPane *p_pane) {
+	const ObjectID id = (p_pane && _leaf_for(p_pane) && get_panes().size() > 1) ? p_pane->get_instance_id() : ObjectID();
+	if (id == maximized) {
+		return;
+	}
+	maximized = id;
+	for (EditorPane *pane : get_panes()) {
+		pane->set_visible(!id.is_valid() || pane->get_instance_id() == id);
+		pane->set_maximized(pane->get_instance_id() == id);
+	}
+	dragging = nullptr;
+	hovered = nullptr;
+	queue_sort();
+	queue_redraw();
+}
+
+EditorPane *EditorPaneTree::get_maximized_pane() const {
+	return maximized.is_valid() ? ObjectDB::get_instance<EditorPane>(maximized) : nullptr;
+}
+
+void EditorPaneTree::toggle_maximized(EditorPane *p_pane) {
+	set_maximized_pane(get_maximized_pane() == p_pane ? nullptr : p_pane);
+}
+
+EditorPane *EditorPaneTree::_pane_for_shortcut() const {
+	// Whatever has the keyboard, then whatever is under the mouse, then the
+	// pane last worked in.
+	const Viewport *viewport = get_viewport();
+	for (Node *n = viewport ? viewport->gui_get_focus_owner() : nullptr; n && n != this; n = n->get_parent()) {
+		EditorPane *pane = Object::cast_to<EditorPane>(n);
+		if (pane && _leaf_for(pane)) {
+			return pane;
+		}
+	}
+	const Point2 mouse = get_local_mouse_position();
+	for (EditorPane *pane : get_panes()) {
+		if (pane->is_visible() && pane->get_rect().has_point(mouse)) {
+			return pane;
+		}
+	}
+	return get_active_pane();
+}
+
+void EditorPaneTree::shortcut_input(const Ref<InputEvent> &p_event) {
+	ERR_FAIL_COND(p_event.is_null());
+	if (!p_event->is_pressed() || p_event->is_echo()) {
+		return;
+	}
+	if (ED_IS_SHORTCUT("editor/toggle_maximize_pane", p_event)) {
+		EditorPane *pane = _pane_for_shortcut();
+		if (pane && get_panes().size() > 1) {
+			toggle_maximized(pane);
+			accept_event();
+		}
+		return;
+	}
+	if (ED_IS_SHORTCUT("editor/reopen_closed_panel", p_event)) {
+		EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+		if (main_screen && main_screen->reopen_closed_panel()) {
+			accept_event();
+		}
+	}
+}
+
 void EditorPaneTree::drop_empty_panes() {
 	// Repeated, because closing one collapses a branch and can leave the next
 	// one somewhere else in the arrangement.
@@ -447,6 +575,9 @@ void EditorPaneTree::close_pane(EditorPane *p_pane) {
 	ERR_FAIL_NULL(leaf);
 	Slot *branch = leaf->parent;
 	ERR_FAIL_NULL_MSG(branch, "A pane that is not the last one always has a sibling.");
+	if (maximized == p_pane->get_instance_id()) {
+		set_maximized_pane(nullptr);
+	}
 
 	Slot *survivor = branch->first == leaf ? branch->second : branch->first;
 	ERR_FAIL_NULL(survivor);
@@ -678,6 +809,8 @@ EditorPaneTree::EditorPaneTree() {
 	drop_hint = memnew(EditorPaneDropHint);
 	drop_hint->watch(this);
 	add_child(drop_hint);
+
+	set_process_shortcut_input(true);
 
 	EditorPane *first = memnew(EditorPane);
 	_wire_pane(first);

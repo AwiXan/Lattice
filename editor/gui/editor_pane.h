@@ -42,6 +42,7 @@ class HFlowContainer;
 class MenuButton;
 class PanelContainer;
 class OptionButton;
+class PopupMenu;
 class TabBar;
 
 // One place panels sit: a leaf of the pane tree, holding any number of them as
@@ -127,6 +128,10 @@ private:
 	Button *split_right_button = nullptr;
 	Button *split_down_button = nullptr;
 	Button *close_button = nullptr;
+	// Shown while this pane is over all the others, as the way back.
+	Button *restore_button = nullptr;
+	// Panels closed recently, to have back.
+	PopupMenu *recent_menu = nullptr;
 
 	Vector<PanelEntry> panels;
 	int current = -1;
@@ -148,6 +153,10 @@ private:
 	void _split_pressed(bool p_vertical);
 	void _float_pressed();
 	void _close_pressed();
+	void _restore_pressed();
+	void _recent_selected(int p_index);
+	void _tab_bar_input(const Ref<InputEvent> &p_event);
+	void _note_closing(int p_index);
 	String _title_of(const PanelEntry &p_entry) const;
 	void _show_only_current();
 	// Stops showing a panel: back to whoever lent it, or freed if this pane
@@ -234,6 +243,8 @@ public:
 
 	// Whether this pane offers to be closed. The last one does not.
 	void set_closable(bool p_closable);
+	// Whether this pane is the one shown over all the others.
+	void set_maximized(bool p_maximized);
 	bool is_header_visible() const;
 
 	EditorPane();

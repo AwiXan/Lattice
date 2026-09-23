@@ -69,6 +69,13 @@ public:
 
 	// Whether panels of this kind are pointed at something, and therefore
 	// whether a pane holding one has to record what.
+	enum Side {
+		SIDE_NONE,
+		SIDE_LEFT,
+		SIDE_RIGHT,
+		SIDE_BOTTOM,
+	};
+
 	static bool binding_takes_subject(Binding p_binding) {
 		return p_binding == BINDING_DOCUMENT || p_binding == BINDING_RESOURCE;
 	}
@@ -92,6 +99,10 @@ public:
 		// only in the menu. For the few things a pane is most often for - the 2D
 		// and 3D views - so the header stays a handful of icons.
 		bool featured = false;
+		// Where it goes the first time it is asked for with nowhere to go back
+		// to: beside the pane being worked in, on this side. None puts it in
+		// that pane, as a tab.
+		Side side = SIDE_NONE;
 		// How well a panel of this type suits a resource, asked as
 		// (String path, StringName resource_class) and answered with a number.
 		// Zero, or unset, means it cannot show that resource at all. The highest

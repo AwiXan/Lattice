@@ -31,7 +31,9 @@
 #include "editor_pane.h"
 
 #include "core/object/callable_mp.h"
+#include "core/input/input_event.h"
 #include "editor/editor_data.h"
+#include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/gui/editor_pane_tree.h"
@@ -72,6 +74,7 @@ void EditorPane::_build_header() {
 	tab_bar->set_tab_close_display_policy(TabBar::CLOSE_BUTTON_SHOW_ACTIVE_ONLY);
 	tab_bar->connect(SNAME("tab_selected"), callable_mp(this, &EditorPane::_tab_selected));
 	tab_bar->connect(SNAME("tab_close_pressed"), callable_mp(this, &EditorPane::_tab_close_pressed));
+	tab_bar->connect(SceneStringName(gui_input), callable_mp(this, &EditorPane::_tab_bar_input));
 	// Dragging a tab is how a panel is moved, split off or torn out. The bar
 	// forwards to this pane, which is the thing that knows what a tab means.
 	tab_bar->set_drag_forwarding(
@@ -106,7 +109,19 @@ void EditorPane::_build_header() {
 	more_button->get_popup()->connect(SNAME("index_pressed"), callable_mp(this, &EditorPane::_more_selected));
 	header->add_child(more_button);
 
+	recent_menu = memnew(PopupMenu);
+	recent_menu->connect(SceneStringName(id_pressed), callable_mp(this, &EditorPane::_recent_selected));
+	more_button->get_popup()->add_child(recent_menu);
+
 	header->add_child(memnew(VSeparator));
+
+	restore_button = memnew(Button);
+	restore_button->set_flat(true);
+	restore_button->set_focus_mode(FOCUS_NONE);
+	restore_button->set_tooltip_text(TTRC("Show the other panes again."));
+	restore_button->connect(SceneStringName(pressed), callable_mp(this, &EditorPane::_restore_pressed));
+	restore_button->hide();
+	header->add_child(restore_button);
 
 	float_button = memnew(Button);
 	float_button->set_flat(true);
@@ -151,6 +166,7 @@ void EditorPane::_update_theme() {
 
 	const EditorPaneTree *tree = _get_pane_tree();
 	const bool windowed = tree && tree->is_windowed();
+	restore_button->set_button_icon(base->get_editor_theme_icon(SNAME("DistractionFree")));
 	float_button->set_button_icon(base->get_editor_theme_icon(windowed ? SNAME("Back") : SNAME("MakeFloating")));
 	float_button->set_tooltip_text(windowed
 					? TTRC("Put this panel back in the main window.")
@@ -208,7 +224,8 @@ void EditorPane::_update_palette() {
 
 	if (more_button) {
 		PopupMenu *popup = more_button->get_popup();
-		popup->clear();
+		// Not freeing submenus: the recently closed one is kept and refilled.
+		popup->clear(false);
 		more_types.clear();
 		const PackedStringArray quick = EDITOR_GET("interface/panes/quick_panels");
 		for (const String &name : quick) {
@@ -224,6 +241,20 @@ void EditorPane::_update_palette() {
 		}
 		if (!more_types.is_empty()) {
 			popup->add_separator();
+		}
+		EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+		recent_menu->clear();
+		const int closed = main_screen ? main_screen->get_closed_panel_count() : 0;
+		// Newest first, as they are reopened.
+		for (int i = closed - 1; i >= 0; i--) {
+			recent_menu->add_icon_item(_icon_of(main_screen->get_closed_panel_type(i)), main_screen->get_closed_panel_title(i), i);
+		}
+		if (closed > 0) {
+			popup->add_submenu_node_item(TTR("Recently Closed"), recent_menu);
+			const Ref<Shortcut> reopen = ED_GET_SHORTCUT("editor/reopen_closed_panel");
+			if (reopen.is_valid()) {
+				recent_menu->set_item_shortcut(0, reopen, true);
+			}
 		}
 		// Not a panel: the way to all the others. Its index is one past the
 		// last quick panel, which is how a pick tells the two apart.
@@ -378,8 +409,59 @@ void EditorPane::_tab_selected(int p_index) {
 	set_current_panel(p_index);
 }
 
+void EditorPane::_note_closing(int p_index) {
+	// Only closing by hand is noted: a layout being loaded or a pane being
+	// merged away is not something anyone wants back.
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	if (main_screen) {
+		main_screen->note_panel_closing(this, p_index);
+	}
+}
+
 void EditorPane::_tab_close_pressed(int p_index) {
+	_note_closing(p_index);
 	close_panel(p_index);
+}
+
+void EditorPane::_tab_bar_input(const Ref<InputEvent> &p_event) {
+	const Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_null() || !mb->is_pressed()) {
+		return;
+	}
+	const int tab = tab_bar->get_tab_idx_at_point(mb->get_position());
+	if (tab < 0) {
+		return;
+	}
+	if (mb->get_button_index() == MouseButton::LEFT && mb->is_double_click()) {
+		// A tab double-clicked is this pane over all the others, and back.
+		EditorPaneTree *tree = _get_pane_tree();
+		if (tree) {
+			tree->toggle_maximized(this);
+			tab_bar->accept_event();
+		}
+	} else if (mb->get_button_index() == MouseButton::MIDDLE) {
+		// What a middle click on a tab does everywhere else.
+		_tab_close_pressed(tab);
+		tab_bar->accept_event();
+	}
+}
+
+void EditorPane::_restore_pressed() {
+	EditorPaneTree *tree = _get_pane_tree();
+	if (tree) {
+		tree->set_maximized_pane(nullptr);
+	}
+}
+
+void EditorPane::_recent_selected(int p_index) {
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	if (main_screen) {
+		main_screen->reopen_closed_panel(p_index);
+	}
+}
+
+void EditorPane::set_maximized(bool p_maximized) {
+	restore_button->set_visible(p_maximized);
 }
 
 void EditorPane::_subject_selected(int p_index) {
@@ -397,6 +479,10 @@ void EditorPane::_float_pressed() {
 }
 
 void EditorPane::_close_pressed() {
+	// Last first, so that reopening brings the first tab back first.
+	for (int i = panels.size() - 1; i >= 0; i--) {
+		_note_closing(i);
+	}
 	emit_signal(SNAME("close_requested"));
 }
 

@@ -105,6 +105,8 @@ private:
 	// Docks a pane is showing instead of a dock slot. The editor has one of
 	// each, so a dock that is out on loan cannot be lent again.
 	HashSet<EditorDock *> lent_docks;
+	// Above zero while the editor is opening something the user asked for.
+	int opening_on_request = 0;
 
 	DockContextPopup *dock_context_popup = nullptr;
 	PopupMenu *docks_menu = nullptr;
@@ -138,6 +140,15 @@ private:
 
 public:
 	static EditorDockManager *get_singleton() { return singleton; }
+
+	// Held while the editor opens something the user asked for - a resource to
+	// edit, not a node that happened to be selected. A dock opened meanwhile is
+	// given a pane when none has it, rather than being kept out of sight.
+	struct OpeningOnRequest {
+		bool active = false;
+		explicit OpeningOnRequest(bool p_active);
+		~OpeningOnRequest();
+	};
 
 	void update_docks_menu();
 	void update_tab_styles();

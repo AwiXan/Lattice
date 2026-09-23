@@ -1676,7 +1676,11 @@ void TextShaderEditor::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_RESIZED: {
-			preview_timer->start();
+			// Not while out of the tree: a dock is resized on its way back from
+			// a pane, including when the editor is being torn down.
+			if (preview_timer->is_inside_tree()) {
+				preview_timer->start();
+			}
 		} break;
 
 		case NOTIFICATION_THEME_CHANGED: {

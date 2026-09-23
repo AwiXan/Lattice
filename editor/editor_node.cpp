@@ -2932,6 +2932,14 @@ bool EditorNode::_is_class_editor_disabled_by_feature_profile(const StringName &
 void EditorNode::edit_item(Object *p_object, Object *p_editing_owner, bool p_set_current) {
 	ERR_FAIL_NULL(p_editing_owner);
 
+	// A resource being edited is something the user asked for - a shader
+	// opened, a theme double-clicked, a material unfolded in the inspector - so
+	// a dock that edits it is put in a pane if none has it. A node being
+	// selected is not: nobody is handed the Animation dock for clicking an
+	// AnimationPlayer. Nor is switching scenes, which only puts back what each
+	// scene was on.
+	EditorDockManager::OpeningOnRequest on_request(Object::cast_to<Resource>(p_object) != nullptr && !changing_scene);
+
 	// Editing for this type of object may be disabled by user's feature profile.
 	if (!p_object || _is_class_editor_disabled_by_feature_profile(p_object->get_class())) {
 		// Nothing to edit, clean up the owner context and return.
