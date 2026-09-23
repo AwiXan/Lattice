@@ -54,6 +54,21 @@ void fragment() {
 }
 
 
+# What a session that crashed leaves behind: its mark, and a log that ends in
+# the crash handler's report. The editor should notice both.
+CRASHED_SESSION_LOG = """Godot Engine - https://godotengine.org
+Editing a scene before things went wrong.
+
+================================================================
+CrashHandlerException: Program crashed
+Engine version: Godot Engine (self-test)
+Dumping the backtrace. Please include this when reporting the bug.
+[0] Pretend::crash (pretend.cpp:1)
+-- END OF C++ BACKTRACE --
+================================================================
+"""
+
+
 def find_editor():
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     candidates = glob.glob(os.path.join(root, "bin", "godot.*.editor.*"))
@@ -81,6 +96,14 @@ def main():
     for name, text in PROJECT_FILES.items():
         with open(os.path.join(project, name), "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
+    editor_data = os.path.join(project, ".godot", "editor")
+    os.makedirs(os.path.join(editor_data, "logs"))
+    marker = os.path.join(editor_data, "session_running")
+    with open(marker, "w", encoding="utf-8") as f:
+        # Not a process id Windows would ever hand out, nor likely any other.
+        f.write("999999")
+    with open(os.path.join(editor_data, "logs", "editor.log"), "w", encoding="utf-8", newline="\n") as f:
+        f.write(CRASHED_SESSION_LOG)
 
     env = dict(os.environ, LATTICE_SELFTEST="1")
     command = [editor, "--path", project, "--editor", "--headless", "--verbose"]
@@ -114,7 +137,12 @@ def main():
     for line in leaks:
         print(line)
 
-    ok = result.returncode == 0 and done and not failures and not errors and not leaks
+    # A session that closed properly takes its mark away.
+    marker_left = os.path.exists(marker)
+    if marker_left:
+        print("The session's mark was left behind although the editor closed.")
+
+    ok = result.returncode == 0 and done and not failures and not errors and not leaks and not marker_left
     print(
         "%s: exit %d, %d checks, %d failed, %d errors, %d leaks%s"
         % (

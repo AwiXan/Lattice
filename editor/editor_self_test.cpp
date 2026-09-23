@@ -30,11 +30,14 @@
 
 #include "editor_self_test.h"
 
+#include "core/config/project_settings.h"
 #include "core/input/input_event.h"
+#include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
 #include "editor/docks/scene_tree_dock.h"
+#include "editor/editor_crash_report.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_panel_registry.h"
@@ -162,6 +165,25 @@ void EditorSelfTest::_edit(const String &p_path) {
 }
 
 // ---------------------------------------------------------------- the steps
+
+void EditorSelfTest::_crash_report() {
+	// misc/scripts/lattice_selftest.py leaves a session behind that never
+	// closed, with a crash in its log.
+	_check(EditorCrashReport::did_previous_session_crash(), "a session that never closed is noticed");
+	const String excerpt = EditorCrashReport::get_excerpt();
+	_check(EditorCrashReport::was_backtrace_found() && excerpt.contains("Program crashed") && excerpt.contains("END OF C++ BACKTRACE"), "and the backtrace is read from its log");
+	bool shown = false;
+	TypedArray<Node> reports = EditorNode::get_singleton()->get_gui_base()->find_children("*", "EditorCrashReport", true, false);
+	for (int i = 0; i < reports.size(); i++) {
+		Window *report = Object::cast_to<Window>(reports[i]);
+		if (report && report->is_visible()) {
+			shown = true;
+			report->hide();
+		}
+	}
+	_check(shown, "and shown when the editor opens");
+	_check(FileAccess::exists(ProjectSettings::get_singleton()->get_project_data_path().path_join("editor/session_running")), "this session is marked as running");
+}
 
 void EditorSelfTest::_begin() {
 	EditorPaneTree *tree = _tree();
@@ -525,6 +547,7 @@ EditorSelfTest::EditorSelfTest() {
 	error_handler.userdata = this;
 	add_error_handler(&error_handler);
 
+	_add("crash report", callable_mp(this, &EditorSelfTest::_crash_report));
 	_add("begin", callable_mp(this, &EditorSelfTest::_begin));
 	_add("scene panel", callable_mp(this, &EditorSelfTest::_scene_panel));
 	_add("inspector panel", callable_mp(this, &EditorSelfTest::_inspector_panel));

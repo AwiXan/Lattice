@@ -2339,6 +2339,15 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		OS::get_singleton()->add_logger(memnew(RotatedFileLogger(base_path, max_files)));
 	}
 
+	// The editor keeps a log of every session on a project as well, so that
+	// one which ended in a crash can be read afterwards: see EditorCrashReport.
+	// An absolute path: the logger makes its folders as if for user://, and
+	// res:// means nothing there.
+	if (editor && !project_manager && FileAccess::get_create_func(FileAccess::ACCESS_FILESYSTEM)) {
+		const String editor_log = ProjectSettings::get_singleton()->globalize_path(ProjectSettings::get_singleton()->get_project_data_path().path_join("editor/logs/editor.log"));
+		OS::get_singleton()->add_logger(memnew(RotatedFileLogger(editor_log, 5)));
+	}
+
 	if (main_args.is_empty() && String(GLOBAL_GET("application/run/main_scene")) == "") {
 #ifdef TOOLS_ENABLED
 		if (!editor && !project_manager) {

@@ -77,6 +77,7 @@ class EditorSelfTest : public Node {
 	void _edit(const String &p_path);
 
 	// The steps, in order.
+	void _crash_report();
 	void _begin();
 	void _scene_panel();
 	void _inspector_panel();

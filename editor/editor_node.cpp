@@ -70,6 +70,7 @@
 #include "editor/editor_interface.h"
 #include "editor/editor_log.h"
 #include "editor/editor_main_screen.h"
+#include "editor/editor_crash_report.h"
 #include "editor/editor_self_test.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
@@ -1023,6 +1024,14 @@ void EditorNode::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_READY: {
+			if (EditorCrashReport::did_previous_session_crash()) {
+				// Once everything is up, so that it is not buried under the
+				// windows of the editor opening.
+				EditorCrashReport *report = memnew(EditorCrashReport);
+				gui_base->add_child(report);
+				callable_mp(report, &EditorCrashReport::popup_if_needed).call_deferred();
+			}
+
 			if (EditorSelfTest::is_requested()) {
 				// Checking itself rather than being used: see EditorSelfTest.
 				add_child(memnew(EditorSelfTest));
@@ -8427,6 +8436,10 @@ EditorNode::EditorNode() {
 		cmdline_mode = true;
 	}
 
+	// Before anything else can go wrong: whether the last session ended well,
+	// and this one marked as running.
+	EditorCrashReport::begin_session();
+
 	Resource::_get_local_scene_func = _resource_get_edited_scene;
 
 	{
@@ -9753,6 +9766,9 @@ EditorNode::EditorNode() {
 }
 
 EditorNode::~EditorNode() {
+	// Closed properly, which is the one thing a crash cannot do.
+	EditorCrashReport::end_session();
+
 	EditorInspector::cleanup_plugins();
 	EditorTranslationParser::get_singleton()->clean_parsers();
 	ResourceImporterScene::clean_up_importer_plugins();
