@@ -327,6 +327,24 @@ void EditorSceneTabs::update_scene_tabs() {
 	_update_tab_titles();
 }
 
+void EditorSceneTabs::_draw_scene_colors() {
+	// A line under each tab in its scene's color: the same line runs along the
+	// top of every pane showing that scene.
+	EditorData &editor_data = EditorNode::get_editor_data();
+	if (!editor_data.are_scene_colors_shown()) {
+		return;
+	}
+	const real_t thickness = Math::round(2 * EDSCALE);
+	const real_t inset = Math::round(3 * EDSCALE);
+	for (int i = 0; i < scene_tabs->get_tab_count() && i < editor_data.get_edited_scene_count(); i++) {
+		const Rect2 rect = scene_tabs->get_tab_rect(i);
+		if (!rect.has_area()) {
+			continue;
+		}
+		scene_tabs->draw_rect(Rect2(rect.position.x + inset, rect.position.y + rect.size.y - thickness, MAX((real_t)0, rect.size.x - inset * 2), thickness), editor_data.get_scene_color(i));
+	}
+}
+
 void EditorSceneTabs::_update_tab_titles() {
 	bool show_rb = EDITOR_GET("interface/scene_tabs/show_script_button");
 	const String main_scene_path = ResourceUID::ensure_path(GLOBAL_GET("application/run/main_scene"));
@@ -496,6 +514,7 @@ EditorSceneTabs::EditorSceneTabs() {
 	tabbar_panel->add_child(tabbar_container);
 
 	scene_tabs = memnew(TabBar);
+	scene_tabs->connect(SceneStringName(draw), callable_mp(this, &EditorSceneTabs::_draw_scene_colors));
 	scene_tabs->add_tab("unsaved");
 	scene_tabs->set_tab_close_display_policy((TabBar::CloseButtonDisplayPolicy)EDITOR_GET("interface/scene_tabs/display_close_button").operator int());
 	scene_tabs->set_max_tab_width(int(EDITOR_GET("interface/scene_tabs/maximum_width")) * EDSCALE);

@@ -169,6 +169,11 @@ private:
 	void _recent_selected(int p_index);
 	void _tab_bar_input(const Ref<InputEvent> &p_event);
 	void _note_closing(int p_index);
+	// The color of the scene the current panel is showing, when it shows one
+	// and colors are shown at all; transparent otherwise.
+	Color _scene_color() const;
+	void _draw_scene_color();
+	void _scene_changed();
 	String _title_of(const PanelEntry &p_entry) const;
 	void _show_only_current();
 	// Stops showing a panel: back to whoever lent it, or freed if this pane

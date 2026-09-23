@@ -662,6 +662,8 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("interface/scene_tabs/show_thumbnail_on_hover", true);
 	EDITOR_SETTING_USAGE(Variant::INT, PROPERTY_HINT_RANGE, "interface/scene_tabs/maximum_width", 350, "0,9999,1", PROPERTY_USAGE_DEFAULT)
 	_initial_set("interface/scene_tabs/show_script_button", false, true);
+	// A color for each open scene, on its tab and on the panes showing it.
+	_initial_set("interface/scene_tabs/color_code_scenes", true, true);
 	_initial_set("interface/scene_tabs/restore_scenes_on_load", true, true);
 	EDITOR_SETTING_BASIC(Variant::BOOL, PROPERTY_HINT_NONE, "interface/scene_tabs/auto_select_current_scene_file", false, "");
 

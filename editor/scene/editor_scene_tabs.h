@@ -63,6 +63,7 @@ private:
 	HBoxContainer *tabbar_container = nullptr;
 
 	TabBar *scene_tabs = nullptr;
+	void _draw_scene_colors();
 	PopupMenu *scene_tabs_context_menu = nullptr;
 	MenuButton *scene_list = nullptr;
 	Button *scene_tab_add = nullptr;

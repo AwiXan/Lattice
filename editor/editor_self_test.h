@@ -113,6 +113,7 @@ class EditorSelfTest : public Node {
 	void _recovery_offered();
 	void _recovery_restored();
 	void _recovery_copies();
+	void _scene_colors();
 	void _finish();
 
 	// Kept between steps.

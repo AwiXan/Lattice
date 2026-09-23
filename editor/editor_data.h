@@ -208,6 +208,15 @@ public:
 
 	int add_edited_scene(int p_at_pos);
 	void remove_scene(int p_idx);
+
+	// Each open scene's color, so that everything showing it - its tab, the
+	// panes pointed at it - can be told from what shows another at a glance.
+	// A scene gets the same one whenever it is open, unless another open scene
+	// has it already.
+	Color get_scene_color(int p_idx);
+	// Only with more than one scene open, and interface/scene_tabs/
+	// color_code_scenes on: with one, there is nothing to tell apart.
+	bool are_scene_colors_shown() const;
 	void set_scene_root(int p_idx, Node *p_root);
 	void set_edited_scene(int p_idx);
 	void set_edited_scene_root(Node *p_root);
@@ -251,6 +260,7 @@ public:
 	// reference has to survive: closing or reordering a tab moves every index
 	// after it, and a binding kept as an index would quietly point elsewhere.
 	int get_scene_index_by_history_id(int p_history_id) const;
+	HashMap<int, int> scene_colors; // History id to an index into the palette.
 	// The root of the open document a node belongs to, for code that has a node
 	// but no view to ask which document it is looking at. Null if the node is
 	// in none of them.

@@ -63,6 +63,7 @@ void EditorPane::_bind_methods() {
 
 void EditorPane::_build_header() {
 	header_panel = memnew(PanelContainer);
+	header_panel->connect(SceneStringName(draw), callable_mp(this, &EditorPane::_draw_scene_color));
 	add_child(header_panel);
 
 	header = memnew(HFlowContainer);
@@ -360,6 +361,7 @@ void EditorPane::_update_tabs() {
 	// Only a panel that shows one document offers a scene to choose; a resource
 	// panel is pointed at its resource by whatever opened it.
 	subject_button->set_visible(type && type->binding == EditorPanelRegistry::BINDING_DOCUMENT);
+	header_panel->queue_redraw();
 	if (subject_button->is_visible()) {
 		_update_subject_list();
 	}
@@ -375,6 +377,21 @@ void EditorPane::_show_only_current() {
 			panels[i].control->set_visible(i == current);
 		}
 	}
+}
+
+static Ref<Texture2D> _scene_color_dot(const Color &p_color) {
+	// A dot for the list of scenes, in the scene's color.
+	const int size = MAX(8, int(10 * EDSCALE));
+	Ref<Image> image = Image::create_empty(size, size, false, Image::FORMAT_RGBA8);
+	const real_t radius = size * 0.5;
+	for (int y = 0; y < size; y++) {
+		for (int x = 0; x < size; x++) {
+			const real_t distance = Vector2(x + 0.5 - radius, y + 0.5 - radius).length();
+			const real_t coverage = CLAMP(radius - distance, (real_t)0.0, (real_t)1.0);
+			image->set_pixel(x, y, Color(p_color.r, p_color.g, p_color.b, coverage));
+		}
+	}
+	return ImageTexture::create_from_image(image);
 }
 
 void EditorPane::_update_subject_list() {
@@ -398,6 +415,9 @@ void EditorPane::_update_subject_list() {
 		const int index = subject_button->get_item_count();
 		subject_button->add_item(title, index);
 		subject_button->set_item_metadata(index, history_id);
+		if (editor_data.are_scene_colors_shown()) {
+			subject_button->set_item_icon(index, _scene_color_dot(editor_data.get_scene_color(i)));
+		}
 		if (subject.get_type() == Variant::INT && (int)subject == history_id) {
 			subject_button->select(index);
 		}
@@ -409,6 +429,37 @@ void EditorPane::_tab_selected(int p_index) {
 		return;
 	}
 	set_current_panel(p_index);
+}
+
+Color EditorPane::_scene_color() const {
+	if (current < 0 || current >= panels.size()) {
+		return Color(0, 0, 0, 0);
+	}
+	const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(panels[current].type);
+	EditorData &editor_data = EditorNode::get_editor_data();
+	if (!type || type->binding != EditorPanelRegistry::BINDING_DOCUMENT || !editor_data.are_scene_colors_shown()) {
+		return Color(0, 0, 0, 0);
+	}
+	// Pointed at a scene, or following whichever is current - and a scene
+	// closed since means following too.
+	const Variant subject = panels[current].subject;
+	int index = subject.get_type() == Variant::INT && int(subject) >= 0 ? editor_data.get_scene_index_by_history_id(subject) : -1;
+	if (index < 0) {
+		index = editor_data.get_edited_scene();
+	}
+	return index >= 0 ? editor_data.get_scene_color(index) : Color(0, 0, 0, 0);
+}
+
+void EditorPane::_draw_scene_color() {
+	const Color color = _scene_color();
+	if (color.a <= 0) {
+		return;
+	}
+	header_panel->draw_rect(Rect2(0, 0, header_panel->get_size().x, Math::round(2 * EDSCALE)), color);
+}
+
+void EditorPane::_scene_changed() {
+	header_panel->queue_redraw();
 }
 
 void EditorPane::_note_closing(int p_index) {
@@ -1073,7 +1124,20 @@ bool EditorPane::_accept_drop(const PanelDrop &p_drop, DropZone p_zone, int p_ta
 
 void EditorPane::_notification(int p_what) {
 	switch (p_what) {
-		case NOTIFICATION_ENTER_TREE:
+		case NOTIFICATION_ENTER_TREE: {
+			_update_theme();
+			// A pane following the current scene changes color with it, and
+			// one pointed at a scene stops showing any when it is the only one.
+			EditorNode::get_singleton()->connect("scene_changed", callable_mp(this, &EditorPane::_scene_changed));
+		} break;
+
+		case NOTIFICATION_EXIT_TREE: {
+			EditorNode *editor = EditorNode::get_singleton();
+			if (editor && editor->is_connected("scene_changed", callable_mp(this, &EditorPane::_scene_changed))) {
+				editor->disconnect("scene_changed", callable_mp(this, &EditorPane::_scene_changed));
+			}
+		} break;
+
 		case NOTIFICATION_THEME_CHANGED: {
 			_update_theme();
 		} break;

@@ -42,6 +42,7 @@
 #include "editor/inspector/editor_context_menu_plugin.h"
 #include "editor/inspector/multi_node_edit.h"
 #include "editor/plugins/editor_plugin.h"
+#include "editor/settings/editor_settings.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
 #include "scene/property_utils.h"
@@ -734,6 +735,53 @@ int EditorData::add_edited_scene(int p_at_pos) {
 	return p_at_pos;
 }
 
+static const Color SCENE_PALETTE[] = {
+	Color(0.38, 0.69, 0.94), // Blue.
+	Color(0.90, 0.75, 0.48), // Yellow.
+	Color(0.60, 0.77, 0.47), // Green.
+	Color(0.78, 0.47, 0.87), // Purple.
+	Color(0.88, 0.42, 0.46), // Red.
+	Color(0.34, 0.71, 0.76), // Cyan.
+	Color(0.82, 0.60, 0.40), // Orange.
+	Color(0.96, 0.47, 0.78), // Pink.
+};
+static constexpr int SCENE_PALETTE_SIZE = sizeof(SCENE_PALETTE) / sizeof(SCENE_PALETTE[0]);
+
+Color EditorData::get_scene_color(int p_idx) {
+	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), Color());
+	const int history_id = edited_scene[p_idx].history_id;
+	const int *known = scene_colors.getptr(history_id);
+	if (known) {
+		return SCENE_PALETTE[*known];
+	}
+
+	// The one its path points at, so it is the same one next time - or the
+	// next one along that no other open scene has.
+	HashSet<int> taken;
+	for (const EditedScene &scene : edited_scene) {
+		const int *other = scene_colors.getptr(scene.history_id);
+		if (other) {
+			taken.insert(*other);
+		}
+	}
+	const String &path = edited_scene[p_idx].path;
+	const int preferred = int((path.is_empty() ? uint32_t(history_id) : path.hash()) % SCENE_PALETTE_SIZE);
+	int chosen = preferred;
+	for (int i = 0; i < SCENE_PALETTE_SIZE; i++) {
+		const int candidate = (preferred + i) % SCENE_PALETTE_SIZE;
+		if (!taken.has(candidate)) {
+			chosen = candidate;
+			break;
+		}
+	}
+	scene_colors[history_id] = chosen;
+	return SCENE_PALETTE[chosen];
+}
+
+bool EditorData::are_scene_colors_shown() const {
+	return edited_scene.size() > 1 && bool(EDITOR_GET("interface/scene_tabs/color_code_scenes"));
+}
+
 void EditorData::remove_scene(int p_idx) {
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
 	if (edited_scene[p_idx].root) {
@@ -759,6 +807,7 @@ void EditorData::remove_scene(int p_idx) {
 		memdelete(edited_scene[p_idx].history);
 		edited_scene.write[p_idx].history = nullptr;
 	}
+	scene_colors.erase(edited_scene[p_idx].history_id);
 
 	if (current_edited_scene > p_idx) {
 		current_edited_scene--;

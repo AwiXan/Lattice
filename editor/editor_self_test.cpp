@@ -633,6 +633,19 @@ void EditorSelfTest::_recovery_copies() {
 	_check(listed, "a scene with unsaved changes is copied aside");
 }
 
+void EditorSelfTest::_scene_colors() {
+	// By now scene_a and the recovered scene_b are both open.
+	EditorData &editor_data = EditorNode::get_editor_data();
+	if (editor_data.get_edited_scene_count() < 2) {
+		_check(false, "two scenes open to tell apart");
+		return;
+	}
+	const Color first = editor_data.get_scene_color(0);
+	const Color second = editor_data.get_scene_color(1);
+	_check(editor_data.are_scene_colors_shown() && first != second, "two open scenes have colors of their own");
+	_check(editor_data.get_scene_color(0) == first, "and keep them");
+}
+
 void EditorSelfTest::_finish() {
 	remove_error_handler(&error_handler);
 	const uint32_t error_count = errors.get();
@@ -718,6 +731,7 @@ EditorSelfTest::EditorSelfTest() {
 	_add("recovery offered", callable_mp(this, &EditorSelfTest::_recovery_offered));
 	_add("recovery restored", callable_mp(this, &EditorSelfTest::_recovery_restored));
 	_add("recovery copies", callable_mp(this, &EditorSelfTest::_recovery_copies));
+	_add("scene colors", callable_mp(this, &EditorSelfTest::_scene_colors));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
 }
 
