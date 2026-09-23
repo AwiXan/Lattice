@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_crash_report.h                                                 */
+/*  editor_scene_recovery.h                                               */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,62 +30,59 @@
 
 #pragma once
 
-#include "scene/gui/dialogs.h"
+#include "scene/main/node.h"
 
-class Button;
-class Label;
-class TextEdit;
+class Timer;
 
-// Whether the last session on this project ended without the editor closing,
-// and what its log had to say about it.
+// Copies of scenes with unsaved changes, kept while the editor runs, for when
+// it does not close properly.
 //
-// The editor keeps a log of each session on a project, rotated, in
-// .godot/editor/logs - a crash's backtrace is printed as errors, which are
-// written out at once, so it is in there even when nothing else made it. A
-// session marks itself as running when it starts and unmarks itself when it
-// closes; a mark left by a process that is no longer running is a session that
-// never closed. The next one says so, with the backtrace, instead of the
-// console window that closed too fast to read it.
-class EditorCrashReport : public AcceptDialog {
-	GDCLASS(EditorCrashReport, AcceptDialog);
+// Every few minutes (interface/editor/behavior/recovery_copy_interval) each open scene
+// that has changed since its last copy is packed into
+// .godot/editor/recovery/current. A scene saved or closed takes its copy with
+// it, and closing the editor properly takes them all: they only matter when
+// something went wrong. After a crash, the next session sets them aside and
+// the crash report offers them back - each opened in place of the file it
+// came from, unsaved, to be looked over and saved.
+class EditorSceneRecovery : public Node {
+	GDCLASS(EditorSceneRecovery, Node);
 
-	static inline bool previous_session_crashed = false;
-	static inline bool backtrace_found = false;
-	static inline bool owns_marker = false;
-	static inline String previous_log;
-	static inline String excerpt;
+	static inline EditorSceneRecovery *singleton = nullptr;
+	static inline int previous_count = 0;
 
-	Label *message = nullptr;
-	TextEdit *text = nullptr;
-	Button *restore_button = nullptr;
+	Timer *timer = nullptr;
+	// For each document, the version of its history last copied, so an
+	// unchanged scene is not packed over and over.
+	HashMap<int, uint64_t> copied_versions;
+	HashMap<int, String> copied_files;
 
-	static String _marker_path();
-	static String _find_previous_log();
-	static String _excerpt_of(const String &p_log);
+	static String _dir(const String &p_which);
+	static void _remove_dir(const String &p_dir);
+	static String _file_for(int p_history_id, const String &p_scene_path);
 
-	void _copy_pressed();
-	void _open_folder_pressed();
-	void _restore_pressed();
+	void _forget(int p_history_id);
+	void _scene_saved(const String &p_path);
+	void _update_interval();
 
 protected:
 	void _notification(int p_what);
 
 public:
-	// Where this project's session logs go.
-	static String get_logs_dir();
+	static EditorSceneRecovery *get_singleton() { return singleton; }
 
-	// At startup: reads what the last session left behind, and marks this one
-	// as running.
-	static void begin_session();
-	// On closing normally.
+	// At startup, before anything is copied: what a session that crashed left
+	// is set aside to be offered; anything else left over is thrown away.
+	static void begin_session(bool p_previous_session_crashed);
+	// On closing properly: nothing to recover.
 	static void end_session();
+	static int get_previous_count() { return previous_count; }
 
-	static bool did_previous_session_crash() { return previous_session_crashed; }
-	static bool was_backtrace_found() { return backtrace_found; }
-	static String get_excerpt() { return excerpt; }
+	// Copies every open scene with changes not yet copied.
+	void save_now();
+	// Opens what the crashed session left, in place of the files it came
+	// from. Returns how many scenes were brought back.
+	int restore_previous();
 
-	// Shows what happened last time, if anything did.
-	void popup_if_needed();
-
-	EditorCrashReport();
+	EditorSceneRecovery();
+	~EditorSceneRecovery();
 };

@@ -69,6 +69,14 @@ Dumping the backtrace. Please include this when reporting the bug.
 """
 
 
+RECOVERED_SCENE = """[gd_scene format=3]
+
+[node name="SceneB" type="Node2D"]
+
+[node name="Recovered" type="Node2D" parent="."]
+"""
+
+
 def find_editor():
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     candidates = glob.glob(os.path.join(root, "bin", "godot.*.editor.*"))
@@ -104,6 +112,13 @@ def main():
         f.write("999999")
     with open(os.path.join(editor_data, "logs", "editor.log"), "w", encoding="utf-8", newline="\n") as f:
         f.write(CRASHED_SESSION_LOG)
+    # And a scene it had changed but not saved, copied aside.
+    recovery = os.path.join(editor_data, "recovery", "current")
+    os.makedirs(recovery)
+    with open(os.path.join(recovery, "scene_b_3.tscn"), "w", encoding="utf-8", newline="\n") as f:
+        f.write(RECOVERED_SCENE)
+    with open(os.path.join(recovery, "index.cfg"), "w", encoding="utf-8", newline="\n") as f:
+        f.write('[scene_b_3.tscn]\n\npath="res://scene_b.tscn"\ntitle="scene_b"\n')
 
     env = dict(os.environ, LATTICE_SELFTEST="1")
     command = [editor, "--path", project, "--editor", "--headless", "--verbose"]
@@ -141,8 +156,22 @@ def main():
     marker_left = os.path.exists(marker)
     if marker_left:
         print("The session's mark was left behind although the editor closed.")
+    # And its copies of unsaved scenes, which only matter after a crash.
+    copies_left = os.path.exists(os.path.join(editor_data, "recovery", "current")) or os.path.exists(
+        os.path.join(editor_data, "recovery", "previous")
+    )
+    if copies_left:
+        print("Copies of unsaved scenes were left behind although the editor closed.")
 
-    ok = result.returncode == 0 and done and not failures and not errors and not leaks and not marker_left
+    ok = (
+        result.returncode == 0
+        and done
+        and not failures
+        and not errors
+        and not leaks
+        and not marker_left
+        and not copies_left
+    )
     print(
         "%s: exit %d, %d checks, %d failed, %d errors, %d leaks%s"
         % (

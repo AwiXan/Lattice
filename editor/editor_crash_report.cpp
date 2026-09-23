@@ -35,6 +35,7 @@
 #include "core/io/file_access.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
+#include "editor/editor_scene_recovery.h"
 #include "editor/editor_string_names.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
@@ -141,6 +142,9 @@ void EditorCrashReport::popup_if_needed() {
 		message->set_text(TTR("The last session on this project ended without closing - it crashed, or was stopped. This is how its log ends:"));
 	}
 	text->set_text(excerpt.is_empty() ? TTR("(Its log could not be found.)") : excerpt);
+	const int recoverable = EditorSceneRecovery::get_previous_count();
+	restore_button->set_visible(recoverable > 0);
+	restore_button->set_text(vformat(TTRN("Restore %d Unsaved Scene", "Restore %d Unsaved Scenes", recoverable), recoverable));
 	popup_centered_clamped(Size2(760, 420) * EDSCALE, 0.8);
 }
 
@@ -150,6 +154,14 @@ void EditorCrashReport::_notification(int p_what) {
 		text->add_theme_font_override(SceneStringName(font), get_theme_font(SNAME("source"), EditorStringName(EditorFonts)));
 		text->add_theme_font_size_override(SceneStringName(font_size), get_theme_font_size(SNAME("source_size"), EditorStringName(EditorFonts)));
 	}
+}
+
+void EditorCrashReport::_restore_pressed() {
+	EditorSceneRecovery *recovery = EditorSceneRecovery::get_singleton();
+	if (recovery) {
+		recovery->restore_previous();
+	}
+	hide();
 }
 
 void EditorCrashReport::_copy_pressed() {
@@ -180,4 +192,8 @@ EditorCrashReport::EditorCrashReport() {
 	copy->connect(SceneStringName(pressed), callable_mp(this, &EditorCrashReport::_copy_pressed));
 	Button *folder = add_button(TTRC("Show Log"), false, "folder");
 	folder->connect(SceneStringName(pressed), callable_mp(this, &EditorCrashReport::_open_folder_pressed));
+	// Offered when the session that crashed had scenes with changes not saved.
+	restore_button = add_button(TTRC("Restore Unsaved Scenes"), true, "restore");
+	restore_button->connect(SceneStringName(pressed), callable_mp(this, &EditorCrashReport::_restore_pressed));
+	restore_button->hide();
 }

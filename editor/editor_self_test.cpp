@@ -32,13 +32,17 @@
 
 #include "core/config/project_settings.h"
 #include "core/input/input_event.h"
+#include "core/io/config_file.h"
 #include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_crash_report.h"
+#include "editor/editor_data.h"
 #include "editor/editor_main_screen.h"
+#include "editor/editor_scene_recovery.h"
+#include "editor/editor_undo_redo_manager.h"
 #include "editor/editor_node.h"
 #include "editor/editor_panel_registry.h"
 #include "editor/file_system/editor_file_system.h"
@@ -498,6 +502,63 @@ void EditorSelfTest::_drop_from_another_window() {
 	_check(!tree->get_drop_hint()->is_visible(), "and the hint that showed it is put away");
 }
 
+void EditorSelfTest::_recovery_offered() {
+	// misc/scripts/lattice_selftest.py leaves a copy of scene_b behind, with a
+	// node the file on disk does not have.
+	_check(EditorSceneRecovery::get_previous_count() == 1, "a scene the crashed session had not saved is offered back");
+	bool offered = false;
+	TypedArray<Node> reports = EditorNode::get_singleton()->get_gui_base()->find_children("*", "EditorCrashReport", true, false);
+	for (int i = 0; i < reports.size(); i++) {
+		TypedArray<Node> buttons = Object::cast_to<Node>(reports[i])->find_children("*", "Button", true, false);
+		for (int j = 0; j < buttons.size(); j++) {
+			Button *button = Object::cast_to<Button>(buttons[j]);
+			offered = offered || (button->is_visible() && button->get_text().begins_with("Restore"));
+		}
+	}
+	_check(offered, "by the crash report");
+	_check(EditorSceneRecovery::get_singleton() && EditorSceneRecovery::get_singleton()->restore_previous() == 1, "and brought back");
+}
+
+void EditorSelfTest::_recovery_restored() {
+	EditorData &editor_data = EditorNode::get_editor_data();
+	bool found = false;
+	String seen;
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		Node *root = editor_data.get_edited_scene_root(i);
+		seen += vformat(" [%s root=%s recovered=%s unsaved=%s]", editor_data.get_scene_path(i), root ? String(root->get_name()) : String("-"), root && root->has_node(NodePath("Recovered")) ? "yes" : "no", EditorNode::get_singleton()->is_scene_unsaved(i) ? "yes" : "no");
+		if (editor_data.get_scene_path(i) == "res://scene_b.tscn" && root) {
+			found = root->has_node(NodePath("Recovered")) && EditorNode::get_singleton()->is_scene_unsaved(i);
+		}
+	}
+	_check(found, "in place of the file it came from, with its changes not yet saved there" + (found ? String() : " -" + seen));
+}
+
+void EditorSelfTest::_recovery_copies() {
+	Node *root = EditorNode::get_singleton()->get_edited_scene();
+	if (!root) {
+		_check(false, "a scene to change");
+		return;
+	}
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	undo_redo->create_action("Self-test change");
+	undo_redo->add_do_property(root, "editor_description", "changed by the self-test");
+	undo_redo->add_undo_property(root, "editor_description", root->get_editor_description());
+	undo_redo->commit_action();
+	EditorSceneRecovery::get_singleton()->save_now();
+
+	const String dir = ProjectSettings::get_singleton()->get_project_data_path().path_join("editor/recovery/current");
+	const String path = EditorNode::get_editor_data().get_scene_path(EditorNode::get_editor_data().get_edited_scene());
+	Ref<ConfigFile> index;
+	index.instantiate();
+	bool listed = false;
+	if (index->load(dir.path_join("index.cfg")) == OK) {
+		for (const String &file : index->get_sections()) {
+			listed = listed || (String(index->get_value(file, "path", "")) == path && FileAccess::exists(dir.path_join(file)));
+		}
+	}
+	_check(listed, "a scene with unsaved changes is copied aside");
+}
+
 void EditorSelfTest::_finish() {
 	remove_error_handler(&error_handler);
 	const uint32_t error_count = errors.get();
@@ -573,6 +634,9 @@ EditorSelfTest::EditorSelfTest() {
 	_add("whole side", callable_mp(this, &EditorSelfTest::_whole_side));
 	_add("whole side check", callable_mp(this, &EditorSelfTest::_whole_side_check));
 	_add("drop from another window", callable_mp(this, &EditorSelfTest::_drop_from_another_window));
+	_add("recovery offered", callable_mp(this, &EditorSelfTest::_recovery_offered));
+	_add("recovery restored", callable_mp(this, &EditorSelfTest::_recovery_restored));
+	_add("recovery copies", callable_mp(this, &EditorSelfTest::_recovery_copies));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
 }
 

@@ -71,6 +71,7 @@
 #include "editor/editor_log.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_crash_report.h"
+#include "editor/editor_scene_recovery.h"
 #include "editor/editor_self_test.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
@@ -1024,6 +1025,10 @@ void EditorNode::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_READY: {
+			// Copies of scenes with unsaved changes, for when the editor does
+			// not get to close properly.
+			add_child(memnew(EditorSceneRecovery));
+
 			if (EditorCrashReport::did_previous_session_crash()) {
 				// Once everything is up, so that it is not buried under the
 				// windows of the editor opening.
@@ -8439,6 +8444,7 @@ EditorNode::EditorNode() {
 	// Before anything else can go wrong: whether the last session ended well,
 	// and this one marked as running.
 	EditorCrashReport::begin_session();
+	EditorSceneRecovery::begin_session(EditorCrashReport::did_previous_session_crash());
 
 	Resource::_get_local_scene_func = _resource_get_edited_scene;
 
@@ -9768,6 +9774,7 @@ EditorNode::EditorNode() {
 EditorNode::~EditorNode() {
 	// Closed properly, which is the one thing a crash cannot do.
 	EditorCrashReport::end_session();
+	EditorSceneRecovery::end_session();
 
 	EditorInspector::cleanup_plugins();
 	EditorTranslationParser::get_singleton()->clean_parsers();

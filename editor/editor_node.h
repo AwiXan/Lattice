@@ -239,6 +239,7 @@ public:
 
 private:
 	friend class EditorSceneTabs;
+	friend class EditorSceneRecovery;
 
 	enum {
 		MAX_INIT_CALLBACKS = 128,
