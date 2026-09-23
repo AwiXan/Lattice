@@ -71,6 +71,10 @@ private:
 	EditorFileDialog *file_dialog = nullptr;
 	AcceptDialog *accept = nullptr;
 	String last_filter;
+	// A tree in a panel has a filter of its own; the Scene dock's own remote
+	// tree goes by the dock's.
+	bool has_own_filter = false;
+	String own_filter;
 
 	void _scene_tree_folded(Object *p_obj);
 	void _scene_tree_selected();
@@ -102,6 +106,12 @@ public:
 	void update_scene_tree(const SceneDebuggerTree *p_tree, int p_debugger);
 	void select_nodes(const TypedArray<int64_t> &p_ids);
 	void clear_selection();
+
+	// Narrows this tree by its own text rather than the Scene dock's. Changing
+	// it back to nothing is what brings a node picked while it was narrowed
+	// into view, with its parents opened up to it.
+	void set_filter(const String &p_filter);
+	String get_filter() const;
 
 	EditorDebuggerTree();
 };

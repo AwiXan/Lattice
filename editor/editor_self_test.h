@@ -116,6 +116,7 @@ class EditorSelfTest : public Node {
 	void _scene_colors();
 	void _panel_from_palette();
 	void _panel_from_palette_shown();
+	void _remote_filter();
 	void _keys_prepare();
 	void _keys_move();
 	void _keys_tabs();

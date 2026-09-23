@@ -65,16 +65,21 @@ void EditorScenePanel::set_remote(bool p_remote) {
 }
 
 void EditorScenePanel::_show_current() {
-	// The buttons and the filter are about the scene being edited; the running
-	// one is read-only and changes under them.
-	toolbar->set_visible(!remote);
+	// The buttons are about the scene being edited; the running one is
+	// read-only and changes under them. The filter is for looking, which both
+	// are for.
+	toolbar_mirror.set_suppressed(remote);
+	toolbar_mirror.sync();
 	remote_tree->set_visible(remote);
 	_update_create_root();
 	_update_sessions();
 }
 
 void EditorScenePanel::_filter_changed(const String &p_text) {
+	// One text for both: switching between the scene being edited and the
+	// running one keeps looking for the same thing.
 	local_tree->set_filter(p_text);
+	remote_tree->set_filter(p_text);
 }
 
 void EditorScenePanel::_activate() {
@@ -381,6 +386,8 @@ EditorScenePanel::EditorScenePanel() {
 	create_root_mirror.set_shortcut_context(this);
 
 	remote_tree = memnew(EditorDebuggerTree);
+	// Narrowed by this panel's filter, not the Scene dock's.
+	remote_tree->set_filter(String());
 	remote_tree->set_v_size_flags(SIZE_EXPAND_FILL);
 	remote_tree->hide();
 	add_child(remote_tree);

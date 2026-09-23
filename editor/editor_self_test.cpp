@@ -659,6 +659,28 @@ void EditorSelfTest::_panel_from_palette_shown() {
 	_check(_pane_showing("dock_FileSystem") != nullptr, "a panel can be shown from the Command Palette, by name");
 }
 
+void EditorSelfTest::_remote_filter() {
+	EditorPane *pane = _tree()->get_first_pane();
+	const int index = pane->show_panel_of_type("scene_tree");
+	EditorScenePanel *panel = index >= 0 ? Object::cast_to<EditorScenePanel>(pane->get_panel_at(index)) : nullptr;
+	if (!panel) {
+		_check(false, "a Scene panel to look at the running game in");
+		return;
+	}
+	panel->set_remote(true);
+	int buttons_shown = 0;
+	bool filter_shown = false;
+	TypedArray<Node> controls = panel->get_child(0)->get_children();
+	for (int i = 0; i < controls.size(); i++) {
+		Control *control = Object::cast_to<Control>(controls[i]);
+		filter_shown = filter_shown || (Object::cast_to<LineEdit>(control) && control->is_visible_in_tree());
+		buttons_shown += Object::cast_to<Button>(control) && control->is_visible() ? 1 : 0;
+	}
+	_check(filter_shown && buttons_shown == 0, "looking at the running game, the filter stays and the editing buttons go");
+	panel->set_remote(false);
+	pane->close_panel(index);
+}
+
 static Ref<InputEventKey> _pane_key(Key p_key) {
 	Ref<InputEventKey> key;
 	key.instantiate();
@@ -793,6 +815,7 @@ EditorSelfTest::EditorSelfTest() {
 	_add("scene colors", callable_mp(this, &EditorSelfTest::_scene_colors));
 	_add("panel from palette", callable_mp(this, &EditorSelfTest::_panel_from_palette));
 	_add("panel from palette shown", callable_mp(this, &EditorSelfTest::_panel_from_palette_shown));
+	_add("remote filter", callable_mp(this, &EditorSelfTest::_remote_filter));
 	_add("keys prepare", callable_mp(this, &EditorSelfTest::_keys_prepare));
 	_add("keys move", callable_mp(this, &EditorSelfTest::_keys_move));
 	_add("keys tabs", callable_mp(this, &EditorSelfTest::_keys_tabs));

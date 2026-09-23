@@ -213,7 +213,7 @@ void EditorDebuggerTree::update_scene_tree(const SceneDebuggerTree *p_tree, int 
 
 	updating_scene_tree = true;
 	const String last_path = get_selected_path();
-	const String filter = SceneTreeDock::get_singleton()->get_filter();
+	const String filter = get_filter();
 	LocalVector<TreeItem *> select_items;
 	bool hide_filtered_out_parents = EDITOR_GET("docks/scene_tree/hide_filtered_out_parents");
 
@@ -409,6 +409,27 @@ void EditorDebuggerTree::update_scene_tree(const SceneDebuggerTree *p_tree, int 
 
 	last_filter = filter;
 	updating_scene_tree = false;
+}
+
+void EditorDebuggerTree::set_filter(const String &p_filter) {
+	has_own_filter = true;
+	if (own_filter == p_filter) {
+		return;
+	}
+	own_filter = p_filter;
+	// Rebuilt from the game's answer rather than from what is shown, which the
+	// last filter has already pruned.
+	EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton();
+	if (debugger && is_visible_in_tree()) {
+		debugger->request_remote_tree();
+	}
+}
+
+String EditorDebuggerTree::get_filter() const {
+	if (has_own_filter) {
+		return own_filter;
+	}
+	return SceneTreeDock::get_singleton() ? SceneTreeDock::get_singleton()->get_filter() : String();
 }
 
 void EditorDebuggerTree::select_nodes(const TypedArray<int64_t> &p_ids) {

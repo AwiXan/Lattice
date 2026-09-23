@@ -168,7 +168,7 @@ void EditorButtonMirror::sync() {
 			continue;
 		}
 		Node *root = entry.root.is_valid() ? ObjectDB::get_instance<Node>(entry.root) : nullptr;
-		entry.copy->set_visible(_is_shown(original, root));
+		entry.copy->set_visible(!suppressed && _is_shown(original, root));
 
 		Button *original_button = Object::cast_to<Button>(original);
 		Button *copy_button = Object::cast_to<Button>(entry.copy);

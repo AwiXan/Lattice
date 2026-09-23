@@ -58,6 +58,7 @@ class EditorButtonMirror {
 	LocalVector<Mirror> mirrors;
 	Callable before_press;
 	const Node *shortcut_context = nullptr;
+	bool suppressed = false;
 
 	static void _pressed(ObjectID p_original, ObjectID p_copy, const Callable &p_before_press);
 	static bool _is_shown(Node *p_node, Node *p_root);
@@ -81,6 +82,10 @@ public:
 	// Brings the copies up to date with their originals. Cheap enough to do
 	// every frame something showing them is on screen.
 	void sync();
+	// Keeps every copy hidden, whatever its original is doing - for a panel
+	// showing something the buttons are not about.
+	void set_suppressed(bool p_suppressed) { suppressed = p_suppressed; }
+
 	// Forgets the copies; freeing them is up to whoever placed them.
 	void clear() { mirrors.clear(); }
 };
