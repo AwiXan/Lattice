@@ -98,6 +98,7 @@ public:
 	void register_shortcuts_as_command();
 	Ref<Shortcut> add_shortcut_command(const String &p_command, const String &p_key, Ref<Shortcut> p_shortcut);
 	void remove_command(String p_key_name);
+	bool has_command(const String &p_key_name) const { return commands.has(p_key_name); }
 	static EditorCommandPalette *get_singleton();
 };
 

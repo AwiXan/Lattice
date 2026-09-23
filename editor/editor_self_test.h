@@ -114,6 +114,8 @@ class EditorSelfTest : public Node {
 	void _recovery_restored();
 	void _recovery_copies();
 	void _scene_colors();
+	void _panel_from_palette();
+	void _panel_from_palette_shown();
 	void _finish();
 
 	// Kept between steps.

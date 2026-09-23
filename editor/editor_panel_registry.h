@@ -190,10 +190,17 @@ public:
 	// The id to use for p_id: itself, or whatever stands in for it.
 	static StringName resolve(const StringName &p_id);
 
+	// The Command Palette's name for showing a panel of this type.
+	static String get_palette_command_key(const StringName &p_id);
+
 	static void cleanup();
 
 private:
 	static inline HashMap<StringName, PanelType> types;
 	static inline HashMap<int, StringName> default_types;
 	static inline HashMap<StringName, StringName> replacements;
+	// Every kind of panel can be asked for from the Command Palette, by name.
+	static void _add_palette_command(const PanelType &p_type);
+	static void _remove_palette_command(const StringName &p_id);
+	static void _show_from_palette(const StringName &p_id);
 };

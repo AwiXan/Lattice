@@ -31,6 +31,10 @@
 #include "editor_panel_registry.h"
 
 #include "core/io/resource_loader.h"
+#include "core/object/callable_mp.h"
+#include "editor/editor_main_screen.h"
+#include "editor/editor_node.h"
+#include "editor/settings/editor_command_palette.h"
 
 #include "scene/gui/control.h"
 
@@ -51,10 +55,47 @@ void EditorPanelRegistry::register_type(const PanelType &p_type) {
 	ERR_FAIL_COND_MSG(binding_takes_subject(p_type.binding) && !p_type.bind.is_valid(),
 			vformat("The panel type '%s' says it shows one thing but has no way to be pointed at one.", p_type.id));
 	types.insert(p_type.id, p_type);
+	_add_palette_command(p_type);
 }
 
 void EditorPanelRegistry::unregister_type(const StringName &p_id) {
 	types.erase(p_id);
+	_remove_palette_command(p_id);
+}
+
+String EditorPanelRegistry::get_palette_command_key(const StringName &p_id) {
+	return "panels/show_" + String(p_id);
+}
+
+void EditorPanelRegistry::_add_palette_command(const PanelType &p_type) {
+	if (p_type.binding == BINDING_RESOURCE) {
+		// Opened by the resource it shows, not by name.
+		return;
+	}
+	EditorCommandPalette *palette = EditorCommandPalette::get_singleton();
+	const String key = get_palette_command_key(p_type.id);
+	if (palette->has_command(key)) {
+		palette->remove_command(key);
+	}
+	const String title = p_type.title.is_empty() ? String(p_type.id) : TTRGET(p_type.title);
+	palette->add_command(vformat(TTR("Show Panel: %s"), title), key, callable_mp_static(&EditorPanelRegistry::_show_from_palette).bind(p_type.id));
+}
+
+void EditorPanelRegistry::_remove_palette_command(const StringName &p_id) {
+	EditorCommandPalette *palette = EditorCommandPalette::get_singleton();
+	const String key = get_palette_command_key(p_id);
+	if (palette->has_command(key)) {
+		palette->remove_command(key);
+	}
+}
+
+void EditorPanelRegistry::_show_from_palette(const StringName &p_id) {
+	// Where it is, where it was last, or beside the pane being worked in -
+	// the same as asking for it any other way.
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	if (main_screen) {
+		main_screen->show_panel(p_id);
+	}
 }
 
 void EditorPanelRegistry::set_default_type_for(Binding p_binding, const StringName &p_id) {
@@ -104,6 +145,10 @@ void EditorPanelRegistry::set_replacement(const StringName &p_id, const StringNa
 	}
 	types.erase(p_id);
 	replacements[p_id] = p_by;
+	_remove_palette_command(p_id);
+	if (by) {
+		_add_palette_command(*by);
+	}
 }
 
 StringName EditorPanelRegistry::resolve(const StringName &p_id) {

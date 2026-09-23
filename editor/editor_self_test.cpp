@@ -51,6 +51,7 @@
 #include "editor/gui/editor_pane_tree.h"
 #include "editor/scene/editor_scene_panel.h"
 #include "editor/scene/scene_tree_editor.h"
+#include "editor/settings/editor_command_palette.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/animation/animation_player.h"
 #include "scene/gui/button.h"
@@ -646,6 +647,18 @@ void EditorSelfTest::_scene_colors() {
 	_check(editor_data.get_scene_color(0) == first, "and keep them");
 }
 
+void EditorSelfTest::_panel_from_palette() {
+	EditorPane *pane = _pane_showing("dock_FileSystem");
+	if (pane) {
+		_close_tab(pane, "dock_FileSystem");
+	}
+	EditorCommandPalette::get_singleton()->execute_command(EditorPanelRegistry::get_palette_command_key("dock_FileSystem"));
+}
+
+void EditorSelfTest::_panel_from_palette_shown() {
+	_check(_pane_showing("dock_FileSystem") != nullptr, "a panel can be shown from the Command Palette, by name");
+}
+
 void EditorSelfTest::_finish() {
 	remove_error_handler(&error_handler);
 	const uint32_t error_count = errors.get();
@@ -732,6 +745,8 @@ EditorSelfTest::EditorSelfTest() {
 	_add("recovery restored", callable_mp(this, &EditorSelfTest::_recovery_restored));
 	_add("recovery copies", callable_mp(this, &EditorSelfTest::_recovery_copies));
 	_add("scene colors", callable_mp(this, &EditorSelfTest::_scene_colors));
+	_add("panel from palette", callable_mp(this, &EditorSelfTest::_panel_from_palette));
+	_add("panel from palette shown", callable_mp(this, &EditorSelfTest::_panel_from_palette_shown));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
 }
 
