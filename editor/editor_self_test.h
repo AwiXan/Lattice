@@ -103,6 +103,11 @@ class EditorSelfTest : public Node {
 	void _whole_side();
 	void _whole_side_check();
 	void _drop_from_another_window();
+	void _workspaces_save();
+	void _workspaces_switch_back();
+	void _workspaces_switch_again();
+	void _workspaces_change_one();
+	void _workspaces_remembered();
 	void _hidden_inspector_prepare();
 	void _hidden_inspector_idle();
 	void _recovery_offered();

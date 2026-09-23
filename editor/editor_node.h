@@ -293,6 +293,12 @@ private:
 	Control *gui_base = nullptr;
 	VBoxContainer *main_vbox = nullptr;
 	OptionButton *renderer = nullptr;
+	// The workspace in use: a saved layout, switched between from here, which
+	// keeps what was done in it when it is left.
+	OptionButton *workspace_button = nullptr;
+	String current_workspace;
+	void _update_workspace_button();
+	void _workspace_selected(int p_index);
 
 #ifdef ANDROID_ENABLED
 	VBoxContainer *base_vbox = nullptr; // It only contains the title_bar and main_hbox.
@@ -673,6 +679,18 @@ private:
 
 	void _update_layouts_menu();
 	void _layout_menu_option(int p_id);
+
+public:
+	// Workspaces are the editor's saved layouts, carrying the arrangement of
+	// panes as well as the docks, and they are live: switching away from one
+	// keeps what was done in it.
+	void save_workspace(const String &p_name);
+	void switch_workspace(const String &p_name);
+	void delete_workspace(const String &p_name);
+	String get_current_workspace() const { return current_workspace; }
+	Vector<String> get_workspace_names() const;
+
+private:
 
 	void _update_addon_config();
 

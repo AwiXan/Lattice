@@ -503,6 +503,57 @@ void EditorSelfTest::_drop_from_another_window() {
 	_check(!tree->get_drop_hint()->is_visible(), "and the hint that showed it is put away");
 }
 
+// Saved in the editor's own layouts, which are the user's too: named so as to
+// be unmistakable, and taken away again at the end - or at the start, after a
+// run that did not get that far.
+static const char *WORKSPACE_A = "Lattice Self-Test A";
+static const char *WORKSPACE_B = "Lattice Self-Test B";
+
+void EditorSelfTest::_workspaces_save() {
+	EditorNode *editor = EditorNode::get_singleton();
+	editor->delete_workspace(WORKSPACE_A);
+	editor->delete_workspace(WORKSPACE_B);
+
+	EditorPaneTree *tree = _tree();
+	while (tree->get_panes().size() > 1) {
+		tree->close_pane(tree->get_panes()[tree->get_panes().size() - 1]);
+	}
+	tree->get_first_pane()->set_panel_type("view_3d");
+	editor->save_workspace(WORKSPACE_A);
+
+	EditorPane *side = tree->split_pane(tree->get_first_pane(), false, true, false);
+	side->add_panel("dock_FileSystem");
+	editor->save_workspace(WORKSPACE_B);
+	_check(editor->get_workspace_names().has(WORKSPACE_A) && editor->get_workspace_names().has(WORKSPACE_B) && editor->get_current_workspace() == WORKSPACE_B, "arrangements can be saved as workspaces");
+}
+
+void EditorSelfTest::_workspaces_switch_back() {
+	EditorNode::get_singleton()->switch_workspace(WORKSPACE_A);
+	_check(_tree()->get_panes().size() == 1 && !_pane_showing("dock_FileSystem") && EditorNode::get_singleton()->get_current_workspace() == WORKSPACE_A, "switching to one puts its arrangement back");
+}
+
+void EditorSelfTest::_workspaces_switch_again() {
+	EditorNode::get_singleton()->switch_workspace(WORKSPACE_B);
+	_check(_tree()->get_panes().size() == 2 && _pane_showing("dock_FileSystem") != nullptr, "and switching back brings back what the other had, the FileSystem included");
+}
+
+void EditorSelfTest::_workspaces_change_one() {
+	EditorPane *side = _pane_showing("dock_FileSystem");
+	if (side) {
+		_tree()->close_pane(side);
+	}
+	EditorNode::get_singleton()->switch_workspace(WORKSPACE_A);
+}
+
+void EditorSelfTest::_workspaces_remembered() {
+	EditorNode *editor = EditorNode::get_singleton();
+	editor->switch_workspace(WORKSPACE_B);
+	_check(_tree()->get_panes().size() == 1 && !_pane_showing("dock_FileSystem"), "a workspace keeps what was changed in it when it is left");
+	editor->delete_workspace(WORKSPACE_A);
+	editor->delete_workspace(WORKSPACE_B);
+	_check(!editor->get_workspace_names().has(WORKSPACE_A) && !editor->get_workspace_names().has(WORKSPACE_B) && editor->get_current_workspace().is_empty(), "and workspaces can be deleted");
+}
+
 void EditorSelfTest::_hidden_inspector_prepare() {
 	EditorPane *pane = _tree()->get_first_pane();
 	pane->show_panel_of_type("inspector");
@@ -657,6 +708,11 @@ EditorSelfTest::EditorSelfTest() {
 	_add("whole side", callable_mp(this, &EditorSelfTest::_whole_side));
 	_add("whole side check", callable_mp(this, &EditorSelfTest::_whole_side_check));
 	_add("drop from another window", callable_mp(this, &EditorSelfTest::_drop_from_another_window));
+	_add("workspaces save", callable_mp(this, &EditorSelfTest::_workspaces_save));
+	_add("workspaces switch back", callable_mp(this, &EditorSelfTest::_workspaces_switch_back));
+	_add("workspaces switch again", callable_mp(this, &EditorSelfTest::_workspaces_switch_again));
+	_add("workspaces change one", callable_mp(this, &EditorSelfTest::_workspaces_change_one));
+	_add("workspaces remembered", callable_mp(this, &EditorSelfTest::_workspaces_remembered));
 	_add("hidden inspector prepare", callable_mp(this, &EditorSelfTest::_hidden_inspector_prepare));
 	_add("hidden inspector idle", callable_mp(this, &EditorSelfTest::_hidden_inspector_idle));
 	_add("recovery offered", callable_mp(this, &EditorSelfTest::_recovery_offered));

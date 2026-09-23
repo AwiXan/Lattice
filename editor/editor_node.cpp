@@ -2868,23 +2868,17 @@ void EditorNode::_dialog_action(String p_file) {
 				return;
 			}
 
-			Ref<ConfigFile> config;
-			config.instantiate();
-			Error err = config->load(EditorSettings::get_singleton()->get_editor_layouts_config());
-
-			if (err == ERR_FILE_CANT_OPEN || err == ERR_FILE_NOT_FOUND) {
+			{
+				Ref<ConfigFile> config;
 				config.instantiate();
-			} else if (err != OK) {
-				show_warning(TTR("An error occurred while trying to save the editor layout.\nMake sure the editor's user data path is writable."));
-				return;
+				const Error err = config->load(EditorSettings::get_singleton()->get_editor_layouts_config());
+				if (err != OK && err != ERR_FILE_CANT_OPEN && err != ERR_FILE_NOT_FOUND) {
+					show_warning(TTR("An error occurred while trying to save the editor layout.\nMake sure the editor's user data path is writable."));
+					return;
+				}
 			}
-
-			editor_dock_manager->save_docks_to_config(config, p_file);
-
-			config->save(EditorSettings::get_singleton()->get_editor_layouts_config());
-
+			save_workspace(p_file);
 			layout_dialog->hide();
-			_update_layouts_menu();
 
 			if (p_file == "Default") {
 				show_warning(TTR("Default editor layout overridden.\nTo restore the Default layout to its base settings, use the Delete Layout option and delete the Default layout."));
@@ -2901,17 +2895,8 @@ void EditorNode::_dialog_action(String p_file) {
 				return;
 			}
 
-			for (const String &section : config->get_sections()) {
-				// Erase sections related to the layout.
-				if (section == p_file || section.begins_with(p_file + "/")) {
-					config->erase_section(section);
-				}
-			}
-
-			config->save(EditorSettings::get_singleton()->get_editor_layouts_config());
-
+			delete_workspace(p_file);
 			layout_dialog->hide();
-			_update_layouts_menu();
 
 			if (p_file == "Default") {
 				show_warning(TTR("Restored the Default layout to its base settings."));
@@ -6389,6 +6374,7 @@ void EditorNode::save_editor_layout_delayed() {
 }
 
 void EditorNode::_load_editor_layout() {
+	current_workspace = EditorSettings::get_singleton()->get_project_metadata("editor_layout", "workspace", String());
 	EditorProgress ep("loading_editor_layout", TTR("Loading editor"), 5);
 	ep.step(TTR("Loading editor layout..."), 0, true);
 	Ref<ConfigFile> config;
@@ -6707,6 +6693,9 @@ void EditorNode::_update_layouts_menu() {
 	editor_layouts->add_shortcut(ED_SHORTCUT("layout/save", TTRC("Save Layout...")), LAYOUT_SAVE);
 	editor_layouts->add_shortcut(ED_SHORTCUT("layout/delete", TTRC("Delete Layout...")), LAYOUT_DELETE);
 	editor_layouts->add_separator();
+	for (int i = 1; i <= 9; i++) {
+		ED_SHORTCUT("layout/switch_" + itos(i), vformat(TTR("Switch to Layout %d"), i), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::ALT | Key(int(Key::KEY_0) + i));
+	}
 
 	Ref<ConfigFile> config;
 	config.instantiate();
@@ -6721,13 +6710,126 @@ void EditorNode::_update_layouts_menu() {
 		return; // No config.
 	}
 
-	Vector<String> layouts = config->get_sections();
-	for (const String &layout : layouts) {
-		if (layout != "Default" && !layout.contains_char('/')) {
-			editor_layouts->add_item(layout);
-			editor_layouts->set_item_auto_translate_mode(-1, AUTO_TRANSLATE_MODE_DISABLED);
+	int number = 0;
+	for (const String &layout : get_workspace_names()) {
+		if (layout == "Default") {
+			continue;
+		}
+		editor_layouts->add_radio_check_item(layout);
+		editor_layouts->set_item_auto_translate_mode(-1, AUTO_TRANSLATE_MODE_DISABLED);
+		editor_layouts->set_item_checked(-1, layout == current_workspace);
+		if (number < 9) {
+			editor_layouts->set_item_shortcut(-1, ED_GET_SHORTCUT("layout/switch_" + itos(++number)), true);
 		}
 	}
+	_update_workspace_button();
+}
+
+Vector<String> EditorNode::get_workspace_names() const {
+	Vector<String> names;
+	Ref<ConfigFile> config;
+	config.instantiate();
+	if (config->load(EditorSettings::get_singleton()->get_editor_layouts_config()) != OK) {
+		return names;
+	}
+	for (const String &section : config->get_sections()) {
+		if (!section.contains_char('/')) {
+			names.push_back(section);
+		}
+	}
+	return names;
+}
+
+void EditorNode::save_workspace(const String &p_name) {
+	ERR_FAIL_COND(p_name.is_empty());
+	Ref<ConfigFile> config;
+	config.instantiate();
+	config->load(EditorSettings::get_singleton()->get_editor_layouts_config());
+	editor_dock_manager->save_docks_to_config(config, p_name);
+	editor_main_screen->save_workspace_to_config(config, p_name);
+	config->save(EditorSettings::get_singleton()->get_editor_layouts_config());
+
+	current_workspace = p_name;
+	EditorSettings::get_singleton()->set_project_metadata("editor_layout", "workspace", current_workspace);
+	_update_layouts_menu();
+}
+
+void EditorNode::switch_workspace(const String &p_name) {
+	Ref<ConfigFile> config;
+	config.instantiate();
+	if (config->load(EditorSettings::get_singleton()->get_editor_layouts_config()) != OK || !config->has_section(p_name)) {
+		return;
+	}
+	if (!current_workspace.is_empty() && current_workspace != p_name && config->has_section(current_workspace)) {
+		// Leaving one keeps what was done in it, the way a tab keeps its
+		// place: nobody has to remember to save it before looking elsewhere.
+		editor_dock_manager->save_docks_to_config(config, current_workspace);
+		editor_main_screen->save_workspace_to_config(config, current_workspace);
+		config->save(EditorSettings::get_singleton()->get_editor_layouts_config());
+	}
+
+	editor_dock_manager->load_docks_from_config(config, p_name);
+	editor_main_screen->load_workspace_from_config(config, p_name);
+
+	current_workspace = p_name;
+	EditorSettings::get_singleton()->set_project_metadata("editor_layout", "workspace", current_workspace);
+	_update_layouts_menu();
+	_save_editor_layout();
+}
+
+void EditorNode::delete_workspace(const String &p_name) {
+	Ref<ConfigFile> config;
+	config.instantiate();
+	if (config->load(EditorSettings::get_singleton()->get_editor_layouts_config()) != OK) {
+		return;
+	}
+	for (const String &section : config->get_sections()) {
+		// The layout, and the settings of each dock in it.
+		if (section == p_name || section.begins_with(p_name + "/")) {
+			config->erase_section(section);
+		}
+	}
+	config->save(EditorSettings::get_singleton()->get_editor_layouts_config());
+	if (current_workspace == p_name) {
+		current_workspace = String();
+		EditorSettings::get_singleton()->set_project_metadata("editor_layout", "workspace", current_workspace);
+	}
+	_update_layouts_menu();
+}
+
+void EditorNode::_update_workspace_button() {
+	if (!workspace_button) {
+		return;
+	}
+	workspace_button->clear();
+	int selected = -1;
+	for (const String &name : get_workspace_names()) {
+		workspace_button->add_item(name);
+		workspace_button->set_item_metadata(-1, name);
+		if (name == current_workspace) {
+			selected = workspace_button->get_item_count() - 1;
+		}
+	}
+	if (workspace_button->get_item_count() > 0) {
+		workspace_button->add_separator();
+	}
+	workspace_button->add_item(TTR("Save as New Workspace..."));
+	workspace_button->set_item_metadata(-1, Variant());
+	workspace_button->select(selected);
+	if (selected < 0) {
+		workspace_button->set_text(TTR("No Workspace"));
+	}
+}
+
+void EditorNode::_workspace_selected(int p_index) {
+	const Variant name = workspace_button->get_item_metadata(p_index);
+	if (name.get_type() != Variant::STRING) {
+		// "Save as new": the dialog the Editor Layout menu uses.
+		_update_workspace_button();
+		_layout_menu_option(LAYOUT_SAVE);
+		return;
+	}
+	switch_workspace(name);
 }
 
 void EditorNode::_layout_menu_option(int p_id) {
@@ -6750,24 +6852,19 @@ void EditorNode::_layout_menu_option(int p_id) {
 			config.instantiate();
 			Error err = config->load(EditorSettings::get_singleton()->get_editor_layouts_config());
 			if (err == OK && config->has_section("Default")) {
-				editor_dock_manager->load_docks_from_config(config, "Default");
-				_save_editor_layout();
-
+				switch_workspace("Default");
 				return;
 			}
 
 			editor_dock_manager->load_docks_from_config(default_layout, "docks");
+			current_workspace = String();
+			EditorSettings::get_singleton()->set_project_metadata("editor_layout", "workspace", current_workspace);
+			_update_layouts_menu();
 			_save_editor_layout();
 		} break;
 
 		default: {
-			Ref<ConfigFile> config;
-			config.instantiate();
-			Error err = config->load(EditorSettings::get_singleton()->get_editor_layouts_config());
-			if (err == OK) {
-				editor_dock_manager->load_docks_from_config(config, editor_layouts->get_item_text(p_id));
-				_save_editor_layout();
-			}
+			switch_workspace(editor_layouts->get_item_text(editor_layouts->get_item_index(p_id)));
 		}
 	}
 }
@@ -9231,6 +9328,18 @@ EditorNode::EditorNode() {
 	right_menu_hb = memnew(HBoxContainer);
 	right_menu_hb->set_mouse_filter(Control::MOUSE_FILTER_STOP);
 	title_bar->add_child(right_menu_hb);
+
+	workspace_button = memnew(OptionButton);
+	workspace_button->set_flat(true);
+	workspace_button->set_theme_type_variation("TopBarOptionButton");
+	workspace_button->set_fit_to_longest_item(false);
+	workspace_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
+	workspace_button->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
+	workspace_button->set_tooltip_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);
+	workspace_button->set_tooltip_text(TTRC("Workspace: a saved arrangement of panels and windows.\nSwitching keeps what was changed in the one being left. Ctrl+Alt+1-9 switch to the first nine."));
+	workspace_button->set_accessibility_name(TTRC("Workspace"));
+	workspace_button->connect(SceneStringName(item_selected), callable_mp(this, &EditorNode::_workspace_selected));
+	right_menu_hb->add_child(workspace_button);
 
 	renderer = memnew(OptionButton);
 	renderer->set_flat(true);

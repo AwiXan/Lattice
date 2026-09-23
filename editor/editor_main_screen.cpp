@@ -114,6 +114,41 @@ void EditorMainScreen::load_layout_from_config(Ref<ConfigFile> p_config_file, co
 	}
 }
 
+void EditorMainScreen::save_workspace_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const {
+	if (pane_tree) {
+		p_config_file->set_value(p_section, "panes", pane_tree->save_layout());
+	}
+	Array windows;
+	for (const EditorPaneWindow *window : pane_windows) {
+		windows.push_back(window->save_layout());
+	}
+	p_config_file->set_value(p_section, "pane_windows", windows);
+}
+
+bool EditorMainScreen::load_workspace_from_config(Ref<ConfigFile> p_config_file, const String &p_section) {
+	const Dictionary panes = p_config_file->get_value(p_section, "panes", Dictionary());
+	if (panes.is_empty() || !pane_tree) {
+		return false;
+	}
+
+	// The windows of the arrangement being left go with it. What they lent
+	// goes home first, and at once: there is one FileSystem, and the
+	// arrangement being loaded may want it.
+	while (!pane_windows.is_empty()) {
+		EditorPaneWindow *window = pane_windows[0];
+		for (EditorPane *pane : window->get_pane_tree()->get_panes()) {
+			while (pane->get_panel_count() > 0) {
+				pane->close_panel(0);
+			}
+		}
+		_close_pane_window(window, false);
+	}
+
+	pane_tree->load_layout(panes);
+	_restore_pane_windows(p_config_file->get_value(p_section, "pane_windows", Array()));
+	return true;
+}
+
 void EditorMainScreen::_restore_panes(const Dictionary &p_layout) {
 	if (pane_tree) {
 		pane_tree->load_layout(p_layout);

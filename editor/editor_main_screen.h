@@ -156,6 +156,15 @@ public:
 	void save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const;
 	void load_layout_from_config(Ref<ConfigFile> p_config_file, const String &p_section);
 
+	// A workspace: how the panes are arranged, in the main window and in
+	// windows of their own. Unlike the layout the editor keeps for itself, it
+	// leaves alone which main screen was last asked for - the arrangement is
+	// what shows. Loading one closes the windows of the one being left.
+	void save_workspace_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const;
+	// False when the section has no arrangement of panes in it - a layout
+	// saved before there were any - and nothing was changed.
+	bool load_workspace_from_config(Ref<ConfigFile> p_config_file, const String &p_section);
+
 	// Whether this main screen may be asked for. Kept for the feature profiles,
 	// which turn 3D, scripting, the game view or the asset store off.
 	void set_button_enabled(int p_index, bool p_enabled);

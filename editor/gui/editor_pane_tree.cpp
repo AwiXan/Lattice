@@ -839,6 +839,8 @@ void EditorPaneTree::load_layout(const Dictionary &p_layout) {
 	root = nullptr;
 	dragging = nullptr;
 	hovered = nullptr;
+	// Whatever was shown over the others is going too.
+	maximized = ObjectID();
 	for (EditorPane *pane : old_panes) {
 		remove_child(pane);
 		memdelete(pane);
