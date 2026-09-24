@@ -62,6 +62,7 @@
 #include "editor/gui/editor_pie_menu.h"
 #include "editor/gui/editor_view_hints.h"
 #include "editor/gui/editor_view_pill.h"
+#include "editor/gui/editor_workspace_tabs.h"
 #include "editor/gui/progress_dialog.h"
 #include "scene/resources/3d/primitive_meshes.h"
 #include "scene/3d/camera_3d.h"
@@ -285,6 +286,15 @@ void EditorScreenshot::_notification(int p_what) {
 								break;
 							}
 						}
+					} else if (action == "later:workspaces") {
+						// Three, for their tabs - gone again after the picture: the
+						// list is the editor's, not the project's.
+						const char *workspaces[] = { "Shot Layout", "Shot Level", "Shot Scripting" };
+						for (const char *name : workspaces) {
+							EditorNode::get_singleton()->save_workspace(name);
+							shot_workspaces.push_back(name);
+						}
+						EditorNode::get_singleton()->switch_workspace("Shot Level");
 					} else if (action == "later:isolate" && later_view) {
 						later_view->toggle_isolation();
 						print_line(vformat("SHOT: isolated %s", later_view->is_isolating()));
@@ -441,6 +451,9 @@ void EditorScreenshot::_notification(int p_what) {
 					if (region.has_area()) {
 						image = image->get_region(region);
 					}
+				}
+				for (const String &name : shot_workspaces) {
+					EditorNode::get_singleton()->delete_workspace(name);
 				}
 				if (image.is_valid()) {
 					image->save_png(path);
@@ -1970,7 +1983,16 @@ void EditorSelfTest::_workspaces_save() {
 }
 
 void EditorSelfTest::_workspaces_switch_back() {
-	EditorNode::get_singleton()->switch_workspace(WORKSPACE_A);
+	// By its tab, after the menus.
+	EditorWorkspaceTabs *tabs = EditorNode::get_singleton()->get_workspace_tabs();
+	Button *tab_a = tabs ? tabs->get_tab(WORKSPACE_A) : nullptr;
+	Button *tab_b = tabs ? tabs->get_tab(WORKSPACE_B) : nullptr;
+	_check(tab_a && tab_b && tab_b->is_pressed() && !tab_a->is_pressed(), "each workspace has a tab after the menus, the one in use pressed");
+	if (tab_a) {
+		tab_a->emit_signal(SceneStringName(pressed));
+	} else {
+		EditorNode::get_singleton()->switch_workspace(WORKSPACE_A);
+	}
 	_check(_tree()->get_panes().size() == 1 && !_pane_showing("dock_FileSystem") && EditorNode::get_singleton()->get_current_workspace() == WORKSPACE_A, "switching to one puts its arrangement back");
 }
 

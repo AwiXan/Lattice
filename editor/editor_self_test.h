@@ -62,6 +62,7 @@ class EditorScreenshot : public Node {
 	ObjectID watched_menu;
 	int watch_frames = 0;
 	bool watch_real = false;
+	Vector<String> shot_workspaces;
 	uint64_t stress_until = 0;
 	int stress_step = 0;
 	Vector<ObjectID> stress_targets;

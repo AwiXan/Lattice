@@ -299,6 +299,9 @@ private:
 	String current_workspace;
 	void _update_workspace_button();
 	void _workspace_selected(int p_index);
+	// The same, as tabs after the menus; the button above stays, out of sight.
+	class EditorWorkspaceTabs *workspace_tabs = nullptr;
+	void _workspace_save_new();
 
 #ifdef ANDROID_ENABLED
 	VBoxContainer *base_vbox = nullptr; // It only contains the title_bar and main_hbox.
@@ -688,6 +691,7 @@ public:
 	void switch_workspace(const String &p_name);
 	void delete_workspace(const String &p_name);
 	String get_current_workspace() const { return current_workspace; }
+	class EditorWorkspaceTabs *get_workspace_tabs() const { return workspace_tabs; }
 	Vector<String> get_workspace_names() const;
 
 private:

@@ -91,6 +91,7 @@
 #include "editor/gui/editor_quick_open_dialog.h"
 #include "editor/gui/editor_title_bar.h"
 #include "editor/gui/editor_toaster.h"
+#include "editor/gui/editor_workspace_tabs.h"
 #include "editor/gui/progress_dialog.h"
 #include "editor/gui/window_wrapper.h"
 #include "editor/import/3d/editor_import_collada.h"
@@ -6802,7 +6803,15 @@ void EditorNode::delete_workspace(const String &p_name) {
 	_update_layouts_menu();
 }
 
+void EditorNode::_workspace_save_new() {
+	// The dialog the Editor Layout menu uses.
+	_layout_menu_option(LAYOUT_SAVE);
+}
+
 void EditorNode::_update_workspace_button() {
+	if (workspace_tabs) {
+		workspace_tabs->set_workspaces(get_workspace_names(), current_workspace);
+	}
 	if (!workspace_button) {
 		return;
 	}
@@ -9320,6 +9329,16 @@ EditorNode::EditorNode() {
 	project_title->set_visible(can_expand && menu_type == MENU_TYPE_GLOBAL);
 	left_spacer->add_child(project_title);
 
+	// The workspaces, as tabs right after the menus.
+	workspace_tabs = memnew(EditorWorkspaceTabs);
+	workspace_tabs->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	workspace_tabs->connect(SNAME("switch_requested"), callable_mp(this, &EditorNode::switch_workspace));
+	workspace_tabs->connect(SNAME("save_new_requested"), callable_mp(this, &EditorNode::_workspace_save_new));
+	workspace_tabs->connect(SNAME("save_requested"), callable_mp(this, &EditorNode::save_workspace));
+	workspace_tabs->connect(SNAME("delete_requested"), callable_mp(this, &EditorNode::delete_workspace));
+	left_spacer->add_child(workspace_tabs);
+	left_spacer->move_child(workspace_tabs, 0);
+
 	// Nothing is centred in the title bar any more: what used to be there - the
 	// 2D, 3D and Script buttons - is offered by each pane instead.
 	right_spacer = memnew(Control);
@@ -9348,6 +9367,8 @@ EditorNode::EditorNode() {
 	workspace_button->set_accessibility_name(TTRC("Workspace"));
 	workspace_button->connect(SceneStringName(item_selected), callable_mp(this, &EditorNode::_workspace_selected));
 	right_menu_hb->add_child(workspace_button);
+	// The tabs after the menus do what it did.
+	workspace_button->hide();
 
 	renderer = memnew(OptionButton);
 	renderer->set_flat(true);
