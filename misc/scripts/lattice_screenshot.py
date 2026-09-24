@@ -72,6 +72,7 @@ def main():
     parser.add_argument("--lit", action="store_true", help="give the 3D scene a sun and an environment of its own")
     parser.add_argument("--camera", action="store_true", help="give the 3D scene a camera looking at the crate")
     parser.add_argument("--select", help="the name of the node to select, instead of the first mesh")
+    parser.add_argument("--streaming", action="store_true", help="turn texture streaming on in the project")
     parser.add_argument("--editor", help="editor binary to run (default: the newest one in bin/)")
     parser.add_argument("--timeout", type=int, default=60, help="seconds before calling it hung (it is left running)")
     parser.add_argument("--stress", type=int, default=0, help="seconds of opening and closing every dropdown first")
@@ -87,6 +88,8 @@ def main():
     project = tempfile.mkdtemp(prefix="lattice-shot-")
     with open(os.path.join(project, "project.godot"), "w", encoding="utf-8", newline="\n") as f:
         f.write('config_version=5\n\n[application]\n\nconfig/name="Lattice screenshot"\n')
+        if args.streaming:
+            f.write('\n[rendering]\n\ntextures/streaming/enabled=true\n')
     with open(os.path.join(project, "probe.gd"), "w", encoding="utf-8", newline="\n") as f:
         f.write("extends Node\n")
     scene = "scene_3d.tscn" if args.scene == "3d" else "scene_2d.tscn"

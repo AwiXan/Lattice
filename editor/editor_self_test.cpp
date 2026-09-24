@@ -329,6 +329,17 @@ void EditorScreenshot::_notification(int p_what) {
 					} else if (action == "later:timeline") {
 						timeline_demo = 1;
 						timeline_demo_frame = Engine::get_singleton()->get_process_frames();
+					} else if (action == "later:textures" && later_view) {
+						// The texture streaming popup, from the header.
+						TypedArray<Node> buttons = later_view->get_toolbar()->find_children("*", "Button", true, false);
+						for (int i = 0; i < buttons.size(); i++) {
+							Button *button = Object::cast_to<Button>(buttons[i]);
+							if (button && button->get_text() == "Textures" && button->is_visible_in_tree()) {
+								button->emit_signal(SceneStringName(pressed));
+								print_line("SHOT: opened the Textures popup");
+								break;
+							}
+						}
 					} else if (action == "later:isolate" && later_view) {
 						later_view->toggle_isolation();
 						print_line(vformat("SHOT: isolated %s", later_view->is_isolating()));

@@ -10631,7 +10631,9 @@ void Node3DEditor::_textures_button_pressed() {
 void Node3DEditor::_textures_button_update_state() {
 	const bool texture_streaming_enabled = GLOBAL_GET("rendering/textures/streaming/enabled");
 	textures_button->set_visible(texture_streaming_enabled);
-	textures_separator->set_visible(texture_streaming_enabled);
+	// In the view's own header its frame sets it apart; only the classic
+	// toolbar has separators.
+	textures_separator->set_visible(texture_streaming_enabled && !tool_column_panel);
 
 	if (!texture_streaming_enabled) {
 		textures_popup->hide();
@@ -10892,6 +10894,10 @@ void Node3DEditor::_update_theme() {
 		}
 		EditorViewHeaderGroup::style_tool_button(sun_button);
 		EditorViewHeaderGroup::style_tool_button(environ_button);
+#ifdef MODULE_TEXTURE_STREAMING_ENABLED
+		EditorViewHeaderGroup::style_tool_button(textures_button);
+		textures_button->set_button_icon(get_editor_theme_icon(SNAME("ImageTexture")));
+#endif
 		EditorViewHeaderGroup::style_tool_button(sidebar_button);
 		// What plugins add is a group of the header like the rest.
 		EditorViewHeaderGroup::apply_style(context_toolbar_panel);
@@ -12879,6 +12885,12 @@ void Node3DEditor::_group_header() {
 	EditorViewHeaderGroup *lighting_group = memnew(EditorViewHeaderGroup);
 	lighting_group->set_name("LightingGroup");
 	lighting_group->take({ sun_button, environ_button });
+#ifdef MODULE_TEXTURE_STREAMING_ENABLED
+	// How textures stream into the view, beside how it is lit: both are how
+	// it is previewed.
+	lighting_group->take({ textures_button });
+	textures_separator->hide();
+#endif
 	// Their settings are the sidebar's Environment page now; one way to
 	// them is enough. Kept, hidden, for anything that looks for it.
 	sun_environ_settings->hide();
