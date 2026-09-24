@@ -145,6 +145,35 @@ void EditorScreenshot::_notification(int p_what) {
 					}
 				}
 			}
+			// "later:<action>": a second later, to see what becomes of what the
+			// first ones opened.
+			if (!later_done && elapsed > 3200) {
+				later_done = true;
+				const PackedStringArray later = OS::get_singleton()->get_environment("LATTICE_SHOT_ACTIONS").split(",", false);
+				Node3DEditor *later_view = Node3DEditor::get_singleton();
+				for (const String &action : later) {
+					if (action == "later:sidebar_close" && later_view && later_view->get_sidebar_button()) {
+						print_line("SHOT: closing the sidebar");
+						later_view->get_sidebar_button()->set_pressed(false);
+					} else if (action == "later:sidebar2d_close" && CanvasItemEditor::get_singleton() && CanvasItemEditor::get_singleton()->get_sidebar_button()) {
+						print_line("SHOT: closing the 2D sidebar");
+						CanvasItemEditor::get_singleton()->get_sidebar_button()->set_pressed(false);
+					} else if (action == "later:key_n" && later_view) {
+						// N, as the keyboard sends it, with the view under the mouse.
+						print_line("SHOT: pressing N");
+						Control *surface = later_view->get_editor_viewport(0)->get_surface();
+						surface->grab_focus();
+						for (int pressed = 1; pressed >= 0; pressed--) {
+							Ref<InputEventKey> key;
+							key.instantiate();
+							key->set_keycode(Key::N);
+							key->set_physical_keycode(Key::N);
+							key->set_pressed(pressed == 1);
+							surface->get_viewport()->push_input(key);
+						}
+					}
+				}
+			}
 			if (!taken && elapsed > 4500) {
 				taken = true;
 				Ref<Image> image = get_tree()->get_root()->get_texture()->get_image();
@@ -701,6 +730,32 @@ void EditorSelfTest::_view_sidebar_check() {
 	view->get_sidebar_button()->set_pressed(false);
 	sidebar->finish_slide();
 	_check(!sidebar->is_visible() && Math::is_zero_approx(view->get_editor_viewport(0)->get_top_right_clearance()), "pressed again, it closes and the gizmo goes back");
+}
+
+void EditorSelfTest::_sidebar_slide_open() {
+	// Opened and closed as a user does, the slide played out rather than cut
+	// short.
+	Node3DEditor *view = ObjectDB::get_instance<Node3DEditor>(sidebar_view);
+	if (view && view->get_sidebar_button()) {
+		view->get_sidebar_button()->set_pressed(true);
+	}
+	seconds_to_wait = 0.5;
+	waiting_since = OS::get_singleton()->get_ticks_msec();
+}
+
+void EditorSelfTest::_sidebar_slide_close() {
+	Node3DEditor *view = ObjectDB::get_instance<Node3DEditor>(sidebar_view);
+	if (view && view->get_sidebar_button()) {
+		view->get_sidebar_button()->set_pressed(false);
+	}
+	seconds_to_wait = 0.5;
+	waiting_since = OS::get_singleton()->get_ticks_msec();
+}
+
+void EditorSelfTest::_sidebar_slid_out() {
+	Node3DEditor *view = ObjectDB::get_instance<Node3DEditor>(sidebar_view);
+	EditorViewSidebar *sidebar = view ? view->get_sidebar() : nullptr;
+	_check(sidebar && !sidebar->is_visible() && !view->get_sidebar_button()->is_pressed(), "the sidebar slides out and is gone when closed");
 }
 
 void EditorSelfTest::_view_hints() {
@@ -1798,6 +1853,9 @@ EditorSelfTest::EditorSelfTest() {
 	_add("view overlays", callable_mp(this, &EditorSelfTest::_view_overlays));
 	_add("view sidebar open", callable_mp(this, &EditorSelfTest::_view_sidebar_open));
 	_add("view sidebar check", callable_mp(this, &EditorSelfTest::_view_sidebar_check));
+	_add("sidebar slide open", callable_mp(this, &EditorSelfTest::_sidebar_slide_open));
+	_add("sidebar slide close", callable_mp(this, &EditorSelfTest::_sidebar_slide_close));
+	_add("sidebar slid out", callable_mp(this, &EditorSelfTest::_sidebar_slid_out));
 	_add("view hints", callable_mp(this, &EditorSelfTest::_view_hints));
 	_add("pie shading", callable_mp(this, &EditorSelfTest::_pie_shading));
 	_add("pie tap", callable_mp(this, &EditorSelfTest::_pie_tap));

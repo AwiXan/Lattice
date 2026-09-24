@@ -69,7 +69,9 @@ def main():
     parser.add_argument("--crop", help="x,y,w,h of the window to keep, in pixels")
     parser.add_argument("--actions", help="what to open first, comma separated: sidebar, sidebar_page_<n>")
     parser.add_argument("--crashed", action="store_true", help="make the last session look crashed, with a long log")
+    parser.add_argument("--lit", action="store_true", help="give the 3D scene a sun and an environment of its own")
     parser.add_argument("--editor", help="editor binary to run (default: the newest one in bin/)")
+    parser.add_argument("--timeout", type=int, default=60, help="seconds before calling it hung (it is left running)")
     args = parser.parse_args()
 
     editor = args.editor or find_editor()
@@ -83,6 +85,10 @@ def main():
     scene = "scene_3d.tscn" if args.scene == "3d" else "scene_2d.tscn"
     with open(os.path.join(project, scene), "w", encoding="utf-8", newline="\n") as f:
         f.write(SCENE_3D if args.scene == "3d" else SCENE_2D)
+        if args.lit and args.scene == "3d":
+            # Its own sun and environment: the preview ones step aside and say so.
+            f.write('\n[node name="Sun" type="DirectionalLight3D" parent="."]\n')
+            f.write('\n[node name="Environment" type="WorldEnvironment" parent="."]\n')
 
     if args.crashed:
         editor_data = os.path.join(project, ".godot", "editor")
@@ -105,13 +111,19 @@ def main():
     # Imports first, or the scene opens before its resources are known.
     subprocess.run([editor, "--path", project, "--editor", "--headless", "--quit-after", "200"], env=dict(os.environ),
                    capture_output=True, timeout=300)
-    result = subprocess.run([editor, "--path", project, "--editor"], env=env, capture_output=True, text=True,
-                            encoding="utf-8", errors="replace", timeout=300)
+    process = subprocess.Popen([editor, "--path", project, "--editor"], env=env, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+    try:
+        out, _ = process.communicate(timeout=args.timeout)
+    except subprocess.TimeoutExpired:
+        # Left running, to be looked at with a debugger: it hung.
+        print("HUNG: the editor did not finish; pid %d, project %s" % (process.pid, project))
+        return 3
     shutil.rmtree(project, ignore_errors=True)
-    for line in (result.stdout + result.stderr).splitlines():
+    for line in out.splitlines():
         if line.startswith("SHOT") or "ERROR" in line:
             print(line)
-    ok = result.returncode == 0 and os.path.exists(output)
+    ok = process.returncode == 0 and os.path.exists(output)
     print("OK:" if ok else "FAILED:", output)
     return 0 if ok else 1
 

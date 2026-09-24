@@ -52,6 +52,14 @@ class EditorViewSidebar : public PanelContainer {
 	LocalVector<Control *> pages;
 	bool fitting = false;
 	bool theming = false;
+	// Laying itself out can move what is inside - a label wrapping to another
+	// width - which asks for it to be laid out again. Asked for at most once
+	// at a time, and never more than a few times a frame: what is left waits
+	// for the next frame rather than going round in circles inside this one.
+	bool fit_queued = false;
+	uint64_t fit_frame = 0;
+	int fits_this_frame = 0;
+	void _queued_fit();
 	real_t top_inset = 0.0;
 	// 0 out of sight to the right, 1 in place.
 	real_t slide = 1.0;

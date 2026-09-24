@@ -30,7 +30,9 @@
 
 #include "editor_view_sidebar.h"
 
+#include "core/config/engine.h"
 #include "core/object/callable_mp.h"
+#include "scene/main/scene_tree.h"
 #include "editor/editor_string_names.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
@@ -169,9 +171,25 @@ void EditorViewSidebar::set_top_inset(real_t p_inset) {
 	fit();
 }
 
+void EditorViewSidebar::_queued_fit() {
+	fit_queued = false;
+	fit();
+}
+
 void EditorViewSidebar::fit() {
 	Control *parent = Object::cast_to<Control>(get_parent());
 	if (!parent || fitting) {
+		return;
+	}
+	const uint64_t frame = Engine::get_singleton()->get_process_frames();
+	if (frame != fit_frame) {
+		fit_frame = frame;
+		fits_this_frame = 0;
+	}
+	if (++fits_this_frame > 8) {
+		if (is_inside_tree() && !get_tree()->is_connected(SNAME("process_frame"), callable_mp(this, &EditorViewSidebar::fit))) {
+			get_tree()->connect(SNAME("process_frame"), callable_mp(this, &EditorViewSidebar::fit), CONNECT_ONE_SHOT | CONNECT_DEFERRED);
+		}
 		return;
 	}
 	fitting = true;
@@ -218,8 +236,9 @@ void EditorViewSidebar::_notification(int p_what) {
 			// Grown by its own minimum settling later than its page's - a font
 			// arriving, a label getting its text: put back in its corner, and
 			// whatever keeps clear of it told.
-			if (!fitting) {
-				callable_mp(this, &EditorViewSidebar::fit).call_deferred();
+			if (!fitting && !fit_queued) {
+				fit_queued = true;
+				callable_mp(this, &EditorViewSidebar::_queued_fit).call_deferred();
 			}
 		} break;
 
@@ -284,6 +303,10 @@ EditorViewSidebar::EditorViewSidebar() {
 	scroll = memnew(ScrollContainer);
 	scroll->set_v_size_flags(SIZE_EXPAND_FILL);
 	scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	// Room kept for the scroll bar whether it shows or not: a page as tall as
+	// the view would otherwise be narrower with it, and so taller, and so need
+	// it - and then wider without it, and so shorter, and not need it.
+	scroll->set_vertical_scroll_mode(ScrollContainer::SCROLL_MODE_RESERVE);
 	vbox->add_child(scroll);
 
 	page_box = memnew(VBoxContainer);

@@ -49,6 +49,7 @@ class EditorScreenshot : public Node {
 
 	uint64_t started_at = 0;
 	bool selected = false;
+	bool later_done = false;
 	bool taken = false;
 
 	void _open_scene();
@@ -139,6 +140,9 @@ class EditorSelfTest : public Node {
 	void _view_sidebar_open();
 	void _view_sidebar_check();
 	void _view_hints();
+	void _sidebar_slide_open();
+	void _sidebar_slide_close();
+	void _sidebar_slid_out();
 	void _pie_shading();
 	void _pie_tap();
 	void _pie_view();

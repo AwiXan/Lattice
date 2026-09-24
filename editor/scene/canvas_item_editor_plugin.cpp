@@ -6321,6 +6321,7 @@ void CanvasItemEditor::_arrange_chrome() {
 	viewport_row->add_child(tool_column_panel);
 	Control *viewport_stack = memnew(Control);
 	viewport_stack->set_name("ViewportStack");
+	viewport_stack->set_clip_contents(true);
 	viewport_stack->set_h_size_flags(SIZE_EXPAND_FILL);
 	viewport_stack->set_v_size_flags(SIZE_EXPAND_FILL);
 	viewport_row->add_child(viewport_stack);
