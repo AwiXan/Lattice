@@ -59,6 +59,7 @@
 #include "editor/scene/3d/node_3d_editor_chrome.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
+#include "editor/scene/canvas_item_editor_chrome.h"
 #include "editor/scene/editor_scene_panel.h"
 #include "editor/script/editor_script_panel.h"
 #include "editor/script/script_editor_base.h"
@@ -853,6 +854,33 @@ void EditorSelfTest::_view_2d_check() {
 	if (popup && view->get_hints() && !view->get_hints()->is_visible()) {
 		popup->emit_signal(SceneStringName(id_pressed), (int)CanvasItemEditor::OVERLAY_KEY_HINTS);
 	}
+	// A Control's anchors from the sidebar: the scene has one to try them on.
+	{
+		Control *control = memnew(Control);
+		control->set_name("AnchorsProbe");
+		Node *root = EditorNode::get_singleton()->get_edited_scene();
+		if (root) {
+			root->add_child(control);
+			control->set_owner(root);
+			EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
+			selection->clear();
+			selection->add_node(control);
+			view->get_item_panel()->refresh();
+			// Full Rect is the last of the grid.
+			Button *full_rect = view->get_item_panel()->get_anchor_button(15);
+			if (full_rect) {
+				full_rect->emit_signal(SceneStringName(pressed));
+			}
+			const bool anchored = Math::is_equal_approx(control->get_anchor(SIDE_LEFT), 0.0f) && Math::is_equal_approx(control->get_anchor(SIDE_RIGHT), 1.0f) && Math::is_equal_approx(control->get_anchor(SIDE_BOTTOM), 1.0f);
+			EditorUndoRedoManager::get_singleton()->undo();
+			const bool undone = Math::is_equal_approx(control->get_anchor(SIDE_RIGHT), 0.0f);
+			_check(anchored && undone, "the 2D sidebar sets a Control's anchors, and undo takes them back");
+			selection->clear();
+			root->remove_child(control);
+		}
+		memdelete(control);
+	}
+
 	const String hints = view->get_hints() ? view->get_hints()->get_text() : String();
 	_check(hints.contains(TTR("Pan")) && hints.contains(TTR("Zoom")), "under the 2D view, a line says what the mouse and keys do: " + hints);
 

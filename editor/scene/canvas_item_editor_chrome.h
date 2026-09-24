@@ -32,8 +32,10 @@
 
 #include "scene/gui/box_container.h"
 
+class Button;
 class CanvasItem;
 class EditorSpinSlider;
+class GridContainer;
 class Label;
 
 // The 2D view's sidebar Item page: the selected Node2Ds' and Controls'
@@ -62,6 +64,13 @@ private:
 	EditorSpinSlider *fields[ROW_MAX][2] = {};
 	double since_refresh = 0.0;
 
+	// A Control's anchors, as the presets the Layout menu of the 2D view has.
+	Control *anchors_box = nullptr;
+	GridContainer *anchors = nullptr;
+	Label *anchors_note = nullptr;
+	Button *anchor_buttons[16] = {};
+	void _anchors_pressed(int p_preset);
+
 	Vector<CanvasItem *> _edited_items() const;
 	void _field_changed(double p_value, int p_row, int p_axis);
 	static bool _has_row(const CanvasItem *p_item, int p_row);
@@ -74,6 +83,9 @@ protected:
 public:
 	void refresh();
 	EditorSpinSlider *get_field(Row p_row, int p_axis) const;
+	// The preset buttons, in the order of the grid, for checking them.
+	Button *get_anchor_button(int p_index) const { return (p_index >= 0 && p_index < 16) ? anchor_buttons[p_index] : nullptr; }
+	static int get_anchor_preset(int p_index);
 
 	CanvasItemEditorItemPanel();
 };

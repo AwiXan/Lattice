@@ -40,7 +40,61 @@
 #include "editor/themes/editor_scale.h"
 #include "scene/2d/node_2d.h"
 #include "scene/gui/control.h"
+#include "scene/gui/button.h"
+#include "scene/gui/container.h"
+#include "scene/gui/grid_container.h"
 #include "scene/gui/label.h"
+
+// The grid as the 2D view's Layout menu lays the presets out, and their
+// icons.
+static const struct {
+	Control::LayoutPreset preset;
+	const char *icon;
+	const char *name;
+} anchor_presets[16] = {
+	{ Control::PRESET_TOP_LEFT, "ControlAlignTopLeft", TTRC("Top Left") },
+	{ Control::PRESET_CENTER_TOP, "ControlAlignCenterTop", TTRC("Center Top") },
+	{ Control::PRESET_TOP_RIGHT, "ControlAlignTopRight", TTRC("Top Right") },
+	{ Control::PRESET_TOP_WIDE, "ControlAlignTopWide", TTRC("Top Wide") },
+	{ Control::PRESET_CENTER_LEFT, "ControlAlignCenterLeft", TTRC("Center Left") },
+	{ Control::PRESET_CENTER, "ControlAlignCenter", TTRC("Center") },
+	{ Control::PRESET_CENTER_RIGHT, "ControlAlignCenterRight", TTRC("Center Right") },
+	{ Control::PRESET_HCENTER_WIDE, "ControlAlignHCenterWide", TTRC("HCenter Wide") },
+	{ Control::PRESET_BOTTOM_LEFT, "ControlAlignBottomLeft", TTRC("Bottom Left") },
+	{ Control::PRESET_CENTER_BOTTOM, "ControlAlignCenterBottom", TTRC("Center Bottom") },
+	{ Control::PRESET_BOTTOM_RIGHT, "ControlAlignBottomRight", TTRC("Bottom Right") },
+	{ Control::PRESET_BOTTOM_WIDE, "ControlAlignBottomWide", TTRC("Bottom Wide") },
+	{ Control::PRESET_LEFT_WIDE, "ControlAlignLeftWide", TTRC("Left Wide") },
+	{ Control::PRESET_VCENTER_WIDE, "ControlAlignVCenterWide", TTRC("VCenter Wide") },
+	{ Control::PRESET_RIGHT_WIDE, "ControlAlignRightWide", TTRC("Right Wide") },
+	{ Control::PRESET_FULL_RECT, "ControlAlignFullRect", TTRC("Full Rect") },
+};
+
+int CanvasItemEditorItemPanel::get_anchor_preset(int p_index) {
+	ERR_FAIL_INDEX_V(p_index, 16, -1);
+	return anchor_presets[p_index].preset;
+}
+
+void CanvasItemEditorItemPanel::_anchors_pressed(int p_preset) {
+	const Vector<CanvasItem *> items = _edited_items();
+	if (items.is_empty()) {
+		return;
+	}
+	// As the Layout menu does it.
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	undo_redo->create_action(TTR("Change Anchors, Offsets, Grow Direction"), UndoRedo::MERGE_DISABLE, items[0]);
+	for (CanvasItem *item : items) {
+		Control *control = Object::cast_to<Control>(item);
+		if (!control || Object::cast_to<Container>(control->get_parent())) {
+			continue;
+		}
+		undo_redo->add_do_property(control, "layout_mode", 1); // Anchors.
+		undo_redo->add_do_property(control, "anchors_preset", p_preset);
+		undo_redo->add_undo_method(control, "_edit_set_state", control->_edit_get_state());
+	}
+	undo_redo->commit_action();
+	refresh();
+}
 
 Vector<CanvasItem *> CanvasItemEditorItemPanel::_edited_items() const {
 	Vector<CanvasItem *> items;
@@ -127,6 +181,12 @@ void CanvasItemEditorItemPanel::refresh() {
 		return;
 	}
 	const CanvasItem *first = items[0];
+	// Anchors for a Control a container does not place.
+	const Control *first_control = Object::cast_to<Control>(first);
+	const bool contained = first_control && Object::cast_to<Container>(first_control->get_parent());
+	anchors_box->set_visible(first_control != nullptr);
+	anchors->set_visible(first_control && !contained);
+	anchors_note->set_visible(contained);
 	title->set_text(items.size() == 1 ? String(first->get_name()) : vformat(TTR("%d Nodes"), items.size()));
 	type->set_text(items.size() == 1 ? first->get_class() : String());
 	for (int row = 0; row < ROW_MAX; row++) {
@@ -187,6 +247,10 @@ void CanvasItemEditorItemPanel::_notification(int p_what) {
 				}
 			}
 			type->add_theme_color_override(SceneStringName(font_color), get_theme_color(SNAME("readonly_font_color"), EditorStringName(Editor)));
+			for (int i = 0; i < 16; i++) {
+				anchor_buttons[i]->set_button_icon(get_editor_theme_icon(anchor_presets[i].icon));
+			}
+			anchors_note->add_theme_color_override(SceneStringName(font_color), get_theme_color(SNAME("readonly_font_color"), EditorStringName(Editor)));
 		} break;
 	}
 }
@@ -251,4 +315,27 @@ CanvasItemEditorItemPanel::CanvasItemEditorItemPanel() {
 			fields[row][axis] = field;
 		}
 	}
+
+	VBoxContainer *anchors_vbox = memnew(VBoxContainer);
+	anchors_vbox->add_theme_constant_override("separation", 0);
+	rows_box->add_child(anchors_vbox);
+	anchors_box = anchors_vbox;
+	Label *anchors_label = memnew(Label);
+	anchors_label->set_text(TTRC("Anchors"));
+	anchors_vbox->add_child(anchors_label);
+	anchors = memnew(GridContainer);
+	anchors->set_columns(4);
+	anchors_vbox->add_child(anchors);
+	for (int i = 0; i < 16; i++) {
+		Button *button = memnew(Button);
+		button->set_flat(true);
+		button->set_tooltip_text(anchor_presets[i].name);
+		button->set_accessibility_name(anchor_presets[i].name);
+		button->connect(SceneStringName(pressed), callable_mp(this, &CanvasItemEditorItemPanel::_anchors_pressed).bind((int)anchor_presets[i].preset));
+		anchors->add_child(button);
+		anchor_buttons[i] = button;
+	}
+	anchors_note = memnew(Label);
+	anchors_note->set_text(TTRC("Placed by the container it is in."));
+	anchors_vbox->add_child(anchors_note);
 }
