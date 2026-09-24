@@ -1103,6 +1103,35 @@ void EditorSelfTest::_script_drag_out_close() {
 	}
 }
 
+void EditorSelfTest::_script_bring_out() {
+	// Out into a panel again...
+	EditorSettings::get_singleton()->set("text_editor/behavior/files/open_scripts_in_own_panels", false);
+	_edit("res://probe_d.gd");
+	_tree()->get_first_pane()->accept_drop(Point2(), ScriptEditor::get_singleton()->get_current_script_drag_data(), EditorPane::DROP_INTO);
+}
+
+void EditorSelfTest::_script_bring_here() {
+	// ...and brought back by the button its stand-in has.
+	TypedArray<Node> stand_ins = ScriptEditor::get_singleton()->find_children("*", "ScriptEditorStandIn", true, false);
+	ScriptEditorStandIn *stand_in = nullptr;
+	for (int i = 0; i < stand_ins.size(); i++) {
+		ScriptEditorStandIn *candidate = Object::cast_to<ScriptEditorStandIn>(stand_ins[i]);
+		ScriptEditorBase *editor = candidate ? Object::cast_to<ScriptEditorBase>(candidate->get_editor()) : nullptr;
+		if (editor && editor->get_edited_resource().is_valid() && editor->get_edited_resource()->get_path() == "res://probe_d.gd") {
+			stand_in = candidate;
+		}
+	}
+	_check(stand_in && _pane_with_script("res://probe_d.gd"), "a script dragged out leaves a stand-in in the script editor");
+	if (stand_in) {
+		stand_in->bring_here();
+	}
+}
+
+void EditorSelfTest::_script_brought_here() {
+	_check(!_pane_with_script("res://probe_d.gd") && _script_is_open("res://probe_d.gd"), "Bring It Here puts the script back in the script editor, still open");
+	EditorSettings::get_singleton()->set("text_editor/behavior/files/open_scripts_in_own_panels", true);
+}
+
 void EditorSelfTest::_script_drag_out_back() {
 	_check(!_pane_with_script("res://probe_d.gd") && _script_is_open("res://probe_d.gd"), "closing that panel puts the script back in the script editor rather than closing it");
 	EditorSettings::get_singleton()->set("text_editor/behavior/files/open_scripts_in_own_panels", true);
@@ -1881,6 +1910,9 @@ EditorSelfTest::EditorSelfTest() {
 	_add("script drag out drop", callable_mp(this, &EditorSelfTest::_script_drag_out_drop));
 	_add("script drag out close", callable_mp(this, &EditorSelfTest::_script_drag_out_close));
 	_add("script drag out back", callable_mp(this, &EditorSelfTest::_script_drag_out_back));
+	_add("script bring out", callable_mp(this, &EditorSelfTest::_script_bring_out));
+	_add("script bring here", callable_mp(this, &EditorSelfTest::_script_bring_here));
+	_add("script brought here", callable_mp(this, &EditorSelfTest::_script_brought_here));
 	_add("script left open", callable_mp(this, &EditorSelfTest::_script_left_open));
 	_add("script stand-in", callable_mp(this, &EditorSelfTest::_script_stand_in));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));

@@ -63,6 +63,34 @@ void ScriptEditorStandIn::_show_pressed() {
 	}
 }
 
+void ScriptEditorStandIn::bring_here() {
+	ScriptEditorBase *script_editor = Object::cast_to<ScriptEditorBase>(get_editor());
+	const Ref<Resource> resource = script_editor ? script_editor->get_edited_resource() : Ref<Resource>();
+	// Later, and by name: giving the script back frees this very stand-in.
+	callable_mp_static(&ScriptEditorStandIn::_bring_back).call_deferred(panel, resource.is_valid() ? resource->get_path() : String());
+}
+
+void ScriptEditorStandIn::_bring_pressed() {
+	bring_here();
+}
+
+void ScriptEditorStandIn::_bring_back(ObjectID p_panel, const String &p_path) {
+	Control *panel = ObjectDB::get_instance<Control>(p_panel);
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	if (panel && main_screen) {
+		// Its pane lets go of the panel, which gives the script back rather
+		// than closing it: nobody closed it.
+		main_screen->remove_panel(panel);
+	}
+	ScriptEditor *script_editor = ScriptEditor::get_singleton();
+	const Ref<Resource> resource = p_path.is_empty() ? Ref<Resource>() : ResourceLoader::load(p_path);
+	if (script_editor && resource.is_valid()) {
+		// Shown in the script editor, where it is now - not sent out to a
+		// panel again, which is what grabbing the focus would do.
+		script_editor->edit(resource, false);
+	}
+}
+
 ScriptEditorStandIn::ScriptEditorStandIn(Control *p_editor, Control *p_panel) {
 	editor = p_editor ? p_editor->get_instance_id() : ObjectID();
 	panel = p_panel ? p_panel->get_instance_id() : ObjectID();
@@ -76,11 +104,19 @@ ScriptEditorStandIn::ScriptEditorStandIn(Control *p_editor, Control *p_panel) {
 	message->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	add_child(message);
 
+	HBoxContainer *buttons = memnew(HBoxContainer);
+	buttons->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+	add_child(buttons);
 	Button *show = memnew(Button);
 	show->set_text(TTRC("Show It"));
-	show->set_h_size_flags(SIZE_SHRINK_CENTER);
+	show->set_tooltip_text(TTRC("Go to the panel the script is in."));
 	show->connect(SceneStringName(pressed), callable_mp(this, &ScriptEditorStandIn::_show_pressed));
-	add_child(show);
+	buttons->add_child(show);
+	Button *bring = memnew(Button);
+	bring->set_text(TTRC("Bring It Here"));
+	bring->set_tooltip_text(TTRC("Take the script out of its panel and back into the script editor."));
+	bring->connect(SceneStringName(pressed), callable_mp(this, &ScriptEditorStandIn::_bring_pressed));
+	buttons->add_child(bring);
 }
 
 // ------------------------------------------------------------ the panel

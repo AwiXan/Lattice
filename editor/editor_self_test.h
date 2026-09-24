@@ -155,6 +155,9 @@ class EditorSelfTest : public Node {
 	void _script_drag_out_drop();
 	void _script_drag_out_close();
 	void _script_drag_out_back();
+	void _script_bring_out();
+	void _script_bring_here();
+	void _script_brought_here();
 	static bool _script_is_open(const String &p_path);
 	ObjectID view_2d;
 	void _addon_button_pressed() { addon_presses++; }

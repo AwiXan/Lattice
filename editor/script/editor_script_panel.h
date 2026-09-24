@@ -50,10 +50,14 @@ class ScriptEditorStandIn : public VBoxContainer {
 	Label *message = nullptr;
 
 	void _show_pressed();
+	void _bring_pressed();
+	static void _bring_back(ObjectID p_panel, const String &p_path);
 
 public:
 	Control *get_editor() const;
 	Control *get_panel() const;
+	// What "Bring It Here" does: the script back from its panel, and shown.
+	void bring_here();
 
 	ScriptEditorStandIn(Control *p_editor = nullptr, Control *p_panel = nullptr);
 };
