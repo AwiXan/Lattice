@@ -31,6 +31,7 @@
 #include "canvas_item_editor_plugin.h"
 
 #include "editor/gui/editor_button_mirror.h"
+#include "editor/gui/editor_pie_menu.h"
 #include "editor/gui/editor_view_header_group.h"
 #include "editor/gui/editor_view_hints.h"
 #include "editor/gui/editor_view_sidebar.h"
@@ -2770,6 +2771,13 @@ bool CanvasItemEditor::_gui_input_hover(const Ref<InputEvent> &p_event) {
 
 void CanvasItemEditor::_gui_input_viewport(const Ref<InputEvent> &p_event) {
 	bool accepted = false;
+
+	const Ref<InputEventKey> pie_key = p_event;
+	if (pie_key.is_valid() && pie_key->is_pressed() && !pie_key->is_echo() && drag_type == DRAG_NONE && ED_IS_SHORTCUT("canvas_item_editor/pie_view", p_event)) {
+		open_pie("view", pie_key->get_keycode());
+		viewport->accept_event();
+		return;
+	}
 
 	Ref<InputEventMouseButton> mb = p_event;
 	if (mb.is_valid() && mb->is_pressed()) {
@@ -5774,6 +5782,7 @@ CanvasItemEditor::CanvasItemEditor() {
 	controls_vb->set_begin(Point2(5, 5));
 
 	ED_SHORTCUT("canvas_item_editor/cancel_transform", TTRC("Cancel Transformation"), Key::ESCAPE);
+	ED_SHORTCUT("canvas_item_editor/pie_view", TTRC("View Pie Menu"), Key::QUOTELEFT);
 
 	// To ensure that scripts can parse the list of shortcuts correctly, we have to define
 	// those shortcuts one by one. Define shortcut before using it (by EditorZoomWidget).
@@ -6483,12 +6492,77 @@ void CanvasItemEditor::_overlays_id_pressed(int p_id) {
 			_popup_callback(p_id);
 		} break;
 	}
-	_overlays_about_to_popup();
+	if (overlays_menu) {
+		_overlays_about_to_popup();
+	}
 }
 
 void CanvasItemEditor::_overlays_gizmo_pressed(int p_id) {
 	_popup_callback(p_id);
 	_overlays_about_to_popup();
+}
+
+void CanvasItemEditor::open_pie(const StringName &p_name, Key p_key) {
+	if (p_name != StringName("view")) {
+		return;
+	}
+	if (!pie) {
+		pie = memnew(EditorPieMenu);
+		viewport->add_child(pie);
+		pie->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+		pie->connect(SNAME("closed"), callable_mp(this, &CanvasItemEditor::_pie_closed), CONNECT_DEFERRED);
+	}
+	pie->clear();
+	pie->set_title(TTR("View"));
+	struct Zoom {
+		EditorPieMenu::Direction direction;
+		real_t zoom;
+	};
+	const Zoom zooms[] = {
+		{ EditorPieMenu::DIRECTION_LEFT, 0.5 },
+		{ EditorPieMenu::DIRECTION_BOTTOM, 1.0 },
+		{ EditorPieMenu::DIRECTION_RIGHT, 2.0 },
+	};
+	for (const Zoom &step : zooms) {
+		EditorPieMenu::Item item;
+		item.text = vformat(TTR("Zoom %d%%"), int(step.zoom * 100));
+		item.icon = get_editor_theme_icon(SNAME("Zoom"));
+		item.action = callable_mp(this, &CanvasItemEditor::_shortcut_zoom_set).bind(step.zoom);
+		item.current = Math::is_equal_approx(zoom, step.zoom);
+		pie->set_item(step.direction, item);
+	}
+	EditorPieMenu::Item frame;
+	frame.text = TTR("Frame Selection");
+	frame.action = callable_mp(this, &CanvasItemEditor::_popup_callback).bind((int)VIEW_FRAME_TO_SELECTION);
+	pie->set_item(EditorPieMenu::DIRECTION_TOP, frame);
+	EditorPieMenu::Item center;
+	center.text = TTR("Center Selection");
+	center.icon = get_editor_theme_icon(SNAME("CenterView"));
+	center.action = callable_mp(this, &CanvasItemEditor::_popup_callback).bind((int)VIEW_CENTER_TO_SELECTION);
+	pie->set_item(EditorPieMenu::DIRECTION_TOP_LEFT, center);
+	EditorPieMenu::Item grid;
+	grid.text = TTR("Grid");
+	grid.icon = get_editor_theme_icon(SNAME("Grid"));
+	grid.action = callable_mp(this, &CanvasItemEditor::_overlays_id_pressed).bind((int)OVERLAY_GRID);
+	grid.current = grid_visibility == GRID_VISIBILITY_SHOW;
+	pie->set_item(EditorPieMenu::DIRECTION_TOP_RIGHT, grid);
+	EditorPieMenu::Item rulers;
+	rulers.text = TTR("Rulers");
+	rulers.action = callable_mp(this, &CanvasItemEditor::_popup_callback).bind((int)SHOW_RULERS);
+	rulers.current = show_rulers;
+	pie->set_item(EditorPieMenu::DIRECTION_BOTTOM_LEFT, rulers);
+	EditorPieMenu::Item guides;
+	guides.text = TTR("Guides");
+	guides.action = callable_mp(this, &CanvasItemEditor::_popup_callback).bind((int)SHOW_GUIDES);
+	guides.current = show_guides;
+	pie->set_item(EditorPieMenu::DIRECTION_BOTTOM_RIGHT, guides);
+	pie->open(pie->get_local_mouse_position(), p_key);
+}
+
+void CanvasItemEditor::_pie_closed() {
+	if (viewport->is_visible_in_tree() && get_viewport() && !get_viewport()->gui_get_focus_owner()) {
+		viewport->grab_focus();
+	}
 }
 
 void CanvasItemEditor::_chrome_tick() {

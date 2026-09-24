@@ -580,6 +580,10 @@ bool Node3DEditorViewport::_open_pie_for(const Ref<InputEvent> &p_event, Key p_k
 		open_pie("view", p_key);
 		return true;
 	}
+	if (ED_IS_SHORTCUT("spatial_editor/pie_snap", p_event)) {
+		open_pie("snap", p_key);
+		return true;
+	}
 	return false;
 }
 
@@ -596,6 +600,8 @@ void Node3DEditorViewport::open_pie(const StringName &p_name, Key p_key) {
 		_fill_shading_pie();
 	} else if (p_name == StringName("view")) {
 		_fill_view_pie();
+	} else if (p_name == StringName("snap")) {
+		_fill_snap_pie();
 	} else {
 		return;
 	}
@@ -691,6 +697,54 @@ void Node3DEditorViewport::_fill_view_pie() {
 	focus.icon = get_editor_theme_icon(SNAME("CenterView"));
 	focus.action = callable_mp(this, &Node3DEditorViewport::_menu_option).bind((int)VIEW_CENTER_TO_SELECTION);
 	pie->set_item(EditorPieMenu::DIRECTION_BOTTOM_RIGHT, focus);
+}
+
+void Node3DEditorViewport::_fill_snap_pie() {
+	pie->set_title(TTR("Snap"));
+	struct Toggle {
+		EditorPieMenu::Direction direction;
+		int option;
+		const char *name;
+		const char *icon;
+	};
+	const Toggle toggles[] = {
+		{ EditorPieMenu::DIRECTION_TOP, Node3DEditor::TOOL_OPT_USE_SNAP, TTRC("Use Snap"), "Snap" },
+		{ EditorPieMenu::DIRECTION_TOP_LEFT, Node3DEditor::TOOL_OPT_LOCAL_COORDS, TTRC("Local Space"), "Object" },
+	};
+	for (const Toggle &toggle : toggles) {
+		EditorPieMenu::Item item;
+		item.text = TTRGET(toggle.name);
+		item.icon = get_editor_theme_icon(toggle.icon);
+		item.action = callable_mp(spatial_editor, &Node3DEditor::toggle_tool_option).bind(toggle.option);
+		item.current = spatial_editor->is_tool_option_on(toggle.option);
+		pie->set_item(toggle.direction, item);
+	}
+
+	EditorPieMenu::Item floor;
+	floor.text = TTR("Snap to Floor");
+	floor.action = callable_mp(spatial_editor, &Node3DEditor::snap_selected_nodes_to_floor);
+	pie->set_item(EditorPieMenu::DIRECTION_LEFT, floor);
+	EditorPieMenu::Item align;
+	align.text = TTR("Align Transform with View");
+	align.action = callable_mp(this, &Node3DEditorViewport::_menu_option).bind((int)VIEW_ALIGN_TRANSFORM_WITH_VIEW);
+	pie->set_item(EditorPieMenu::DIRECTION_RIGHT, align);
+	EditorPieMenu::Item align_rotation;
+	align_rotation.text = TTR("Align Rotation with View");
+	align_rotation.action = callable_mp(this, &Node3DEditorViewport::_menu_option).bind((int)VIEW_ALIGN_ROTATION_WITH_VIEW);
+	pie->set_item(EditorPieMenu::DIRECTION_TOP_RIGHT, align_rotation);
+	EditorPieMenu::Item settings;
+	settings.text = TTR("Snap Settings");
+	settings.icon = get_editor_theme_icon(SNAME("Tools"));
+	settings.action = callable_mp(spatial_editor, &Node3DEditor::show_snap_settings);
+	pie->set_item(EditorPieMenu::DIRECTION_BOTTOM, settings);
+	EditorPieMenu::Item reset_position;
+	reset_position.text = TTR("Reset Position");
+	reset_position.action = callable_mp(this, &Node3DEditorViewport::_reset_transform_by_index).bind((int)TransformType::POSITION);
+	pie->set_item(EditorPieMenu::DIRECTION_BOTTOM_LEFT, reset_position);
+	EditorPieMenu::Item reset_rotation;
+	reset_rotation.text = TTR("Reset Rotation");
+	reset_rotation.action = callable_mp(this, &Node3DEditorViewport::_reset_transform_by_index).bind((int)TransformType::ROTATION);
+	pie->set_item(EditorPieMenu::DIRECTION_BOTTOM_RIGHT, reset_rotation);
 }
 
 void Node3DEditorViewport::_pie_closed() {
@@ -7165,6 +7219,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	// then locks to the Z axis, which is checked first.
 	ED_SHORTCUT("spatial_editor/pie_shading", TTRC("Shading Pie Menu"), Key::Z);
 	ED_SHORTCUT("spatial_editor/pie_view", TTRC("View Pie Menu"), Key::QUOTELEFT);
+	ED_SHORTCUT("spatial_editor/pie_snap", TTRC("Snap Pie Menu"), KeyModifierMask::SHIFT | Key::S);
 	ED_SHORTCUT("spatial_editor/lock_transform_x", TTRC("Lock Transformation to X axis"), Key::X);
 	ED_SHORTCUT("spatial_editor/lock_transform_y", TTRC("Lock Transformation to Y axis"), Key::Y);
 	ED_SHORTCUT("spatial_editor/lock_transform_z", TTRC("Lock Transformation to Z axis"), Key::Z);
@@ -12651,6 +12706,20 @@ void Node3DEditor::set_display_everywhere(int p_display_option) {
 
 void Node3DEditor::toggle_overlay(int p_overlay) {
 	_overlays_id_pressed(p_overlay);
+}
+
+void Node3DEditor::toggle_tool_option(int p_option) {
+	ERR_FAIL_INDEX(p_option, TOOL_OPT_MAX);
+	tool_option_button[p_option]->set_pressed(!tool_option_button[p_option]->is_pressed());
+}
+
+bool Node3DEditor::is_tool_option_on(int p_option) const {
+	ERR_FAIL_INDEX_V(p_option, TOOL_OPT_MAX, false);
+	return tool_option_button[p_option]->is_pressed();
+}
+
+void Node3DEditor::show_snap_settings() {
+	_menu_item_activated(MENU_TRANSFORM_CONFIGURE_SNAP);
 }
 
 void Node3DEditor::_shading_pressed(int p_shading) {

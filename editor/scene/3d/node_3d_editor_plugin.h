@@ -272,7 +272,9 @@ private:
 	bool _open_pie_for(const Ref<InputEvent> &p_event, Key p_key);
 	void _fill_shading_pie();
 	void _fill_view_pie();
+	void _fill_snap_pie();
 	void _pie_closed();
+	void _reset_transform_by_index(int p_type) { _reset_transform((TransformType)p_type); }
 	PopupMenu *display_submenu = nullptr;
 
 	Control *surface = nullptr;
@@ -1271,6 +1273,10 @@ public:
 	void set_shading(int p_shading);
 	void set_display_everywhere(int p_display_option);
 	void toggle_overlay(int p_overlay);
+	// A transform option (ToolOptions) switched as its button would be.
+	void toggle_tool_option(int p_option);
+	bool is_tool_option_on(int p_option) const;
+	void show_snap_settings();
 	Button *get_shading_button(int p_shading) const { return (p_shading >= 0 && p_shading < 4) ? shading_buttons[p_shading] : nullptr; }
 	enum Overlay {
 		OVERLAY_GRID,

@@ -43,6 +43,7 @@ class ConfirmationDialog;
 class EditorData;
 class EditorSelection;
 class EditorButtonMirror;
+class EditorPieMenu;
 class EditorViewHints;
 class EditorViewSidebar;
 class EditorZoomWidget;
@@ -263,6 +264,10 @@ private:
 	void _sync_addon_mirrors();
 	void _activate_for_user();
 	static bool _is_views_own_control(Node *p_node, Control *p_to);
+
+	// The view pie (`): zoom, centring, and what is drawn over the canvas.
+	EditorPieMenu *pie = nullptr;
+	void _pie_closed();
 
 	Transform2D transform;
 	GridVisibility grid_visibility = GRID_VISIBILITY_SHOW_WHEN_SNAPPING;
@@ -689,6 +694,10 @@ public:
 	CanvasItemEditorItemPanel *get_item_panel() const { return item_panel; }
 	EditorViewHints *get_hints() const { return hints; }
 	bool are_helpers_shown() const { return show_helpers; }
+	// Opens a pie menu - "view" - around the mouse, as its key does.
+	void open_pie(const StringName &p_name, Key p_key = Key::NONE);
+	EditorPieMenu *get_pie() const { return pie; }
+	real_t get_zoom() const { return zoom; }
 
 	// Points this view at the document whose 2D world it should render. Call
 	// once, before the view is shown.

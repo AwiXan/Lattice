@@ -79,6 +79,11 @@
 #include "scene/main/scene_tree.h"
 #include "scene/main/window.h"
 
+static void _choose_towards(EditorPieMenu *p_pie, const Vector2 &p_direction) {
+	p_pie->hover_towards(p_pie->get_center() + p_direction * 120 * EDSCALE);
+	p_pie->choose_hovered();
+}
+
 bool EditorScreenshot::is_requested() {
 	return OS::get_singleton()->has_environment("LATTICE_SHOT");
 }
@@ -881,6 +886,16 @@ void EditorSelfTest::_view_2d_check() {
 		memdelete(control);
 	}
 
+	// The 2D view pie: zoom to 200% and back to 100%.
+	view->open_pie("view");
+	if (view->get_pie()) {
+		_choose_towards(view->get_pie(), Vector2(1, 0));
+		const bool doubled = Math::is_equal_approx(view->get_zoom(), (real_t)2.0);
+		view->open_pie("view");
+		_choose_towards(view->get_pie(), Vector2(0, 1));
+		_check(doubled && Math::is_equal_approx(view->get_zoom(), (real_t)1.0), "the 2D view pie zooms");
+	}
+
 	const String hints = view->get_hints() ? view->get_hints()->get_text() : String();
 	_check(hints.contains(TTR("Pan")) && hints.contains(TTR("Zoom")), "under the 2D view, a line says what the mouse and keys do: " + hints);
 
@@ -976,6 +991,15 @@ void EditorSelfTest::_pie_view() {
 	pie->hover_towards(pie->get_center() + Vector2(0, -120) * EDSCALE);
 	pie->choose_hovered();
 	_check(!pie->is_open() && viewport->is_view_type_top(), "the view pie turns the view to look from the top");
+
+	// Shift+S: snapping switched on and off again from the snap pie.
+	const bool snapping = view->is_tool_option_on(Node3DEditor::TOOL_OPT_USE_SNAP);
+	viewport->open_pie("snap");
+	_choose_towards(viewport->get_pie(), Vector2(0, -1));
+	const bool switched = view->is_tool_option_on(Node3DEditor::TOOL_OPT_USE_SNAP) != snapping;
+	viewport->open_pie("snap");
+	_choose_towards(viewport->get_pie(), Vector2(0, -1));
+	_check(switched && view->is_tool_option_on(Node3DEditor::TOOL_OPT_USE_SNAP) == snapping, "the snap pie switches snapping");
 }
 
 bool EditorSelfTest::_script_is_open(const String &p_path) {
