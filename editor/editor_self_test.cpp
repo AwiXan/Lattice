@@ -894,6 +894,44 @@ void EditorSelfTest::_pie_view() {
 	_check(!pie->is_open() && viewport->is_view_type_top(), "the view pie turns the view to look from the top");
 }
 
+bool EditorSelfTest::_script_is_open(const String &p_path) {
+	for (const Ref<Script> &script : ScriptEditor::get_singleton()->get_open_scripts()) {
+		if (script.is_valid() && script->get_path() == p_path) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void EditorSelfTest::_script_drag_out_open() {
+	// Scripts where they live by default: in the script editor.
+	EditorSettings::get_singleton()->set("text_editor/behavior/files/open_scripts_in_own_panels", false);
+	_edit("res://probe_d.gd");
+}
+
+void EditorSelfTest::_script_drag_out_drop() {
+	_check(_script_is_open("res://probe_d.gd") && !_pane_with_script("res://probe_d.gd"), "by default a script opens in the script editor, not in a panel");
+	// Dragged out of the script list and let go on a pane.
+	const Dictionary data = ScriptEditor::get_singleton()->get_current_script_drag_data();
+	_check(String(data.get("editor_panel", "")) == "script" && String(data.get("editor_panel_subject", "")) == "res://probe_d.gd", "dragging a script out of the script list carries it as a panel");
+	_tree()->get_first_pane()->accept_drop(Point2(), data, EditorPane::DROP_INTO);
+}
+
+void EditorSelfTest::_script_drag_out_close() {
+	int index = -1;
+	EditorPane *pane = _pane_with_script("res://probe_d.gd", &index);
+	EditorScriptPanel *panel = pane ? Object::cast_to<EditorScriptPanel>(pane->get_panel_at(index)) : nullptr;
+	_check(panel && panel->get_editor() && ScriptEditor::get_singleton()->is_editor_lent(panel->get_editor()), "let go on a pane, it becomes a panel of its own there");
+	if (pane) {
+		_close_tab(pane, "script");
+	}
+}
+
+void EditorSelfTest::_script_drag_out_back() {
+	_check(!_pane_with_script("res://probe_d.gd") && _script_is_open("res://probe_d.gd"), "closing that panel puts the script back in the script editor rather than closing it");
+	EditorSettings::get_singleton()->set("text_editor/behavior/files/open_scripts_in_own_panels", true);
+}
+
 EditorPane *EditorSelfTest::_pane_with_script(const String &p_path, int *r_index) const {
 	for (EditorPane *pane : _tree()->get_panes()) {
 		for (int i = 0; i < pane->get_panel_count(); i++) {
@@ -1658,6 +1696,10 @@ EditorSelfTest::EditorSelfTest() {
 	_add("addon mirror check", callable_mp(this, &EditorSelfTest::_addon_mirror_check));
 	_add("view 2d open", callable_mp(this, &EditorSelfTest::_view_2d_open));
 	_add("view 2d check", callable_mp(this, &EditorSelfTest::_view_2d_check));
+	_add("script drag out open", callable_mp(this, &EditorSelfTest::_script_drag_out_open));
+	_add("script drag out drop", callable_mp(this, &EditorSelfTest::_script_drag_out_drop));
+	_add("script drag out close", callable_mp(this, &EditorSelfTest::_script_drag_out_close));
+	_add("script drag out back", callable_mp(this, &EditorSelfTest::_script_drag_out_back));
 	_add("script left open", callable_mp(this, &EditorSelfTest::_script_left_open));
 	_add("script stand-in", callable_mp(this, &EditorSelfTest::_script_stand_in));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));

@@ -587,6 +587,17 @@ void EditorMainScreen::_tear_off(const Variant &p_data, const Point2i &p_screen_
 		return;
 	}
 	const Dictionary data = p_data;
+	if (data.has("editor_panel") && data.has("editor_panel_subject")) {
+		// Something a panel can be made of - a script dragged out of the
+		// script editor: made where work is going on, then carried out.
+		EditorPane *home = pane_tree ? pane_tree->get_active_pane() : nullptr;
+		const int made = home ? home->add_panel(StringName(data["editor_panel"]), data["editor_panel_subject"]) : -1;
+		if (made >= 0) {
+			const Point2i at = p_screen_position - Point2i(Size2(60, 12) * EDSCALE);
+			open_panel_in_window(home, made, Rect2i(at, Size2i(Size2(720, 520) * EDSCALE)));
+		}
+		return;
+	}
 	if (String(data.get("type", "")) != "editor_pane_panel") {
 		// A scene tab or a file: a description of something, not a panel that
 		// already exists to be moved.

@@ -49,6 +49,8 @@ func _ready() -> void:
 """,
     "probe_c.gd": """extends Node
 """,
+    "probe_d.gd": """extends Node
+""",
     "probe.gdshader": """shader_type spatial;
 
 void fragment() {

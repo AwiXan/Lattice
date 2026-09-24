@@ -339,6 +339,7 @@ class ScriptEditor : public PanelContainer {
 	void _split_dragged(float);
 
 	Variant get_drag_data_fw(const Point2 &p_point, Control *p_from);
+	void _offer_as_panel(Dictionary &r_drag_data, Node *p_editor) const;
 	bool can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const;
 	void drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from);
 
@@ -421,6 +422,8 @@ public:
 	// Makes a lent editor's script the one the rest of this acts on.
 	void activate_lent_editor(Control *p_editor);
 	bool is_editor_lent(const Control *p_editor) const;
+	// What dragging the current script out of the list carries.
+	Dictionary get_current_script_drag_data() const;
 	// Shows the script being edited: in its own panel, or - a help page, a
 	// script never saved - here.
 	void show_current_in_panel();

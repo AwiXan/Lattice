@@ -143,6 +143,11 @@ class EditorSelfTest : public Node {
 	void _addon_mirror_check();
 	void _view_2d_open();
 	void _view_2d_check();
+	void _script_drag_out_open();
+	void _script_drag_out_drop();
+	void _script_drag_out_close();
+	void _script_drag_out_back();
+	static bool _script_is_open(const String &p_path);
 	ObjectID view_2d;
 	void _addon_button_pressed() { addon_presses++; }
 	int addon_presses = 0;

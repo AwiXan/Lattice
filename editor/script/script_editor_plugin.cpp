@@ -3108,7 +3108,37 @@ Variant ScriptEditor::get_drag_data_fw(const Point2 &p_point, Control *p_from) {
 	Dictionary drag_data;
 	drag_data["type"] = "script_list_element"; // using a custom type because node caused problems when dragging to scene tree
 	drag_data["script_list_element"] = cur_node;
+	_offer_as_panel(drag_data, cur_node);
 
+	return drag_data;
+}
+
+void ScriptEditor::_offer_as_panel(Dictionary &r_drag_data, Node *p_editor) const {
+	// Dragged anywhere but the list itself, a script becomes a panel of its
+	// own - in a pane, beside one, or in a window if let go outside. Not one
+	// already in a panel, and not a page of the documentation.
+	ScriptEditorBase *editor = Object::cast_to<ScriptEditorBase>(p_editor);
+	if (!editor || is_editor_lent(editor)) {
+		return;
+	}
+	const Ref<Resource> resource = editor->get_edited_resource();
+	if (resource.is_null() || resource->get_path().is_empty() || resource->get_path().contains("::")) {
+		return;
+	}
+	r_drag_data["editor_panel"] = "script";
+	r_drag_data["editor_panel_subject"] = resource->get_path();
+	r_drag_data["editor_panel_keeps_drops_over"] = (int64_t)script_list->get_instance_id();
+}
+
+Dictionary ScriptEditor::get_current_script_drag_data() const {
+	Dictionary drag_data;
+	if (tab_container->get_tab_count() == 0) {
+		return drag_data;
+	}
+	Node *editor = _resolve_tab(tab_container->get_tab_control(tab_container->get_current_tab()));
+	drag_data["type"] = "script_list_element";
+	drag_data["script_list_element"] = editor;
+	_offer_as_panel(drag_data, editor);
 	return drag_data;
 }
 

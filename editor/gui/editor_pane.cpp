@@ -1415,7 +1415,33 @@ void EditorPaneDropHint::_aim() {
 	queue_redraw();
 }
 
+Control *EditorPaneDropHint::_keeper_at(const Point2 &p_point, const Variant &p_data, Point2 &r_in_keeper) const {
+	// A list a panel can be dragged out of - the script editor's - still
+	// takes drops over itself: put back in its order, not made into a panel.
+	if (p_data.get_type() != Variant::DICTIONARY) {
+		return nullptr;
+	}
+	const Dictionary data = p_data;
+	Control *keeper = ObjectDB::get_instance<Control>(ObjectID(uint64_t(int64_t(data.get("editor_panel_keeps_drops_over", 0)))));
+	if (!keeper || !keeper->is_visible_in_tree() || keeper->get_viewport() != get_viewport()) {
+		return nullptr;
+	}
+	const Point2 global = get_global_transform().xform(p_point);
+	if (!keeper->get_global_rect().has_point(global)) {
+		return nullptr;
+	}
+	r_in_keeper = keeper->get_global_transform().affine_inverse().xform(global);
+	return keeper;
+}
+
 bool EditorPaneDropHint::can_drop_data(const Point2 &p_point, const Variant &p_data) const {
+	Point2 in_keeper;
+	Control *keeper = _keeper_at(p_point, p_data, in_keeper);
+	if (keeper) {
+		const_cast<EditorPaneDropHint *>(this)->_forget();
+		return keeper->can_drop_data(in_keeper, p_data);
+	}
+
 	// A whole side of the arrangement first: its targets sit over the panes.
 	if (tree && EditorPane::is_panel_drag(p_data)) {
 		const Point2 in_tree = tree->get_global_transform().affine_inverse().xform(get_global_transform().xform(p_point));
@@ -1470,6 +1496,13 @@ bool EditorPaneDropHint::can_drop_data(const Point2 &p_point, const Variant &p_d
 }
 
 void EditorPaneDropHint::drop_data(const Point2 &p_point, const Variant &p_data) {
+	Point2 in_keeper;
+	Control *keeper = _keeper_at(p_point, p_data, in_keeper);
+	if (keeper) {
+		_forget();
+		keeper->drop_data(in_keeper, p_data);
+		return;
+	}
 	if (at_edge && tree) {
 		// A whole side: a new pane beside everything there is, and the panel
 		// goes into it.

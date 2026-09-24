@@ -201,7 +201,13 @@ public:
 
 	virtual void set_tooltip_request_func(const Callable &p_toolip_callback);
 
-	virtual void ensure_focus() { code_editor->get_text_editor()->grab_focus(); }
+	// Not while it is between places - taken out of the script editor, not
+	// yet in the panel it is going to.
+	virtual void ensure_focus() {
+		if (code_editor->get_text_editor()->is_inside_tree()) {
+			code_editor->get_text_editor()->grab_focus();
+		}
+	}
 	virtual void convert_indent() { code_editor->get_text_editor()->convert_indent(); }
 
 	virtual void trim_trailing_whitespace() { code_editor->trim_trailing_whitespace(); }

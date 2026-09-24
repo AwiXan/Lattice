@@ -311,7 +311,7 @@ String EditorScriptPanel::title_of(Control *p_panel) {
 void EditorScriptPanel::closed_by_user(Control *p_panel) {
 	EditorScriptPanel *panel = Object::cast_to<EditorScriptPanel>(p_panel);
 	if (panel) {
-		panel->closing_by_user = true;
+		panel->closing_by_user = ScriptEditor::opens_scripts_in_panels();
 	}
 }
 

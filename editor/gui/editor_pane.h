@@ -322,6 +322,7 @@ class EditorPaneDropHint : public Control {
 
 	EditorPane *_pane_at(const Point2 &p_point) const;
 	void _forget();
+	Control *_keeper_at(const Point2 &p_point, const Variant &p_data, Point2 &r_in_keeper) const;
 	void _aim();
 	void _draw_target(const Rect2 &p_rect, EditorPane::DropZone p_zone, bool p_edge, bool p_hot);
 
