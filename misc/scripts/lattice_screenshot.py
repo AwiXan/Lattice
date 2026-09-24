@@ -77,6 +77,38 @@ def textured(scene):
     return scene
 
 
+GI_RESOURCES = """[sub_resource type="StandardMaterial3D" id="red"]
+albedo_color = Color(0.9, 0.1, 0.08, 1)
+
+[sub_resource type="ProceduralSkyMaterial" id="sky_material"]
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("sky_material")
+
+[sub_resource type="Environment" id="gi_environment"]
+background_mode = 2
+sky = SubResource("sky")
+tonemap_mode = 2
+sdfgi_enabled = true
+
+"""
+
+
+GI_NODES = """
+[node name="Wall" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.2, 0, 0, 0, 3, 0, 0, 0, 4, -1.6, 1.5, 0)
+mesh = SubResource("box")
+material_override = SubResource("red")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.7, -0.5, 0.5, 0, 0.7, 0.7, -0.7, -0.5, 0.5, 0, 6, 0)
+shadow_enabled = true
+
+[node name="Environment" type="WorldEnvironment" parent="."]
+environment = SubResource("gi_environment")
+"""
+
+
 SCENE_2D = """[gd_scene format=3]
 
 [node name="Hud" type="Control"]
@@ -108,6 +140,7 @@ def main():
     parser.add_argument("--crashed", action="store_true", help="make the last session look crashed, with a long log")
     parser.add_argument("--lit", action="store_true", help="give the 3D scene a sun and an environment of its own")
     parser.add_argument("--camera", action="store_true", help="give the 3D scene a camera looking at the crate")
+    parser.add_argument("--gi", action="store_true", help="give the 3D scene a sun, a sky, a red wall and real-time GI (SDFGI, or what replaced it)")
     parser.add_argument("--select", help="the name of the node to select, instead of the first mesh")
     parser.add_argument("--streaming", action="store_true", help="turn texture streaming on in the project")
     parser.add_argument("--textured", action="store_true", help="put a checker texture on the 3D scene's crate and floor")
@@ -139,11 +172,18 @@ def main():
         f.write("extends Node\n")
     scene = "scene_3d.tscn" if args.scene == "3d" else "scene_2d.tscn"
     with open(os.path.join(project, scene), "w", encoding="utf-8", newline="\n") as f:
-        f.write((textured(SCENE_3D) if args.textured else SCENE_3D) if args.scene == "3d" else SCENE_2D)
+        text = (textured(SCENE_3D) if args.textured else SCENE_3D) if args.scene == "3d" else SCENE_2D
+        if args.gi and args.scene == "3d":
+            text = text.replace('[sub_resource type="BoxMesh" id="box"]', GI_RESOURCES + '[sub_resource type="BoxMesh" id="box"]')
+        f.write(text)
         if args.lit and args.scene == "3d":
             # Its own sun and environment: the preview ones step aside and say so.
             f.write('\n[node name="Sun" type="DirectionalLight3D" parent="."]\n')
             f.write('\n[node name="Environment" type="WorldEnvironment" parent="."]\n')
+        if args.gi and args.scene == "3d":
+            # A red wall beside the crate, to see light bounce off it onto the
+            # floor. "sdfgi_enabled" is read by whichever GI the build has.
+            f.write(GI_NODES)
         if args.camera and args.scene == "3d":
             # Up and to the side, looking down at the crate.
             f.write('\n[node name="Camera" type="Camera3D" parent="."]\n')
