@@ -101,6 +101,7 @@ class EditorPaneTree : public Container {
 	void _wire_pane(EditorPane *p_pane);
 	void _pane_split_requested(bool p_vertical, EditorPane *p_pane);
 	void _pane_float_requested(int p_panel, EditorPane *p_pane);
+	void _pane_return_requested(int p_panel, EditorPane *p_pane);
 
 	Slot *_leaf_for(const EditorPane *p_pane) const;
 	Slot *_find_leaf(Slot *p_slot, const EditorPane *p_pane) const;

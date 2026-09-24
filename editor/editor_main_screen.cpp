@@ -464,6 +464,7 @@ EditorPane *EditorMainScreen::_pane_showing(const StringName &p_type, EditorPane
 
 void EditorMainScreen::_watch_tree(EditorPaneTree *p_tree) {
 	p_tree->connect(SNAME("panel_float_requested"), callable_mp(this, &EditorMainScreen::_panel_float_requested).bind(p_tree));
+	p_tree->connect(SNAME("panel_return_requested"), callable_mp(this, &EditorMainScreen::_panel_return_requested).bind(p_tree));
 }
 
 EditorPaneWindow *EditorMainScreen::open_panel_in_window(EditorPane *p_from, int p_panel, const Rect2i &p_rect) {
@@ -481,15 +482,20 @@ EditorPaneWindow *EditorMainScreen::open_panel_in_window(EditorPane *p_from, int
 	window->connect("window_close_requested", callable_mp(this, &EditorMainScreen::_pane_window_closed).bind(window));
 	pane_windows.push_back(window);
 
+	// Where it comes from - the main window or another - tidied once it has
+	// gone: an empty pane dropped, an empty window closed.
+	EditorPaneTree *source_tree = nullptr;
+	for (Node *n = p_from->get_parent(); n && !source_tree; n = n->get_parent()) {
+		source_tree = Object::cast_to<EditorPaneTree>(n);
+	}
+
 	EditorPane *host = window->get_pane_tree()->get_first_pane();
 	if (!host || !p_from->transfer_panel_to(host, p_panel)) {
 		// Nothing moved, so there is nothing for the window to show.
 		_close_pane_window(window, false);
 		return nullptr;
 	}
-	if (pane_tree) {
-		pane_tree->drop_empty_panes();
-	}
+	_tidy_after_leaving(source_tree ? source_tree : pane_tree);
 
 	window->update_title();
 	// A third of the editor, near where it came from, which is what the docks
@@ -617,20 +623,29 @@ void EditorMainScreen::_tear_off(const Variant &p_data, const Point2i &p_screen_
 }
 
 void EditorMainScreen::_panel_float_requested(EditorPane *p_pane, int p_panel, EditorPaneTree *p_tree) {
+	// A window of its own, whether it was in the main window or another one:
+	// there is no need to bring it back first.
+	open_panel_in_window(p_pane, p_panel);
+}
+
+void EditorMainScreen::_panel_return_requested(EditorPane *p_pane, int p_panel, EditorPaneTree *p_tree) {
 	if (!p_tree->is_windowed()) {
-		open_panel_in_window(p_pane, p_panel);
 		return;
 	}
-
-	// The other direction: back into the main arrangement, beside whatever is
-	// being worked on there.
+	// Back into the main arrangement, beside whatever is being worked on there.
 	EditorPane *home = pane_tree ? pane_tree->get_active_pane() : nullptr;
 	if (!home) {
 		return;
 	}
 	p_pane->transfer_panel_to(home, p_panel);
-	p_tree->drop_empty_panes();
+	_tidy_after_leaving(p_tree);
+}
 
+void EditorMainScreen::_tidy_after_leaving(EditorPaneTree *p_tree) {
+	if (!p_tree) {
+		return;
+	}
+	p_tree->drop_empty_panes();
 	for (EditorPaneWindow *window : pane_windows) {
 		if (window->get_pane_tree() != p_tree) {
 			continue;

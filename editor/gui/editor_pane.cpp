@@ -57,6 +57,7 @@
 void EditorPane::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("split_requested", PropertyInfo(Variant::BOOL, "vertical")));
 	ADD_SIGNAL(MethodInfo("float_requested", PropertyInfo(Variant::INT, "panel")));
+	ADD_SIGNAL(MethodInfo("return_requested", PropertyInfo(Variant::INT, "panel")));
 	ADD_SIGNAL(MethodInfo("close_requested"));
 	ADD_SIGNAL(MethodInfo("panels_changed"));
 }
@@ -132,6 +133,13 @@ void EditorPane::_build_header() {
 	float_button->connect(SceneStringName(pressed), callable_mp(this, &EditorPane::_float_pressed));
 	header->add_child(float_button);
 
+	back_button = memnew(Button);
+	back_button->set_flat(true);
+	back_button->set_focus_mode(FOCUS_NONE);
+	back_button->connect(SceneStringName(pressed), callable_mp(this, &EditorPane::_back_pressed));
+	back_button->hide();
+	header->add_child(back_button);
+
 	split_right_button = memnew(Button);
 	split_right_button->set_flat(true);
 	split_right_button->set_focus_mode(FOCUS_NONE);
@@ -170,11 +178,15 @@ void EditorPane::_update_theme() {
 	const EditorPaneTree *tree = _get_pane_tree();
 	const bool windowed = tree && tree->is_windowed();
 	restore_button->set_button_icon(base->get_editor_theme_icon(SNAME("DistractionFree")));
-	float_button->set_button_icon(base->get_editor_theme_icon(windowed ? SNAME("Back") : SNAME("MakeFloating")));
-	float_button->set_tooltip_text(windowed
-					? TTRC("Put this panel back in the main window.")
-					: TTRC("Open this panel in a window of its own."));
-	float_button->set_visible(EditorNode::get_singleton()->is_multi_window_enabled());
+	// Out to a window of its own from anywhere, a window included; and from a
+	// window, back into the main one too.
+	const bool multi_window = EditorNode::get_singleton()->is_multi_window_enabled();
+	float_button->set_button_icon(base->get_editor_theme_icon(SNAME("MakeFloating")));
+	float_button->set_tooltip_text(TTRC("Open this panel in a window of its own."));
+	float_button->set_visible(multi_window);
+	back_button->set_button_icon(base->get_editor_theme_icon(SNAME("Back")));
+	back_button->set_tooltip_text(TTRC("Put this panel back in the main window."));
+	back_button->set_visible(multi_window && windowed);
 	split_right_button->set_button_icon(base->get_editor_theme_icon(SNAME("Panels2Alt")));
 	split_down_button->set_button_icon(base->get_editor_theme_icon(SNAME("Panels2")));
 	close_button->set_button_icon(base->get_editor_theme_icon(SNAME("Close")));
@@ -581,9 +593,11 @@ void EditorPane::_split_pressed(bool p_vertical) {
 }
 
 void EditorPane::_float_pressed() {
-	// The same button both ways: out of the main window, or back into it. Which
-	// one it is depends on where this pane already is.
 	emit_signal(SNAME("float_requested"), current);
+}
+
+void EditorPane::_back_pressed() {
+	emit_signal(SNAME("return_requested"), current);
 }
 
 void EditorPane::_close_pressed() {

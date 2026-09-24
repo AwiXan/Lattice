@@ -137,6 +137,7 @@ private:
 	Vector<StringName> more_types;
 	OptionButton *subject_button = nullptr;
 	Button *float_button = nullptr;
+	Button *back_button = nullptr;
 	Button *split_right_button = nullptr;
 	Button *split_down_button = nullptr;
 	Button *close_button = nullptr;
@@ -164,6 +165,7 @@ private:
 	void _subject_selected(int p_index);
 	void _split_pressed(bool p_vertical);
 	void _float_pressed();
+	void _back_pressed();
 	void _close_pressed();
 	void _restore_pressed();
 	void _recent_selected(int p_index);

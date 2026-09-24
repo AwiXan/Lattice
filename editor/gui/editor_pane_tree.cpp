@@ -47,6 +47,7 @@ void EditorPaneTree::_bind_methods() {
 	// A pane asking for one of its panels to be somewhere else. The arrangement
 	// does not know what a window is; whoever holds it does.
 	ADD_SIGNAL(MethodInfo("panel_float_requested", PropertyInfo(Variant::OBJECT, "pane"), PropertyInfo(Variant::INT, "panel")));
+	ADD_SIGNAL(MethodInfo("panel_return_requested", PropertyInfo(Variant::OBJECT, "pane"), PropertyInfo(Variant::INT, "panel")));
 }
 
 // ---------------------------------------------------------------- the slots
@@ -349,6 +350,7 @@ void EditorPaneTree::_wire_pane(EditorPane *p_pane) {
 	p_pane->connect(SNAME("split_requested"), callable_mp(this, &EditorPaneTree::_pane_split_requested).bind(p_pane), CONNECT_DEFERRED);
 	p_pane->connect(SNAME("close_requested"), callable_mp(this, &EditorPaneTree::close_pane).bind(p_pane), CONNECT_DEFERRED);
 	p_pane->connect(SNAME("float_requested"), callable_mp(this, &EditorPaneTree::_pane_float_requested).bind(p_pane), CONNECT_DEFERRED);
+	p_pane->connect(SNAME("return_requested"), callable_mp(this, &EditorPaneTree::_pane_return_requested).bind(p_pane), CONNECT_DEFERRED);
 }
 
 void EditorPaneTree::_pane_split_requested(bool p_vertical, EditorPane *p_pane) {
@@ -357,6 +359,10 @@ void EditorPaneTree::_pane_split_requested(bool p_vertical, EditorPane *p_pane) 
 
 void EditorPaneTree::_pane_float_requested(int p_panel, EditorPane *p_pane) {
 	emit_signal(SNAME("panel_float_requested"), p_pane, p_panel);
+}
+
+void EditorPaneTree::_pane_return_requested(int p_panel, EditorPane *p_pane) {
+	emit_signal(SNAME("panel_return_requested"), p_pane, p_panel);
 }
 
 EditorPane *EditorPaneTree::split_pane(EditorPane *p_pane, bool p_vertical, bool p_before, bool p_fill) {

@@ -52,6 +52,7 @@
 #include "editor/gui/editor_pane.h"
 #include "editor/inspector/editor_document_inspector.h"
 #include "editor/gui/editor_pane_tree.h"
+#include "editor/gui/editor_pane_window.h"
 #include "editor/gui/editor_spin_slider.h"
 #include "editor/gui/editor_pie_menu.h"
 #include "editor/gui/editor_view_hints.h"
@@ -158,6 +159,18 @@ void EditorScreenshot::_notification(int p_what) {
 					} else if (action == "later:sidebar2d_close" && CanvasItemEditor::get_singleton() && CanvasItemEditor::get_singleton()->get_sidebar_button()) {
 						print_line("SHOT: closing the 2D sidebar");
 						CanvasItemEditor::get_singleton()->get_sidebar_button()->set_pressed(false);
+					} else if (action == "later:float_twice") {
+						// Out of the main window into one, and out of that one into another.
+						EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+						EditorPane *first = main_screen->get_pane_tree()->get_first_pane();
+						first->add_panel("inspector");
+						EditorPaneWindow *window = main_screen->open_panel_in_window(first, first->get_current_panel());
+						EditorPane *in_window = window ? window->get_pane_tree()->get_first_pane() : nullptr;
+						if (in_window) {
+							in_window->add_panel("scene_tree");
+							EditorPaneWindow *second = main_screen->open_panel_in_window(in_window, in_window->get_current_panel());
+							print_line(vformat("SHOT: windows %d, first holds %d, second holds %d", main_screen->get_pane_window_count(), in_window->get_panel_count(), second ? second->get_pane_tree()->get_first_pane()->get_panel_count() : -1));
+						}
 					} else if (action == "later:key_n" && later_view) {
 						// N, as the keyboard sends it, with the view under the mouse.
 						print_line("SHOT: pressing N");
