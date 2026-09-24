@@ -58,6 +58,10 @@ class EditorScreenshot : public Node {
 	// Frames until a picture of the window of its own showing is taken as
 	// well - one opening, say - as <shot>_early.png; 0 for none.
 	int early_shot_frames = 0;
+	// Frames left to say, each, whether this menu button's popup is showing.
+	ObjectID watched_menu;
+	int watch_frames = 0;
+	bool watch_real = false;
 	uint64_t stress_until = 0;
 	int stress_step = 0;
 	Vector<ObjectID> stress_targets;

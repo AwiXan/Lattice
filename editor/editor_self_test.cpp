@@ -30,6 +30,9 @@
 
 #include "editor_self_test.h"
 
+#include "servers/display/display_server.h"
+
+
 #include "editor/editor_string_names.h"
 #include "editor/settings/editor_settings.h"
 #include "core/config/project_settings.h"
@@ -94,6 +97,11 @@ static void _choose_towards(EditorPieMenu *p_pie, const Vector2 &p_direction) {
 bool EditorScreenshot::is_requested() {
 	return OS::get_singleton()->has_environment("LATTICE_SHOT");
 }
+
+// The OS itself, for the screenshot's tooling: at the end of the file, where
+// its headers cannot get in the way of the engine's.
+static void _os_left_click();
+static String _os_window_state(int64_t p_handle);
 
 void EditorScreenshot::_open_scene() {
 	const String scene = OS::get_singleton()->get_environment("LATTICE_SHOT_SCENE");
@@ -273,6 +281,70 @@ void EditorScreenshot::_notification(int p_what) {
 								break;
 							}
 						}
+					} else if (action == "later:real_click_transform" && later_view) {
+#ifdef WINDOWS_ENABLED
+						// A real click, from the OS, on the 3D header's first menu.
+						TypedArray<Node> menus = later_view->get_toolbar()->find_children("*", "MenuButton", true, false);
+						for (int i = 0; i < menus.size(); i++) {
+							MenuButton *menu = Object::cast_to<MenuButton>(menus[i]);
+							if (menu && menu->is_visible_in_tree()) {
+								menu->get_window()->warp_mouse(menu->get_global_rect().get_center());
+								_os_left_click();
+								print_line(vformat("SHOT: clicked %s for real", menu->get_text()));
+								watched_menu = menu->get_instance_id();
+								watch_frames = 40;
+								watch_real = true;
+								break;
+							}
+						}
+#endif
+					} else if (action == "later:real_open_transform" && later_view) {
+						// The real cursor put over the 3D header's first menu, and the menu opened
+						// under it, as a click would: what the OS does around it is real.
+						TypedArray<Node> menus = later_view->get_toolbar()->find_children("*", "MenuButton", true, false);
+						for (int i = 0; i < menus.size(); i++) {
+							MenuButton *menu = Object::cast_to<MenuButton>(menus[i]);
+							if (menu && menu->is_visible_in_tree()) {
+								menu->get_window()->warp_mouse(menu->get_global_rect().get_center());
+								menu->show_popup();
+								print_line(vformat("SHOT: opened %s under the real cursor", menu->get_text()));
+								watched_menu = menu->get_instance_id();
+								watch_frames = 40;
+								watch_real = true;
+								break;
+							}
+						}
+					} else if ((action == "later:click_transform" || action == "later:hover_transform") && later_view) {
+						// The mouse over the 3D header's first menu, and a click on it.
+						TypedArray<Node> menus = later_view->get_toolbar()->find_children("*", "MenuButton", true, false);
+						for (int i = 0; i < menus.size(); i++) {
+							MenuButton *menu = Object::cast_to<MenuButton>(menus[i]);
+							if (!menu || !menu->is_visible_in_tree()) {
+								continue;
+							}
+							const Vector2 at = menu->get_global_rect().get_center();
+							Ref<InputEventMouseMotion> motion;
+							motion.instantiate();
+							motion->set_position(at);
+							motion->set_global_position(at);
+							motion->set_window_id(menu->get_window()->get_window_id());
+					Input::get_singleton()->parse_input_event(motion);
+							for (int pressed = 1; pressed >= 0 && action == "later:click_transform"; pressed--) {
+								Ref<InputEventMouseButton> click;
+								click.instantiate();
+								click->set_button_index(MouseButton::LEFT);
+								click->set_position(at);
+								click->set_global_position(at);
+								click->set_pressed(pressed == 1);
+								click->set_button_mask(pressed == 1 ? MouseButtonMask::LEFT : MouseButtonMask::NONE);
+								click->set_window_id(menu->get_window()->get_window_id());
+								Input::get_singleton()->parse_input_event(click);
+							}
+							print_line(vformat("SHOT: clicked %s at %s", menu->get_text(), at));
+							watched_menu = menu->get_instance_id();
+							watch_frames = 40;
+							break;
+						}
 					} else if (action == "later:stall") {
 						// Frozen on purpose, for the stall watchdog to find.
 						print_line("SHOT: stalling for 6 s");
@@ -282,6 +354,28 @@ void EditorScreenshot::_notification(int p_what) {
 						ProgressDialog::get_singleton()->add_task("lattice_shot", TTR("(Re)Importing Assets"), 12);
 						ProgressDialog::get_singleton()->task_step("lattice_shot", "res://textures/rock_albedo.png", 5);
 					}
+				}
+			}
+			if (watch_frames > 0) {
+				watch_frames--;
+				MenuButton *menu = ObjectDB::get_instance<MenuButton>(watched_menu);
+				if (menu && watch_real) {
+					String cloaked = "-";
+					PopupMenu *popup = menu->get_popup();
+					if (popup->is_visible() && popup->get_window_id() != DisplayServerEnums::INVALID_WINDOW_ID) {
+						cloaked = _os_window_state(DisplayServer::get_singleton()->window_get_native_handle(DisplayServerEnums::WINDOW_HANDLE, popup->get_window_id()));
+					}
+					print_line(vformat("SHOT WATCH: popup %s, pressed %s, hovered %s, frames drawn %d, cloaked %s, at %d", menu->get_popup()->is_visible(), menu->is_pressed(), menu->get_viewport()->gui_get_hovered_control() ? String(menu->get_viewport()->gui_get_hovered_control()->get_name()) : String("none"), (int)Engine::get_singleton()->get_frames_drawn(), cloaked, (int)OS::get_singleton()->get_ticks_msec()));
+				} else if (menu) {
+					// Keep the mouse over it, as a hand would.
+					const Vector2 at = menu->get_global_rect().get_center();
+					Ref<InputEventMouseMotion> motion;
+					motion.instantiate();
+					motion->set_position(at);
+					motion->set_global_position(at);
+					motion->set_window_id(menu->get_window()->get_window_id());
+					Input::get_singleton()->parse_input_event(motion);
+					print_line(vformat("SHOT WATCH: popup %s, pressed %s, hovered %s", menu->get_popup()->is_visible(), menu->is_pressed(), menu->get_viewport()->gui_get_hovered_control() ? String(menu->get_viewport()->gui_get_hovered_control()->get_class()) + ":" + String(menu->get_viewport()->gui_get_hovered_control()->get_path()) : String("none")));
 				}
 			}
 			if (early_shot_frames > 0 && --early_shot_frames == 0) {
@@ -2200,3 +2294,32 @@ EditorSelfTest::EditorSelfTest() {
 EditorSelfTest::~EditorSelfTest() {
 	remove_error_handler(&error_handler);
 }
+
+#ifdef WINDOWS_ENABLED
+#include <windows.h>
+
+#include <dwmapi.h>
+
+static void _os_left_click() {
+	INPUT clicks[2] = {};
+	clicks[0].type = INPUT_MOUSE;
+	clicks[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+	clicks[1].type = INPUT_MOUSE;
+	clicks[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+	SendInput(2, clicks, sizeof(INPUT));
+}
+
+static String _os_window_state(int64_t p_handle) {
+	HWND hwnd = (HWND)p_handle;
+	DWORD cloaked = 0;
+	DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked, sizeof(cloaked));
+	return vformat("%d %s", (int)cloaked, IsWindowVisible(hwnd) ? "visible" : "hidden");
+}
+#else
+static void _os_left_click() {
+}
+
+static String _os_window_state(int64_t p_handle) {
+	return "-";
+}
+#endif
