@@ -141,6 +141,20 @@ void EditorScreenshot::_notification(int p_what) {
 			if (!taken && elapsed > 4500) {
 				taken = true;
 				Ref<Image> image = get_tree()->get_root()->get_texture()->get_image();
+				// A dialog is a window of its own, which the editor's picture
+				// does not have in it: LATTICE_SHOT_WINDOW takes the first one
+				// showing instead, and says how big it is against the editor.
+				if (OS::get_singleton()->has_environment("LATTICE_SHOT_WINDOW")) {
+					TypedArray<Node> windows = EditorNode::get_singleton()->get_gui_base()->find_children("*", "Window", true, false);
+					for (int i = 0; i < windows.size(); i++) {
+						Window *window = Object::cast_to<Window>(windows[i]);
+						if (window && window->is_visible() && !window->is_embedded()) {
+							print_line(vformat("SHOT WINDOW %s: %s, editor %s", window->get_title(), window->get_size(), get_tree()->get_root()->get_size()));
+							image = window->get_texture()->get_image();
+							break;
+						}
+					}
+				}
 				const String path = OS::get_singleton()->get_environment("LATTICE_SHOT");
 				// Part of it only, to look at something small up close.
 				const PackedStringArray crop = OS::get_singleton()->get_environment("LATTICE_SHOT_CROP").split(",");
@@ -1513,6 +1527,7 @@ void EditorSelfTest::_finish() {
 	remove_error_handler(&error_handler);
 	const uint32_t error_count = errors.get();
 	print_line(vformat("SELFTEST DONE: %d passed, %d failed, %d errors", passed, failed, error_count));
+	EditorSettings::get_singleton()->set("text_editor/behavior/files/open_scripts_in_own_panels", scripts_in_panels_before);
 	OS::get_singleton()->printerr("SELFTEST QUITTING\n");
 	get_tree()->quit(failed > 0 || error_count > 0 ? 1 : 0);
 }
@@ -1562,7 +1577,9 @@ void EditorSelfTest::_notification(int p_what) {
 
 EditorSelfTest::EditorSelfTest() {
 	set_name("EditorSelfTest");
-	// Off by default; what is checked here is what they do when on.
+	// Off by default; what is checked here is what they do when on. Put back
+	// on the way out: these are the settings of whoever uses this build.
+	scripts_in_panels_before = EditorSettings::get_singleton()->get("text_editor/behavior/files/open_scripts_in_own_panels");
 	EditorSettings::get_singleton()->set("text_editor/behavior/files/open_scripts_in_own_panels", true);
 	error_handler.errfunc = _error_handler;
 	error_handler.userdata = this;

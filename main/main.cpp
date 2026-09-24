@@ -2343,7 +2343,11 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	// one which ended in a crash can be read afterwards: see EditorCrashReport.
 	// An absolute path: the logger makes its folders as if for user://, and
 	// res:// means nothing there.
-	if (editor && !project_manager && FileAccess::get_create_func(FileAccess::ACCESS_FILESYSTEM)) {
+	// Sessions someone sits in front of only: an export or a tool's check run
+	// without a window would turn the log of a session that crashed into an
+	// older one, and the report would show the wrong session's. The self-test
+	// runs without a window and checks the report, so it keeps one.
+	if (editor && !project_manager && (display_driver != NULL_DISPLAY_DRIVER || OS::get_singleton()->has_environment("LATTICE_SELFTEST")) && FileAccess::get_create_func(FileAccess::ACCESS_FILESYSTEM)) {
 		const String editor_log = ProjectSettings::get_singleton()->globalize_path(ProjectSettings::get_singleton()->get_project_data_path().path_join("editor/logs/editor.log"));
 		OS::get_singleton()->add_logger(memnew(RotatedFileLogger(editor_log, 5)));
 	}

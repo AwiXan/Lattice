@@ -52,6 +52,7 @@ class EditorCrashReport : public AcceptDialog {
 	static inline bool previous_session_crashed = false;
 	static inline bool backtrace_found = false;
 	static inline bool owns_marker = false;
+	static inline bool tracking = false;
 	static inline String previous_log;
 	static inline String excerpt;
 
@@ -81,6 +82,10 @@ public:
 	static void end_session();
 
 	static bool did_previous_session_crash() { return previous_session_crashed; }
+	// Whether this run is a session someone sits in front of, marked as
+	// running and reported on - and so whether it keeps copies of unsaved
+	// scenes. See begin_session().
+	static bool is_tracking_session() { return tracking; }
 	static bool was_backtrace_found() { return backtrace_found; }
 	static String get_excerpt() { return excerpt; }
 

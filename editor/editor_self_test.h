@@ -86,6 +86,7 @@ class EditorSelfTest : public Node {
 	uint64_t waiting_since = 0;
 	bool started = false;
 
+	Variant scripts_in_panels_before;
 	int passed = 0;
 	int failed = 0;
 	SafeNumeric<uint32_t> errors;

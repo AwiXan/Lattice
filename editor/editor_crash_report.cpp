@@ -100,6 +100,16 @@ String EditorCrashReport::_excerpt_of(const String &p_log) {
 }
 
 void EditorCrashReport::begin_session() {
+	// A run with no window - an export, a script, some tool checking the
+	// project - is not a session anyone sits in front of. It neither marks
+	// the project nor reads the mark: one stopped half way must not greet the
+	// next person to open the project with a crash report, and one starting
+	// must not use up the report of a session that did crash. The self-test
+	// runs without a window and checks all of this, so it is the exception.
+	if (DisplayServer::get_singleton()->get_name() == "headless" && !OS::get_singleton()->has_environment("LATTICE_SELFTEST")) {
+		return;
+	}
+	tracking = true;
 	const String marker = _marker_path();
 	if (FileAccess::exists(marker)) {
 		const int pid = FileAccess::get_file_as_string(marker).strip_edges().to_int();
@@ -189,6 +199,10 @@ EditorCrashReport::EditorCrashReport() {
 
 	message = memnew(Label);
 	message->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	// A wrapping label with no width of its own is measured a letter wide,
+	// every word a line of its own - which made this dialog taller than the
+	// screen.
+	message->set_custom_minimum_size(Size2(600, 0) * EDSCALE);
 	box->add_child(message);
 
 	text = memnew(TextEdit);

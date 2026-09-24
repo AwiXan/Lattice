@@ -1027,7 +1027,9 @@ void EditorNode::_notification(int p_what) {
 		case NOTIFICATION_READY: {
 			// Copies of scenes with unsaved changes, for when the editor does
 			// not get to close properly.
-			add_child(memnew(EditorSceneRecovery));
+			if (EditorCrashReport::is_tracking_session()) {
+				add_child(memnew(EditorSceneRecovery));
+			}
 
 			if (EditorCrashReport::did_previous_session_crash()) {
 				// Once everything is up, so that it is not buried under the
@@ -8544,7 +8546,9 @@ EditorNode::EditorNode() {
 	// Before anything else can go wrong: whether the last session ended well,
 	// and this one marked as running.
 	EditorCrashReport::begin_session();
-	EditorSceneRecovery::begin_session(EditorCrashReport::did_previous_session_crash());
+	if (EditorCrashReport::is_tracking_session()) {
+		EditorSceneRecovery::begin_session(EditorCrashReport::did_previous_session_crash());
+	}
 
 	Resource::_get_local_scene_func = _resource_get_edited_scene;
 
@@ -9885,8 +9889,12 @@ EditorNode::EditorNode() {
 
 EditorNode::~EditorNode() {
 	// Closed properly, which is the one thing a crash cannot do.
+	// A run that did not track its session leaves the copies of one that
+	// did: they may be what the next session is offered back.
+	if (EditorCrashReport::is_tracking_session()) {
+		EditorSceneRecovery::end_session();
+	}
 	EditorCrashReport::end_session();
-	EditorSceneRecovery::end_session();
 
 	EditorInspector::cleanup_plugins();
 	EditorTranslationParser::get_singleton()->clean_parsers();

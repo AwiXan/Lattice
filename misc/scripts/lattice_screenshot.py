@@ -68,6 +68,7 @@ def main():
     parser.add_argument("--scene", choices=["3d", "2d"], default="3d")
     parser.add_argument("--crop", help="x,y,w,h of the window to keep, in pixels")
     parser.add_argument("--actions", help="what to open first, comma separated: sidebar, sidebar_page_<n>")
+    parser.add_argument("--crashed", action="store_true", help="make the last session look crashed, with a long log")
     parser.add_argument("--editor", help="editor binary to run (default: the newest one in bin/)")
     args = parser.parse_args()
 
@@ -83,12 +84,24 @@ def main():
     with open(os.path.join(project, scene), "w", encoding="utf-8", newline="\n") as f:
         f.write(SCENE_3D if args.scene == "3d" else SCENE_2D)
 
+    if args.crashed:
+        editor_data = os.path.join(project, ".godot", "editor")
+        os.makedirs(os.path.join(editor_data, "logs"), exist_ok=True)
+        with open(os.path.join(editor_data, "session_running"), "w", encoding="utf-8") as f:
+            f.write("999999")
+        with open(os.path.join(editor_data, "logs", "editor.log"), "w", encoding="utf-8", newline="\n") as f:
+            for i in range(300):
+                f.write("A long line of the log, number %d, of a session that stopped half way.\n" % i)
+
     output = os.path.abspath(args.output)
     env = dict(os.environ, LATTICE_SHOT=output, LATTICE_SHOT_SCENE="res://" + scene)
     if args.crop:
         env["LATTICE_SHOT_CROP"] = args.crop
     if args.actions:
         env["LATTICE_SHOT_ACTIONS"] = args.actions
+    if args.crashed:
+        # Its report is what is worth a picture.
+        env["LATTICE_SHOT_WINDOW"] = "1"
     # Imports first, or the scene opens before its resources are known.
     subprocess.run([editor, "--path", project, "--editor", "--headless", "--quit-after", "200"], env=dict(os.environ),
                    capture_output=True, timeout=300)
