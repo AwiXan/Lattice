@@ -110,6 +110,10 @@ class EditorSelfTest : public Node {
 	void _begin();
 	void _scene_panel();
 	void _inspector_panel();
+	void _inspector_lets_go();
+	void _inspector_shows_again();
+	ObjectID inspector_node;
+	bool inspector_added = false;
 	void _script_open();
 	void _script_opened();
 	void _script_edited();

@@ -50,6 +50,7 @@
 #include "editor/editor_panel_registry.h"
 #include "editor/file_system/editor_file_system.h"
 #include "editor/gui/editor_pane.h"
+#include "editor/inspector/editor_document_inspector.h"
 #include "editor/gui/editor_pane_tree.h"
 #include "editor/gui/editor_spin_slider.h"
 #include "editor/gui/editor_pie_menu.h"
@@ -354,6 +355,56 @@ void EditorSelfTest::_inspector_panel() {
 	const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type("inspector");
 	_check(type && type->icon == StringName("AnimationTrackList"), "the Inspector panel has the Inspector's icon");
 	pane->close_panel(index);
+}
+
+static EditorDocumentInspector *_find_document_inspector(EditorPaneTree *p_tree) {
+	for (EditorPane *pane : p_tree->get_panes()) {
+		for (int i = 0; i < pane->get_panel_count(); i++) {
+			EditorDocumentInspector *inspector = Object::cast_to<EditorDocumentInspector>(pane->get_panel_at(i));
+			if (inspector) {
+				return inspector;
+			}
+		}
+	}
+	return nullptr;
+}
+
+void EditorSelfTest::_inspector_lets_go() {
+	// An Inspector panel showing a selected node...
+	inspector_added = !_find_document_inspector(_tree());
+	if (inspector_added) {
+		_tree()->get_first_pane()->add_panel("inspector");
+	}
+	Node *root = EditorNode::get_singleton()->get_edited_scene();
+	Node *node = root && root->get_child_count() > 0 ? root->get_child(0) : root;
+	if (!node) {
+		return;
+	}
+	inspector_node = node->get_instance_id();
+	EditorNode::get_singleton()->edit_node(node);
+}
+
+void EditorSelfTest::_inspector_shows_again() {
+	EditorDocumentInspector *panel = _find_document_inspector(_tree());
+	Object *node = ObjectDB::get_instance(inspector_node);
+	const bool showing = panel && node && panel->get_inspector()->get_edited_object() == node;
+	// ...which its inspector lets go of by itself, as when the node leaves the
+	// tree to be moved: shown again at once, not after clicking elsewhere.
+	if (panel) {
+		panel->get_inspector()->edit(nullptr);
+		panel->notification(NOTIFICATION_PROCESS);
+	}
+	_check(showing && panel->get_inspector()->get_edited_object() == node, "an Inspector panel that lost the selected node shows it again by itself");
+	// Left as it was found.
+	if (inspector_added && panel) {
+		EditorPane *pane = Object::cast_to<EditorPane>(panel->get_parent());
+		for (int i = 0; pane && i < pane->get_panel_count(); i++) {
+			if (pane->get_panel_at(i) == panel) {
+				pane->close_panel(i);
+				break;
+			}
+		}
+	}
 }
 
 EditorPane *EditorSelfTest::_script_pane(int *r_index) const {
@@ -1627,6 +1678,8 @@ EditorSelfTest::EditorSelfTest() {
 	_add("begin", callable_mp(this, &EditorSelfTest::_begin));
 	_add("scene panel", callable_mp(this, &EditorSelfTest::_scene_panel));
 	_add("inspector panel", callable_mp(this, &EditorSelfTest::_inspector_panel));
+	_add("inspector lets go", callable_mp(this, &EditorSelfTest::_inspector_lets_go));
+	_add("inspector shows again", callable_mp(this, &EditorSelfTest::_inspector_shows_again));
 	_add("script open", callable_mp(this, &EditorSelfTest::_script_open));
 	_add("script opened", callable_mp(this, &EditorSelfTest::_script_opened));
 	_add("script edited", callable_mp(this, &EditorSelfTest::_script_edited));

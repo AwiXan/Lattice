@@ -67,6 +67,7 @@ class EditorDocumentInspector : public VBoxContainer {
 	int bound_document_id = -1;
 	// What is on screen, so that looking does not mean rebuilding.
 	ObjectID shown;
+	uint64_t last_reshown = 0;
 
 	void _update();
 	void _activate();

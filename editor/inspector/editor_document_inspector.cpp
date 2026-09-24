@@ -40,6 +40,7 @@
 #include "editor/gui/editor_object_selector.h"
 #include "editor/inspector/editor_inspector.h"
 #include "editor/settings/editor_settings.h"
+#include "core/os/os.h"
 
 void EditorDocumentInspector::_update() {
 	EditorData &editor_data = EditorNode::get_editor_data();
@@ -50,12 +51,37 @@ void EditorDocumentInspector::_update() {
 	const int index = bound_document_id < 0 ? -1 : editor_data.get_scene_index_by_history_id(bound_document_id);
 	EditorSelectionHistory *history = editor_data.get_scene_selection_history(index);
 
-	const ObjectID id = history ? history->get_current() : ObjectID();
+	ObjectID id = history ? history->get_current() : ObjectID();
+	Object *wanted = ObjectDB::get_instance(id);
+	if (!wanted) {
+		// What the history pointed at is gone - the scene was reloaded, an undo
+		// made the node anew - while something is still selected: that, rather
+		// than nothing until another node is clicked and this one again.
+		Node *root = editor_data.get_edited_scene_root(index);
+		if (root) {
+			const List<Node *> selected = EditorNode::get_singleton()->get_editor_selection()->get_top_selected_node_list_for(root);
+			if (!selected.is_empty()) {
+				wanted = selected.front()->get();
+				id = wanted->get_instance_id();
+			}
+		}
+	}
 	if (id == shown) {
-		return;
+		// The inspector lets go of a node by itself when the node leaves the
+		// tree - even only to be moved elsewhere in it - with the history still
+		// on the node. Shown again then; not more often than a few times a
+		// second, in case it will not have it.
+		if (inspector->get_edited_object() == wanted) {
+			return;
+		}
+		const uint64_t now = OS::get_singleton()->get_ticks_msec();
+		if (now - last_reshown < 250) {
+			return;
+		}
+		last_reshown = now;
 	}
 	shown = id;
-	inspector->edit(ObjectDB::get_instance(id));
+	inspector->edit(wanted);
 	if (object_selector) {
 		object_selector->update_path();
 	}
