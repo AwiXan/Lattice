@@ -928,6 +928,8 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	EDITOR_SETTING_USAGE(Variant::COLOR, PROPERTY_HINT_NONE, "editors/3d/selection_box_color", Color(1.0, 0.5, 0), "", PROPERTY_USAGE_DEFAULT)
 	// What a click would select, lit up under the mouse.
 	EDITOR_SETTING(Variant::BOOL, PROPERTY_HINT_NONE, "editors/3d/hover_highlight", true, "")
+	// The selected camera's view, small, in a corner of the viewport.
+	EDITOR_SETTING(Variant::BOOL, PROPERTY_HINT_NONE, "editors/3d/camera_preview_in_corner", true, "")
 	EDITOR_SETTING_USAGE(Variant::COLOR, PROPERTY_HINT_NONE, "editors/3d/active_selection_box_color", Color(1.5, 0.75, 0, 1.0), "", PROPERTY_USAGE_DEFAULT)
 	EDITOR_SETTING_USAGE(Variant::COLOR, PROPERTY_HINT_NONE, "editors/3d_gizmos/gizmo_colors/instantiated", Color(0.7, 0.7, 0.7, 0.6), "", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_RESTART_IF_CHANGED)
 	EDITOR_SETTING_USAGE(Variant::COLOR, PROPERTY_HINT_NONE, "editors/3d_gizmos/gizmo_colors/joint", Color(0.5, 0.8, 1), "", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_RESTART_IF_CHANGED)

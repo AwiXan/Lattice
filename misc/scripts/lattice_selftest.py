@@ -98,6 +98,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--editor", help="editor binary to run (default: the newest one in bin/)")
     parser.add_argument("--keep", action="store_true", help="keep the project and the full output")
+    parser.add_argument("--all", action="store_true", help="print everything the editor printed")
     parser.add_argument("--timeout", type=int, default=600, help="seconds before giving up")
     args = parser.parse_args()
 
@@ -151,7 +152,7 @@ def main():
     errors = [line for line in lines if line.lstrip().startswith("ERROR:")]
     leaks = [line for line in lines if "Leaked instance" in line or "resources still in use" in line]
 
-    for line in checks:
+    for line in (lines if args.all else checks):
         print(line)
     for line in errors:
         print(line)

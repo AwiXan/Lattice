@@ -12536,6 +12536,7 @@ void Node3DEditor::_arrange_chrome() {
 	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
 		_build_view_bar(i);
 	}
+	_build_camera_preview();
 	// Its items are in the viewports' bars.
 	view_layout_menu->hide();
 	view_bars = true;
@@ -12852,8 +12853,8 @@ void Node3DEditor::toggle_isolation() {
 		_end_isolation();
 		return;
 	}
-	Node *scene = viewports[CLAMP(last_used_viewport, 0, (int)VIEWPORTS_COUNT - 1)]->get_edited_scene();
-	const List<Node *> &selected = editor_selection->get_top_selected_node_list();
+	Node *scene = get_edited_scene();
+	const List<Node *> selected = editor_selection->get_top_selected_node_list_for(scene);
 	if (!scene || selected.is_empty()) {
 		viewports[CLAMP(last_used_viewport, 0, (int)VIEWPORTS_COUNT - 1)]->set_message(TTR("Select something to isolate."));
 		return;
@@ -12920,6 +12921,142 @@ void Node3DEditor::_update_isolation_labels() {
 		Label *label = viewports[i]->isolated_label;
 		label->set_text(vformat(TTR("Isolated: only the selection is shown. %s shows everything."), shortcut));
 		label->set_visible(is_isolating());
+	}
+}
+
+void Node3DEditor::_build_camera_preview() {
+	camera_preview = memnew(EditorViewHeaderGroup(true, true));
+	camera_preview->set_name("CameraPreview");
+	camera_preview->set_mouse_filter(MOUSE_FILTER_STOP);
+	camera_preview->set_default_cursor_shape(CURSOR_POINTING_HAND);
+	camera_preview->connect(SceneStringName(gui_input), callable_mp(this, &Node3DEditor::_camera_preview_input));
+	camera_preview_label = memnew(Label);
+	camera_preview_label->set_mouse_filter(MOUSE_FILTER_IGNORE);
+	camera_preview_label->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+	camera_preview_image = memnew(TextureRect);
+	camera_preview_image->set_mouse_filter(MOUSE_FILTER_IGNORE);
+	camera_preview_image->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+	camera_preview_image->set_stretch_mode(TextureRect::STRETCH_SCALE);
+	EditorViewHeaderGroup *frame = Object::cast_to<EditorViewHeaderGroup>(camera_preview);
+	frame->take({ camera_preview_label, camera_preview_image });
+	camera_preview->hide();
+	// Somewhere from the start, to be freed with the view if never shown.
+	viewports[0]->surface->add_child(camera_preview);
+
+	camera_preview_viewport = memnew(SubViewport);
+	camera_preview_viewport->set_update_mode(SubViewport::UPDATE_DISABLED);
+	camera_preview_camera = memnew(Camera3D);
+	camera_preview_viewport->add_child(camera_preview_camera);
+	add_child(camera_preview_viewport);
+	camera_preview_image->set_texture(camera_preview_viewport->get_texture());
+}
+
+void Node3DEditor::update_camera_preview() {
+	if (!camera_preview) {
+		return;
+	}
+	int in = CLAMP(last_used_viewport, 0, (int)VIEWPORTS_COUNT - 1);
+	if (!viewports[in]->is_visible_in_tree()) {
+		// Worked in before the view was split otherwise: the first there is.
+		for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+			if (viewports[i]->is_visible_in_tree()) {
+				in = i;
+				break;
+			}
+		}
+	}
+	Node3DEditorViewport *viewport = viewports[in];
+	Camera3D *selected = nullptr;
+	// Selected in the scene this view shows, which need not be the one the
+	// editor is on.
+	const List<Node *> top = editor_selection->get_top_selected_node_list_for(get_edited_scene());
+	if (top.size() == 1) {
+		selected = Object::cast_to<Camera3D>(top.front()->get());
+	}
+	const bool shown = selected && EDITOR_GET("editors/3d/camera_preview_in_corner") && selected->is_inside_tree() && is_in_edited_document(selected) &&
+			viewport->is_visible_in_tree() && viewport->previewing != selected && !viewport->previewing_cinema;
+	if (!shown) {
+		if (camera_preview->is_visible()) {
+			camera_preview->hide();
+			camera_preview_viewport->set_update_mode(SubViewport::UPDATE_DISABLED);
+			SceneTree::get_singleton()->disconnect(SNAME("process_frame"), callable_mp(this, &Node3DEditor::_copy_previewed_camera));
+		}
+		camera_previewed = ObjectID();
+		return;
+	}
+
+	// In the viewport last worked in, its bottom right corner.
+	if (camera_preview->get_parent() != viewport->surface) {
+		if (camera_preview->get_parent()) {
+			camera_preview->get_parent()->remove_child(camera_preview);
+		}
+		viewport->surface->add_child(camera_preview);
+	}
+	camera_preview_in = in;
+	// As wide as a quarter of the viewport, at most, and shaped like the game's window.
+	const Size2 window = Size2(GLOBAL_GET("display/window/size/viewport_width"), GLOBAL_GET("display/window/size/viewport_height"));
+	const real_t aspect = window.y > 0 ? window.x / window.y : 16.0 / 9.0;
+	const real_t width = MIN(260 * EDSCALE, viewport->surface->get_size().width * 0.25);
+	const Size2 image_size = Size2(width, width / aspect).round();
+	camera_preview_image->set_custom_minimum_size(image_size);
+	camera_preview_viewport->set_size(Size2i(image_size * 1.5));
+	const Size2 size = camera_preview->get_combined_minimum_size();
+	const real_t margin = 10 * EDSCALE;
+	const real_t lift = viewport->info_panel->is_visible() ? viewport->info_panel->get_size().height + margin : 0;
+	camera_preview->set_anchors_preset(PRESET_BOTTOM_RIGHT);
+	camera_preview->set_offset(SIDE_RIGHT, -margin);
+	camera_preview->set_offset(SIDE_LEFT, -margin - size.width);
+	camera_preview->set_offset(SIDE_BOTTOM, -margin - lift);
+	camera_preview->set_offset(SIDE_TOP, -margin - lift - size.height);
+
+	if (camera_previewed != selected->get_instance_id()) {
+		camera_previewed = selected->get_instance_id();
+		camera_preview_label->set_text(vformat(TTR("%s - click to look through it"), selected->get_name()));
+	}
+	camera_preview_viewport->set_world_3d(viewport->get_editing_world());
+	if (!camera_preview->is_visible()) {
+		camera_preview->show();
+		camera_preview_viewport->set_update_mode(SubViewport::UPDATE_ALWAYS);
+		SceneTree::get_singleton()->connect(SNAME("process_frame"), callable_mp(this, &Node3DEditor::_copy_previewed_camera));
+	}
+	_copy_previewed_camera();
+}
+
+void Node3DEditor::_copy_previewed_camera() {
+	Camera3D *source = ObjectDB::get_instance<Camera3D>(camera_previewed);
+	if (!source || !source->is_inside_tree()) {
+		return;
+	}
+	Camera3D *copy = camera_preview_camera;
+	copy->set_transform(source->get_global_transform());
+	copy->set_cull_mask(source->get_cull_mask());
+	copy->set_environment(source->get_environment());
+	copy->set_attributes(source->get_attributes());
+	copy->set_keep_aspect_mode(source->get_keep_aspect_mode());
+	copy->set_h_offset(source->get_h_offset());
+	copy->set_v_offset(source->get_v_offset());
+	switch (source->get_projection()) {
+		case Camera3D::PROJECTION_ORTHOGONAL: {
+			copy->set_orthogonal(source->get_size(), source->get_near(), source->get_far());
+		} break;
+		case Camera3D::PROJECTION_FRUSTUM: {
+			copy->set_frustum(source->get_size(), source->get_frustum_offset(), source->get_near(), source->get_far());
+		} break;
+		default: {
+			copy->set_perspective(source->get_fov(), source->get_near(), source->get_far());
+		} break;
+	}
+	if (!copy->is_current()) {
+		copy->make_current();
+	}
+}
+
+void Node3DEditor::_camera_preview_input(const Ref<InputEvent> &p_event) {
+	Ref<InputEventMouseButton> click = p_event;
+	if (click.is_valid() && click->is_pressed() && click->get_button_index() == MouseButton::LEFT && camera_preview_in >= 0) {
+		// Looked through for real, the way the viewport's Preview box does.
+		viewports[camera_preview_in]->preview_camera->set_pressed(true);
+		camera_preview->accept_event();
 	}
 }
 
@@ -13020,6 +13157,7 @@ void Node3DEditor::_build_sidebar(Control *p_over) {
 }
 
 void Node3DEditor::_chrome_tick() {
+	update_camera_preview();
 	if (is_isolating() && (!ObjectDB::get_instance(isolation_scene) || viewports[0]->get_edited_scene() != ObjectDB::get_instance<Node>(isolation_scene))) {
 		_end_isolation();
 	}

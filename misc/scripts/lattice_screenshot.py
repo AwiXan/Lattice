@@ -70,6 +70,8 @@ def main():
     parser.add_argument("--actions", help="what to open first, comma separated: sidebar, sidebar_page_<n>")
     parser.add_argument("--crashed", action="store_true", help="make the last session look crashed, with a long log")
     parser.add_argument("--lit", action="store_true", help="give the 3D scene a sun and an environment of its own")
+    parser.add_argument("--camera", action="store_true", help="give the 3D scene a camera looking at the crate")
+    parser.add_argument("--select", help="the name of the node to select, instead of the first mesh")
     parser.add_argument("--editor", help="editor binary to run (default: the newest one in bin/)")
     parser.add_argument("--timeout", type=int, default=60, help="seconds before calling it hung (it is left running)")
     parser.add_argument("--stress", type=int, default=0, help="seconds of opening and closing every dropdown first")
@@ -94,6 +96,10 @@ def main():
             # Its own sun and environment: the preview ones step aside and say so.
             f.write('\n[node name="Sun" type="DirectionalLight3D" parent="."]\n')
             f.write('\n[node name="Environment" type="WorldEnvironment" parent="."]\n')
+        if args.camera and args.scene == "3d":
+            # Up and to the side, looking down at the crate.
+            f.write('\n[node name="Camera" type="Camera3D" parent="."]\n')
+            f.write('transform = Transform3D(0.8, -0.26, 0.54, 0, 0.9, 0.43, -0.6, -0.35, 0.72, 3, 2.5, 4)\n')
 
     if args.crashed:
         editor_data = os.path.join(project, ".godot", "editor")
@@ -110,6 +116,8 @@ def main():
         env["LATTICE_SHOT_CROP"] = args.crop
     if args.actions:
         env["LATTICE_SHOT_ACTIONS"] = args.actions
+    if args.select:
+        env["LATTICE_SHOT_SELECT"] = args.select
     if args.stress:
         env["LATTICE_STRESS_POPUPS"] = str(args.stress)
     if args.crashed or args.window:

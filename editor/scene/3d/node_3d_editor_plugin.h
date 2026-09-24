@@ -1004,6 +1004,20 @@ private:
 	HashSet<ObjectID> isolated_out;
 	void _end_isolation();
 	void _update_isolation_labels();
+	// The selected camera's view, small, in a corner of the viewport last
+	// worked in - unless it looks through that camera already. A camera of
+	// its own copies the selected one every frame, in the same world; a
+	// click looks through the real one.
+	PanelContainer *camera_preview = nullptr;
+	Label *camera_preview_label = nullptr;
+	TextureRect *camera_preview_image = nullptr;
+	SubViewport *camera_preview_viewport = nullptr;
+	Camera3D *camera_preview_camera = nullptr;
+	ObjectID camera_previewed;
+	int camera_preview_in = -1;
+	void _build_camera_preview();
+	void _copy_previewed_camera();
+	void _camera_preview_input(const Ref<InputEvent> &p_event);
 	// The snap steps - moving, rotating, scaling - beside the snap toggle, each
 	// a dropdown of the usual ones; dim while snapping is off.
 	EditorViewPill *snap_pills[3] = {};
@@ -1347,6 +1361,10 @@ public:
 	// show its items.
 	MenuButton *get_view_layout_menu() const { return view_layout_menu; }
 	void toggle_isolation();
+	// Shows or hides the corner preview of the selected camera, as the
+	// selection and the viewports are now.
+	void update_camera_preview();
+	PanelContainer *get_camera_preview() const { return camera_preview; }
 	bool is_isolating() const { return isolation_scene.is_valid(); }
 	bool is_isolated_out(const Node *p_node) const { return p_node && isolated_out.has(p_node->get_instance_id()); }
 	EditorViewPill *get_snap_pill(int p_which) const { return (p_which >= 0 && p_which < 3) ? snap_pills[p_which] : nullptr; }

@@ -64,6 +64,7 @@
 #include "editor/gui/editor_view_pill.h"
 #include "editor/gui/progress_dialog.h"
 #include "scene/resources/3d/primitive_meshes.h"
+#include "scene/3d/camera_3d.h"
 #include "scene/3d/mesh_instance_3d.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/menu_bar.h"
@@ -176,7 +177,8 @@ void EditorScreenshot::_notification(int p_what) {
 				// Something to show selected: the first mesh of a 3D scene, the
 				// first item under the root of a 2D one.
 				Node *root = EditorNode::get_singleton()->get_edited_scene();
-				TypedArray<Node> picks = root ? root->find_children("*", "MeshInstance3D", true, false) : TypedArray<Node>();
+				const String wanted = OS::get_singleton()->get_environment("LATTICE_SHOT_SELECT");
+				TypedArray<Node> picks = root ? root->find_children(wanted.is_empty() ? String("*") : wanted, wanted.is_empty() ? String("MeshInstance3D") : String(), true, false) : TypedArray<Node>();
 				if (picks.is_empty() && root) {
 					picks = root->find_children("*", "CanvasItem", true, false);
 				}
@@ -947,6 +949,44 @@ void EditorSelfTest::_view_isolate() {
 	selection->clear();
 	scene->remove_child(holder);
 	memdelete(holder);
+}
+
+void EditorSelfTest::_view_camera_preview() {
+	// A 3D view in front, as one is when a camera is picked in it.
+	int index = -1;
+	EditorPane *pane = _pane_showing("view_3d", &index);
+	if (!pane) {
+		_tree()->get_first_pane()->show_panel_of_type("view_3d");
+		pane = _pane_showing("view_3d", &index);
+	}
+	Node3DEditor *view = pane ? Object::cast_to<Node3DEditor>(pane->get_panel_at(index)) : nullptr;
+	if (!view) {
+		_check(false, "a 3D view, for a camera's corner preview");
+		return;
+	}
+	pane->set_current_panel(index);
+	// The scene this view shows, which need not be the one the editor is on.
+	Node *scene = view->get_edited_scene();
+	if (!scene || !view->get_camera_preview()) {
+		_check(false, "a scene and a 3D view, for a camera's corner preview");
+		return;
+	}
+	Camera3D *camera = memnew(Camera3D);
+	camera->set_name("LatticePreviewTest");
+	scene->add_child(camera);
+	EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
+	selection->clear();
+	selection->add_node(camera);
+	view->update_camera_preview();
+	const bool shown = view->get_camera_preview()->is_visible_in_tree();
+	const String state = vformat("view shown %s, panel %s", view->is_visible_in_tree(), view->get_camera_preview()->is_visible());
+	// Out of the selection of its own scene.
+	selection->remove_node(camera);
+	view->update_camera_preview();
+	const bool gone = !view->get_camera_preview()->is_visible();
+	_check(shown && gone, "a selected camera's view shows in the viewport's corner, and goes with the selection (" + state + ")");
+	scene->remove_child(camera);
+	memdelete(camera);
 }
 
 void EditorSelfTest::_addon_view_item_pressed(int p_id) {
@@ -2348,6 +2388,7 @@ EditorSelfTest::EditorSelfTest() {
 	_add("view overlays", callable_mp(this, &EditorSelfTest::_view_overlays));
 	_add("view bar", callable_mp(this, &EditorSelfTest::_view_bar));
 	_add("view isolate", callable_mp(this, &EditorSelfTest::_view_isolate));
+	_add("view camera preview", callable_mp(this, &EditorSelfTest::_view_camera_preview));
 	_add("view sidebar open", callable_mp(this, &EditorSelfTest::_view_sidebar_open));
 	_add("view sidebar check", callable_mp(this, &EditorSelfTest::_view_sidebar_check));
 	_add("sidebar slide open", callable_mp(this, &EditorSelfTest::_sidebar_slide_open));
