@@ -65,6 +65,10 @@ public:
 
 private:
 	bool no_change_propagation = false;
+	// See set_coalesce_changes().
+	bool coalesce_changes = false;
+	bool change_queued = false;
+	void _emit_queued_change();
 
 	void _emit_theme_changed(bool p_notify_list_changed = false);
 
@@ -117,6 +121,13 @@ public:
 	static bool is_valid_type_name(const String &p_name);
 	static bool is_valid_item_name(const String &p_name);
 	static String validate_type_name(const String &p_name);
+
+	// For a theme a great deal uses and more than one party changes - the
+	// editor's: its changes are told once, at the end of the frame, however
+	// many were made. Told of each, everything using it updates each time, and
+	// someone adding to it whenever it changes - an addon putting its icons
+	// back - makes that every one of them, over the whole editor.
+	void set_coalesce_changes(bool p_coalesce);
 
 	void set_default_base_scale(float p_base_scale);
 	float get_default_base_scale() const;

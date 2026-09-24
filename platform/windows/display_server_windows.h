@@ -384,6 +384,10 @@ class DisplayServerWindows : public DisplayServer {
 
 		bool is_popup = false;
 		Rect2i parent_safe_rect;
+		// Hidden from sight by the compositor until it has drawn itself - see
+		// show_window(). 0: it is not.
+		uint64_t cloaked_until_frame = 0;
+		uint64_t cloaked_at_msec = 0;
 
 		// HDR
 		bool hdr_output_requested = false;

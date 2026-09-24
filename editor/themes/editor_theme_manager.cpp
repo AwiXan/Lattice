@@ -708,6 +708,8 @@ Ref<EditorTheme> EditorThemeManager::generate_theme(const Ref<EditorTheme> &p_ol
 	OS::get_singleton()->benchmark_end_measure(get_benchmark_key(), "Generate Theme");
 	benchmark_run++;
 
+	// Built; from here on, whoever changes it is told once a frame.
+	theme->set_coalesce_changes(true);
 	return theme;
 }
 

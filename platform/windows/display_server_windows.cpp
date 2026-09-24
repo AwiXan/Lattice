@@ -1949,6 +1949,17 @@ void DisplayServerWindows::show_window(DisplayServerEnums::WindowID p_id) {
 	}
 	wd.initialized = true;
 
+	if (p_id != DisplayServerEnums::MAIN_WINDOW_ID && Engine::get_singleton()->is_editor_hint() && (wd.is_popup || wd.no_focus)) {
+		// A window shown before it has drawn anything shows its bare
+		// background - black or white - for a frame: the editor's menus and
+		// tooltips stay hidden until they have drawn themselves (see
+		// process_events()).
+		BOOL cloak = TRUE;
+		::DwmSetWindowAttribute(wd.hWnd, DWMWA_CLOAK, &cloak, sizeof(cloak));
+		wd.cloaked_until_frame = Engine::get_singleton()->get_frames_drawn() + 2;
+		wd.cloaked_at_msec = OS::get_singleton()->get_ticks_msec();
+	}
+
 	if (wd.maximized) {
 		ShowWindow(wd.hWnd, SW_SHOWMAXIMIZED);
 		SetForegroundWindow(wd.hWnd); // Slightly higher priority.
@@ -4427,6 +4438,21 @@ void DisplayServerWindows::process_events() {
 	}
 
 	_THREAD_SAFE_LOCK_
+
+	// Windows hidden until they have drawn themselves (see show_window()), shown
+	// once they have - or, whatever held that up, soon after anyway.
+	{
+		const uint64_t drawn = Engine::get_singleton()->get_frames_drawn();
+		const uint64_t now = OS::get_singleton()->get_ticks_msec();
+		for (KeyValue<DisplayServerEnums::WindowID, WindowData> &E : windows) {
+			WindowData &wd = E.value;
+			if (wd.cloaked_until_frame && (drawn >= wd.cloaked_until_frame || now - wd.cloaked_at_msec > 150)) {
+				BOOL cloak = FALSE;
+				::DwmSetWindowAttribute(wd.hWnd, DWMWA_CLOAK, &cloak, sizeof(cloak));
+				wd.cloaked_until_frame = 0;
+			}
+		}
+	}
 
 	process_raw_input();
 

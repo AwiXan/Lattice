@@ -155,6 +155,10 @@ class EditorSelfTest : public Node {
 	void _view_sidebar_open();
 	void _view_sidebar_check();
 	void _view_hints();
+	// An addon putting its icons back into the editor's theme one at a time,
+	// whenever it changes - Jenova does - and a theme setting switched.
+	void _theme_rebuilt_with_addon_icons();
+	void _put_addon_icons_back();
 	void _sidebar_slide_open();
 	void _sidebar_slide_close();
 	void _sidebar_slid_out();

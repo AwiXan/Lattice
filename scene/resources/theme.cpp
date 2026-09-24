@@ -1684,7 +1684,23 @@ void Theme::_emit_theme_changed(bool p_notify_list_changed) {
 	if (p_notify_list_changed) {
 		notify_property_list_changed();
 	}
+	if (coalesce_changes) {
+		if (!change_queued) {
+			change_queued = true;
+			callable_mp(this, &Theme::_emit_queued_change).call_deferred();
+		}
+		return;
+	}
 	emit_changed();
+}
+
+void Theme::_emit_queued_change() {
+	change_queued = false;
+	emit_changed();
+}
+
+void Theme::set_coalesce_changes(bool p_coalesce) {
+	coalesce_changes = p_coalesce;
 }
 
 void Theme::_freeze_change_propagation() {

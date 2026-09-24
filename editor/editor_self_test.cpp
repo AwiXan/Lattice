@@ -30,6 +30,7 @@
 
 #include "editor_self_test.h"
 
+#include "editor/editor_string_names.h"
 #include "editor/settings/editor_settings.h"
 #include "core/config/project_settings.h"
 #include "core/input/input.h"
@@ -1005,6 +1006,34 @@ void EditorSelfTest::_view_hints() {
 	const bool hidden = !hints->is_visible();
 	popup->emit_signal(SceneStringName(id_pressed), (int)Node3DEditor::OVERLAY_KEY_HINTS);
 	_check(hidden && hints->is_visible(), "the key hints are an overlay that can be switched off");
+}
+
+void EditorSelfTest::_put_addon_icons_back() {
+	Ref<Theme> theme = EditorNode::get_singleton()->get_editor_theme();
+	const Ref<Texture2D> icon = theme->get_icon(SNAME("Node"), EditorStringName(EditorIcons));
+	for (int i = 0; i < 40; i++) {
+		const StringName name = "LatticeSelfTestIcon" + itos(i);
+		if (!theme->has_icon(name, EditorStringName(EditorIcons))) {
+			theme->set_icon(name, EditorStringName(EditorIcons), icon);
+		}
+	}
+}
+
+void EditorSelfTest::_theme_rebuilt_with_addon_icons() {
+	Control *base = EditorNode::get_singleton()->get_gui_base();
+	base->connect(SceneStringName(theme_changed), callable_mp(this, &EditorSelfTest::_put_addon_icons_back));
+	// Switched and back, as a user would, each a theme built anew.
+	EditorSettings *settings = EditorSettings::get_singleton();
+	const bool blur = settings->get_setting("interface/theme/popup_blur");
+	const uint64_t start = OS::get_singleton()->get_ticks_msec();
+	for (int i = 0; i < 2; i++) {
+		settings->set_setting("interface/theme/popup_blur", i == 0 ? !blur : blur);
+		settings->notify_changes();
+	}
+	const uint64_t took = OS::get_singleton()->get_ticks_msec() - start;
+	base->disconnect(SceneStringName(theme_changed), callable_mp(this, &EditorSelfTest::_put_addon_icons_back));
+	const bool back = EditorNode::get_singleton()->get_editor_theme()->has_icon("LatticeSelfTestIcon39", EditorStringName(EditorIcons));
+	_check(back && took < 4000, vformat("a theme setting switched, with an addon putting 40 icons back one at a time, takes %d ms", took));
 }
 
 void EditorSelfTest::_addon_mirror_prepare() {
@@ -2148,6 +2177,7 @@ EditorSelfTest::EditorSelfTest() {
 	_add("sidebar slide close", callable_mp(this, &EditorSelfTest::_sidebar_slide_close));
 	_add("sidebar slid out", callable_mp(this, &EditorSelfTest::_sidebar_slid_out));
 	_add("view hints", callable_mp(this, &EditorSelfTest::_view_hints));
+	_add("theme rebuilt with addon icons", callable_mp(this, &EditorSelfTest::_theme_rebuilt_with_addon_icons));
 	_add("pie shading", callable_mp(this, &EditorSelfTest::_pie_shading));
 	_add("pie tap", callable_mp(this, &EditorSelfTest::_pie_tap));
 	_add("pie view", callable_mp(this, &EditorSelfTest::_pie_view));
