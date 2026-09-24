@@ -59,6 +59,8 @@
 #include "editor/gui/editor_view_hints.h"
 #include "editor/gui/editor_view_pill.h"
 #include "editor/gui/progress_dialog.h"
+#include "scene/gui/option_button.h"
+#include "scene/gui/menu_bar.h"
 #include "editor/gui/editor_view_sidebar.h"
 #include "editor/scene/3d/node_3d_editor_chrome.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
@@ -96,6 +98,55 @@ void EditorScreenshot::_open_scene() {
 	const String scene = OS::get_singleton()->get_environment("LATTICE_SHOT_SCENE");
 	if (!scene.is_empty()) {
 		EditorNode::get_singleton()->load_scene(scene);
+	}
+}
+
+void EditorScreenshot::_stress_popups() {
+	if (stress_targets.is_empty()) {
+		Control *base = EditorNode::get_singleton()->get_gui_base();
+		const char *kinds[] = { "MenuButton", "OptionButton", "MenuBar" };
+		for (const char *kind : kinds) {
+			TypedArray<Node> found = base->find_children("*", kind, true, false);
+			for (int i = 0; i < found.size(); i++) {
+				Control *control = Object::cast_to<Control>(found[i]);
+				if (control && control->is_visible_in_tree()) {
+					stress_targets.push_back(control->get_instance_id());
+				}
+			}
+		}
+		print_line(vformat("SHOT: stressing %d dropdowns", stress_targets.size()));
+	}
+	PopupMenu *open = ObjectDB::get_instance<PopupMenu>(stress_open);
+	if (open && open->is_visible()) {
+		open->hide();
+		stress_open = ObjectID();
+		return;
+	}
+	if (stress_targets.is_empty()) {
+		return;
+	}
+	Control *target = ObjectDB::get_instance<Control>(stress_targets[stress_step++ % stress_targets.size()]);
+	if (!target || !target->is_visible_in_tree()) {
+		return;
+	}
+	PopupMenu *popup = nullptr;
+	if (MenuButton *menu = Object::cast_to<MenuButton>(target)) {
+		menu->show_popup();
+		popup = menu->get_popup();
+	} else if (OptionButton *option = Object::cast_to<OptionButton>(target)) {
+		option->show_popup();
+		popup = option->get_popup();
+	} else if (MenuBar *bar = Object::cast_to<MenuBar>(target)) {
+		// Each of its menus, under it.
+		const int index = (stress_step / MAX(1, stress_targets.size())) % MAX(1, bar->get_menu_count());
+		popup = bar->get_menu_popup(index);
+		if (popup) {
+			popup->emit_signal(SNAME("about_to_popup"));
+			popup->popup(Rect2i(Point2i(bar->get_screen_position() + Vector2(index * 60, bar->get_size().y)), Size2i()));
+		}
+	}
+	if (popup) {
+		stress_open = popup->get_instance_id();
 	}
 }
 
@@ -209,11 +260,36 @@ void EditorScreenshot::_notification(int p_what) {
 							key->set_pressed(pressed == 1);
 							surface->get_viewport()->push_input(key);
 						}
+					} else if (action == "later:open_menu" && later_view) {
+						// The first menu of the 3D header, for its window's picture.
+						TypedArray<Node> menus = later_view->get_toolbar()->find_children("*", "MenuButton", true, false);
+						for (int i = 0; i < menus.size(); i++) {
+							MenuButton *menu = Object::cast_to<MenuButton>(menus[i]);
+							if (menu && menu->is_visible_in_tree()) {
+								menu->show_popup();
+								print_line("SHOT: opened " + menu->get_text());
+								break;
+							}
+						}
+					} else if (action == "later:stall") {
+						// Frozen on purpose, for the stall watchdog to find.
+						print_line("SHOT: stalling for 6 s");
+						OS::get_singleton()->delay_usec(6000000);
 					} else if (action == "later:progress" && ProgressDialog::get_singleton()) {
 						// What loading a project shows, held open for the picture.
 						ProgressDialog::get_singleton()->add_task("lattice_shot", TTR("(Re)Importing Assets"), 12);
 						ProgressDialog::get_singleton()->task_step("lattice_shot", "res://textures/rock_albedo.png", 5);
 					}
+				}
+			}
+			const int stress_seconds = OS::get_singleton()->get_environment("LATTICE_STRESS_POPUPS").to_int();
+			if (stress_seconds > 0 && elapsed > 3000) {
+				if (stress_until == 0) {
+					stress_until = elapsed + stress_seconds * 1000;
+				}
+				if (elapsed < stress_until) {
+					_stress_popups();
+					break;
 				}
 			}
 			if (!taken && elapsed > 4500) {

@@ -34,7 +34,6 @@
 #include "scene/main/window.h"
 
 class Panel;
-class Tween;
 
 class Popup : public Window {
 	GDCLASS(Popup, Window);
@@ -57,9 +56,12 @@ private:
 
 	// Opening, it fades in - and, where its window can be see-through, drops
 	// into place from a little above - over open_animation_time. Off unless
-	// someone asks for it for all popups: the editor does.
+	// someone asks for it for all popups: the editor does. Timed by the clock,
+	// not by frames: an idle editor sleeps, and the first frame after a click
+	// would count all of the sleep and be done at once.
 	static inline float open_animation_time = 0.0;
-	Ref<Tween> open_tween;
+	bool opening = false;
+	uint64_t open_started_usec = 0;
 	struct OpenTarget {
 		ObjectID item;
 		Color modulate;
@@ -68,8 +70,17 @@ private:
 	bool open_slides = false;
 	Transform2D open_canvas;
 	void _start_open_animation();
+	void _open_animation_step();
 	void _set_open_progress(float p_progress);
 	void _stop_open_animation();
+
+	// Behind what it shows, the window it stands over, blurred, for a
+	// background a little see-through to be on: a window of its own has
+	// nothing behind it otherwise. Off unless someone asks for it: the editor
+	// does.
+	static inline bool backdrop_blur = false;
+	void _update_backdrop();
+	void _draw_backdrop();
 
 protected:
 	void _close_pressed();
@@ -84,16 +95,25 @@ protected:
 
 	virtual void _post_popup() override;
 
+	Control *backdrop = nullptr;
+
 	// What fades in as it opens. p_whole: the popup's window can be
 	// see-through, and all of it can; otherwise only what is on its
 	// background, as there is nothing behind it to fade from.
 	virtual void _get_open_animation_targets(LocalVector<CanvasItem *> &r_targets, bool p_whole) const;
+	// Told how far along opening is, 0 to 1, for what a popup of its own kind
+	// moves itself; p_whole as above, and then the whole window slides.
+	virtual void _open_progress_changed(float p_progress, bool p_whole) {}
 
 public:
 	HideReason get_hide_reason() const { return hide_reason; }
 
 	static void set_open_animation_time(float p_seconds) { open_animation_time = MAX(0.0f, p_seconds); }
 	static float get_open_animation_time() { return open_animation_time; }
+	static void set_backdrop_blur(bool p_enabled) { backdrop_blur = p_enabled; }
+	static bool is_backdrop_blur_enabled() { return backdrop_blur; }
+	// Frees what the backdrops share; for when the scene types go.
+	static void finish_backdrop();
 
 	Popup();
 	~Popup();

@@ -1886,6 +1886,12 @@ DisplayServerEnums::WindowID DisplayServerWindows::create_sub_window(DisplayServ
 	if (p_flags & DisplayServerEnums::WINDOW_FLAG_POPUP_BIT) {
 		wd.is_popup = true;
 	}
+	if (Engine::get_singleton()->is_editor_hint() && (wd.is_popup || wd.no_focus) && !wd.sharp_corners) {
+		// The editor's menus, dropdowns and tooltips, rounded - and with the
+		// system's shadow - where Windows can: 11 does, earlier ones ignore it.
+		DWORD value = DWMWCP_ROUND;
+		::DwmSetWindowAttribute(wd.hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &value, sizeof(value));
+	}
 	if (p_flags & DisplayServerEnums::WINDOW_FLAG_TRANSPARENT_BIT) {
 		if (OS::get_singleton()->is_layered_allowed()) {
 			DWM_BLURBEHIND bb;

@@ -95,6 +95,34 @@ String EditorCrashReport::_excerpt_of(const String &p_log) {
 		start = MAX(0, start - 8);
 		return String("\n").join(lines.slice(start, end + 1)).strip_edges();
 	}
+	// The stall watchdog's report (see crash_handler_windows_seh.cpp), when it
+	// is how the log ends: frozen, and stopped. One earlier on is only
+	// something that took long and then went on.
+	int stall = -1;
+	for (int i = lines.size() - 1; i >= 0; i--) {
+		if (lines[i].contains("has not gone round its main loop")) {
+			stall = i;
+			break;
+		}
+	}
+	if (stall >= 0) {
+		int end = -1;
+		for (int i = stall; i < lines.size(); i++) {
+			if (lines[i].contains("END OF THE STALLED MAIN THREAD")) {
+				end = i;
+				break;
+			}
+		}
+		int after = 0;
+		for (int i = end + 1; end >= 0 && i < lines.size(); i++) {
+			const String rest = lines[i].strip_edges();
+			after += !rest.is_empty() && !rest.begins_with("====");
+		}
+		if (end >= 0 && after < 3) {
+			stall_found = true;
+			return String("\n").join(lines.slice(MAX(0, stall - 8), end + 1)).strip_edges();
+		}
+	}
 	// Otherwise the end of it: it stopped there, for whatever reason.
 	return String("\n").join(lines.slice(MAX(0, lines.size() - 40))).strip_edges();
 }
@@ -148,6 +176,9 @@ void EditorCrashReport::popup_if_needed() {
 	if (backtrace_found) {
 		set_title(TTR("The editor crashed last time"));
 		message->set_text(TTR("The last session on this project crashed. This is what it reported:"));
+	} else if (stall_found) {
+		set_title(TTR("The editor froze last time"));
+		message->set_text(TTR("The last session on this project stopped responding and was closed. This is where it was stuck:"));
 	} else {
 		set_title(TTR("The editor did not close properly last time"));
 		message->set_text(TTR("The last session on this project ended without closing - it crashed, or was stopped. This is how its log ends:"));

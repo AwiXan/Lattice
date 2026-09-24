@@ -187,6 +187,10 @@ void ThemeModern::populate_shared_styles(const Ref<EditorTheme> &p_theme, Editor
 		// Additional GUI colors.
 
 		p_config.surface_popup_color = _get_base_color(p_config, 1.9, 0.9);
+		if (EDITOR_GET("interface/theme/popup_blur")) {
+			// See-through a little, onto the blurred editor behind (Popup's backdrop).
+			p_config.surface_popup_color.a = 0.8;
+		}
 		p_config.surface_lowest_color = _get_base_color(p_config, 1.7, 0.9);
 		p_config.surface_lower_color = _get_base_color(p_config, 1.1, 0.9);
 		p_config.surface_low_color = _get_base_color(p_config, 0.8);

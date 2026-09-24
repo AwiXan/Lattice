@@ -51,6 +51,8 @@ class EditorCrashReport : public AcceptDialog {
 
 	static inline bool previous_session_crashed = false;
 	static inline bool backtrace_found = false;
+	// The stall watchdog's report ends the log: it froze, and was stopped.
+	static inline bool stall_found = false;
 	static inline bool owns_marker = false;
 	static inline bool tracking = false;
 	static inline String previous_log;

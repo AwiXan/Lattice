@@ -30,11 +30,14 @@
 
 #include "crash_handler_windows.h"
 
+#include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/object/script_language.h"
 #include "core/os/main_loop.h"
 #include "core/os/os.h"
 #include "core/string/print_string.h"
+#include "core/os/thread.h"
+#include "core/templates/safe_refcount.h"
 #include "core/version.h"
 
 #ifdef CRASH_HANDLER_EXCEPTION
@@ -54,6 +57,9 @@
 #pragma pack(push, before_imagehlp, 8)
 #include <imagehlp.h>
 #pragma pack(pop, before_imagehlp)
+
+// Whether dbghelp has its symbols already: it may be initialized once only.
+static bool stall_symbols_ready = false;
 
 struct module_data {
 	std::string image_name;
@@ -152,8 +158,8 @@ DWORD CrashHandlerException(EXCEPTION_POINTERS *ep) {
 	}
 	print_error(vformat("Dumping the backtrace. %s", msg));
 
-	// Load the symbols:
-	if (!SymInitialize(process, nullptr, false)) {
+	// Load the symbols - unless the stall watchdog has already.
+	if (!stall_symbols_ready && !SymInitialize(process, nullptr, false)) {
 		return EXCEPTION_CONTINUE_SEARCH;
 	}
 
@@ -257,6 +263,157 @@ DWORD CrashHandlerException(EXCEPTION_POINTERS *ep) {
 
 	// Pass the exception to the OS
 	return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
+#ifdef CRASH_HANDLER_EXCEPTION
+// The editor's stall watchdog. A frozen editor leaves nothing behind: killed,
+// its log ends wherever it was, and it cannot be asked. So a thread watches
+// the main loop go round, and when it has not for STALL_FIRST_MSEC - frozen,
+// or busy for longer than anything should be - it writes where the main
+// thread is into the log, and again at STALL_AGAIN_MSEC.
+//
+// The stack is taken the one way that cannot wait on the thread it is taken
+// from: suspended, unwound into an array with the unwinder of the OS, which
+// takes no lock the main thread could be holding, and let go - and only then
+// named, which allocates and prints.
+
+static constexpr uint64_t STALL_FIRST_MSEC = 5000;
+static constexpr uint64_t STALL_AGAIN_MSEC = 30000;
+static constexpr int STALL_MAX_FRAMES = 64;
+
+static SafeFlag stall_watchdog_running;
+static Thread stall_watchdog_thread;
+static HANDLE stall_main_thread = nullptr;
+
+static int _capture_stalled_stack(HANDLE p_thread, DWORD64 *r_frames) {
+#if defined(_M_X64)
+	if (SuspendThread(p_thread) == (DWORD)-1) {
+		return 0;
+	}
+	int count = 0;
+	CONTEXT context;
+	memset(&context, 0, sizeof(context));
+	context.ContextFlags = CONTEXT_FULL;
+	if (GetThreadContext(p_thread, &context)) {
+		while (count < STALL_MAX_FRAMES && context.Rip != 0) {
+			r_frames[count++] = context.Rip;
+			DWORD64 image_base = 0;
+			PRUNTIME_FUNCTION function = RtlLookupFunctionEntry(context.Rip, &image_base, nullptr);
+			if (!function) {
+				// A leaf function: the return address is on top of the stack.
+				context.Rip = *(DWORD64 *)context.Rsp;
+				context.Rsp += 8;
+			} else {
+				PVOID handler_data = nullptr;
+				DWORD64 establisher_frame = 0;
+				RtlVirtualUnwind(UNW_FLAG_NHANDLER, image_base, context.Rip, function, &context, &handler_data, &establisher_frame, nullptr);
+			}
+		}
+	}
+	ResumeThread(p_thread);
+	return count;
+#else
+	return 0;
+#endif
+}
+
+static void _print_stalled_stack(uint64_t p_msec) {
+	DWORD64 frames[STALL_MAX_FRAMES];
+	const int count = _capture_stalled_stack(stall_main_thread, frames);
+
+	HANDLE process = GetCurrentProcess();
+	if (!stall_symbols_ready) {
+		if (!SymInitialize(process, nullptr, false)) {
+			return;
+		}
+		SymSetOptions(SymGetOptions() | SYMOPT_LOAD_LINES | SYMOPT_UNDNAME | SYMOPT_EXACT_SYMBOLS);
+		DWORD needed = 0;
+		std::vector<HMODULE> module_handles(1);
+		EnumProcessModules(process, &module_handles[0], module_handles.size() * sizeof(HMODULE), &needed);
+		module_handles.resize(needed / sizeof(HMODULE));
+		EnumProcessModules(process, &module_handles[0], module_handles.size() * sizeof(HMODULE), &needed);
+		std::vector<module_data> modules;
+		std::transform(module_handles.begin(), module_handles.end(), std::back_inserter(modules), get_mod_info(process));
+		stall_symbols_ready = true;
+	}
+
+	print_error("\n================================================================");
+	print_error(vformat("Lattice: the editor has not gone round its main loop for %d s. Its main thread is here:", int(p_msec / 1000)));
+	IMAGEHLP_LINE64 line;
+	memset(&line, 0, sizeof(line));
+	line.SizeOfStruct = sizeof(line);
+	for (int i = 0; i < count; i++) {
+		std::string name = symbol(process, frames[i]).undecorated_name();
+		if (name.front() == '<') {
+			// Somewhere with no symbols: in which module, at least.
+			IMAGEHLP_MODULE64 module_info;
+			memset(&module_info, 0, sizeof(module_info));
+			module_info.SizeOfStruct = sizeof(module_info);
+			if (SymGetModuleInfo64(process, frames[i], &module_info)) {
+				name = std::string(module_info.ModuleName) + "+" + std::to_string(frames[i] - module_info.BaseOfImage);
+			}
+		}
+		DWORD offset_from_symbol = 0;
+		if (SymGetLineFromAddr64(process, frames[i], &offset_from_symbol, &line)) {
+			print_error(vformat("[%d] %s (%s:%d)", i, name.c_str(), String((const char *)line.FileName).get_file(), (int)line.LineNumber));
+		} else {
+			print_error(vformat("[%d] %s", i, name.c_str()));
+		}
+	}
+	print_error("-- END OF THE STALLED MAIN THREAD --");
+	print_error("================================================================");
+}
+
+static void _stall_watchdog(void *p_userdata) {
+	uint64_t last_frame = Engine::get_singleton()->get_process_frames();
+	uint64_t since = OS::get_singleton()->get_ticks_msec();
+	int reported = 0;
+	while (stall_watchdog_running.is_set()) {
+		OS::get_singleton()->delay_usec(250000);
+		const uint64_t frame = Engine::get_singleton()->get_process_frames();
+		const uint64_t now = OS::get_singleton()->get_ticks_msec();
+		if (frame != last_frame) {
+			last_frame = frame;
+			since = now;
+			reported = 0;
+			continue;
+		}
+		const uint64_t stalled = now - since;
+		if ((reported == 0 && stalled >= STALL_FIRST_MSEC) || (reported == 1 && stalled >= STALL_AGAIN_MSEC)) {
+			reported++;
+			_print_stalled_stack(stalled);
+		}
+	}
+}
+
+void CrashHandler::start_stall_watchdog() {
+	if (stall_watchdog_running.is_set()) {
+		return;
+	}
+	// Called on the main thread, which is the one watched.
+	stall_main_thread = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, GetCurrentThreadId());
+	if (!stall_main_thread) {
+		return;
+	}
+	stall_watchdog_running.set();
+	stall_watchdog_thread.start(_stall_watchdog, nullptr);
+}
+
+void CrashHandler::stop_stall_watchdog() {
+	if (!stall_watchdog_running.is_set()) {
+		return;
+	}
+	stall_watchdog_running.clear();
+	stall_watchdog_thread.wait_to_finish();
+	CloseHandle(stall_main_thread);
+	stall_main_thread = nullptr;
+}
+#else
+void CrashHandler::start_stall_watchdog() {
+}
+
+void CrashHandler::stop_stall_watchdog() {
 }
 #endif
 

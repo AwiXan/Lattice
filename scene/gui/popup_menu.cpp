@@ -48,6 +48,7 @@
 #include "scene/theme/theme_db.h"
 #include "servers/display/accessibility_server.h"
 #include "servers/display/display_server.h"
+#include "servers/rendering/rendering_server.h"
 
 HashMap<NativeMenu::SystemMenus, PopupMenu *> PopupMenu::system_menus;
 
@@ -882,6 +883,10 @@ void PopupMenu::_mouse_over_update(const Point2 &p_over) {
 void PopupMenu::_draw_items() {
 	control->set_custom_minimum_size(Size2(0, _get_items_total_height()));
 	RID ci = control->get_canvas_item();
+	if (open_slide != 0.0f) {
+		// Opening; see _open_progress_changed().
+		RenderingServer::get_singleton()->canvas_item_add_set_transform(ci, Transform2D(0, Vector2(0, open_slide)));
+	}
 
 	// Space between the item content and the sides of popup menu.
 	bool rtl = control->is_layout_rtl();
@@ -1391,6 +1396,16 @@ void PopupMenu::_get_open_animation_targets(LocalVector<CanvasItem *> &r_targets
 	// Its background stays, when there is nothing behind it to fade from, and
 	// its items fade in on it.
 	r_targets.push_back(scroll_container);
+}
+
+void PopupMenu::_open_progress_changed(float p_progress, bool p_whole) {
+	// Where the whole window slides, the items go with it; otherwise they come
+	// down into place on its background by themselves.
+	const float slide = p_whole ? 0.0f : (1.0f - p_progress) * -8.0f;
+	if (slide != open_slide) {
+		open_slide = slide;
+		control->queue_redraw();
+	}
 }
 
 void PopupMenu::_notification(int p_what) {

@@ -1370,6 +1370,7 @@ void unregister_scene_types() {
 
 	ParticleProcessMaterial::finish_shaders();
 	CanvasItemMaterial::finish_shaders();
+	Popup::finish_backdrop();
 	ColorPickerShape::finish_shaders();
 	BlitMaterial::cleanup_shader();
 	GraphEdit::finish_shaders();

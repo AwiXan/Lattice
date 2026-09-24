@@ -72,6 +72,9 @@ def main():
     parser.add_argument("--lit", action="store_true", help="give the 3D scene a sun and an environment of its own")
     parser.add_argument("--editor", help="editor binary to run (default: the newest one in bin/)")
     parser.add_argument("--timeout", type=int, default=60, help="seconds before calling it hung (it is left running)")
+    parser.add_argument("--stress", type=int, default=0, help="seconds of opening and closing every dropdown first")
+    parser.add_argument("--all", action="store_true", help="print everything the editor printed")
+    parser.add_argument("--window", action="store_true", help="take the first window of its own showing - a dialog, a menu - instead")
     args = parser.parse_args()
 
     editor = args.editor or find_editor()
@@ -107,7 +110,9 @@ def main():
         env["LATTICE_SHOT_CROP"] = args.crop
     if args.actions:
         env["LATTICE_SHOT_ACTIONS"] = args.actions
-    if args.crashed:
+    if args.stress:
+        env["LATTICE_STRESS_POPUPS"] = str(args.stress)
+    if args.crashed or args.window:
         # Its report is what is worth a picture.
         env["LATTICE_SHOT_WINDOW"] = "1"
     # Imports first, or the scene opens before its resources are known.
@@ -123,7 +128,7 @@ def main():
         return 3
     shutil.rmtree(project, ignore_errors=True)
     for line in out.splitlines():
-        if line.startswith("SHOT") or "ERROR" in line:
+        if args.all or line.startswith("SHOT") or "ERROR" in line:
             print(line)
     ok = process.returncode == 0 and os.path.exists(output)
     print("OK:" if ok else "FAILED:", output)

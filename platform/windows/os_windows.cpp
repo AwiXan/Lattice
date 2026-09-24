@@ -2346,6 +2346,12 @@ void OS_Windows::run() {
 
 	main_loop->initialize();
 
+	// The editor, frozen, says where.
+	const bool watched = Engine::get_singleton()->is_editor_hint() && !crash_handler.is_disabled();
+	if (watched) {
+		crash_handler.start_stall_watchdog();
+	}
+
 	while (true) {
 		GodotProfileFrameMark;
 		GodotProfileZone("OS_Windows::run");
@@ -2355,6 +2361,9 @@ void OS_Windows::run() {
 		}
 	}
 
+	if (watched) {
+		crash_handler.stop_stall_watchdog();
+	}
 	main_loop->finalize();
 }
 

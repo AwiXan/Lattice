@@ -48,6 +48,12 @@ class CrashHandler {
 public:
 	void initialize();
 
+	// For the editor: should its main loop stop going round for seconds on
+	// end, the main thread's stack goes to the log, which the crash report of
+	// the next start shows. See crash_handler_windows_seh.cpp.
+	void start_stall_watchdog();
+	void stop_stall_watchdog();
+
 	void disable();
 	bool is_disabled() const { return disabled; }
 

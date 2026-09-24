@@ -570,6 +570,8 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	EDITOR_SETTING(Variant::BOOL, PROPERTY_HINT_NONE, "interface/scrolling/smooth_scrolling", true, "")
 	// Menus, dropdowns and tooltips fade in as they open.
 	EDITOR_SETTING(Variant::BOOL, PROPERTY_HINT_NONE, "interface/theme/animate_popups", true, "")
+	// And stand on the editor behind them blurred, a little see-through.
+	EDITOR_SETTING(Variant::BOOL, PROPERTY_HINT_NONE, "interface/theme/popup_blur", true, "")
 
 	// Panes.
 	// What a pane's "+" menu lists before "More...": the panels reached for all

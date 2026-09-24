@@ -268,6 +268,9 @@ protected:
 	virtual void _pre_popup() override;
 	virtual Rect2i _popup_adjust_rect() const override;
 	virtual void _get_open_animation_targets(LocalVector<CanvasItem *> &r_targets, bool p_whole) const override;
+	virtual void _open_progress_changed(float p_progress, bool p_whole) override;
+	// How far above their places the items are drawn while the menu opens.
+	float open_slide = 0.0f;
 
 	virtual void add_child_notify(Node *p_child) override;
 	virtual void remove_child_notify(Node *p_child) override;

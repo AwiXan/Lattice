@@ -32,8 +32,11 @@
 
 #include "core/config/engine.h"
 #include "core/object/callable_mp.h"
-#include "scene/animation/tween.h"
+#include "core/os/os.h"
 #include "scene/gui/panel.h"
+#include "scene/main/scene_tree.h"
+#include "scene/resources/material.h"
+#include "scene/resources/shader.h"
 #include "scene/resources/style_box_flat.h"
 #include "scene/theme/theme_db.h"
 #include "servers/display/display_server.h"
@@ -85,6 +88,7 @@ void Popup::_notification(int p_what) {
 					_initialize_visible_parents();
 					popped_up = true;
 					hide_reason = HIDE_REASON_NONE;
+					_update_backdrop();
 					if (open_animation_time > 0.0f && is_inside_tree()) {
 						_start_open_animation();
 					}
@@ -137,21 +141,33 @@ void Popup::_get_open_animation_targets(LocalVector<CanvasItem *> &r_targets, bo
 	}
 }
 
+
 void Popup::_start_open_animation() {
 	_stop_open_animation();
 	const bool whole = is_embedded() || DisplayServer::get_singleton()->is_window_transparency_available();
 	LocalVector<CanvasItem *> targets;
 	_get_open_animation_targets(targets, whole);
 	for (CanvasItem *item : targets) {
-		open_targets.push_back(OpenTarget{ item->get_instance_id(), item->get_modulate() });
+		if (item != backdrop) {
+			open_targets.push_back(OpenTarget{ item->get_instance_id(), item->get_modulate() });
+		}
 	}
 	open_slides = whole;
 	open_canvas = get_canvas_transform();
 	_set_open_progress(0.0);
-	open_tween = create_tween();
-	open_tween->set_ease(Tween::EASE_OUT);
-	open_tween->set_trans(Tween::TRANS_CUBIC);
-	open_tween->tween_method(callable_mp(this, &Popup::_set_open_progress), 0.0, 1.0, open_animation_time);
+	opening = true;
+	open_started_usec = OS::get_singleton()->get_ticks_usec();
+	SceneTree::get_singleton()->connect(SNAME("process_frame"), callable_mp(this, &Popup::_open_animation_step));
+}
+
+void Popup::_open_animation_step() {
+	const double t = double(OS::get_singleton()->get_ticks_usec() - open_started_usec) / (double(open_animation_time) * 1000000.0);
+	if (t >= 1.0) {
+		_stop_open_animation();
+		return;
+	}
+	// Quick at first, settling at the end.
+	_set_open_progress(1.0 - Math::pow(1.0 - t, 3.0));
 }
 
 void Popup::_set_open_progress(float p_progress) {
@@ -165,21 +181,90 @@ void Popup::_set_open_progress(float p_progress) {
 	}
 	if (open_slides) {
 		Transform2D canvas = open_canvas;
-		canvas.columns[2].y -= (1.0f - p_progress) * 5.0f * get_content_scale_factor();
+		canvas.columns[2].y -= (1.0f - p_progress) * 8.0f * get_content_scale_factor();
 		set_canvas_transform(canvas);
 	}
+	_open_progress_changed(p_progress, open_slides);
 }
 
 void Popup::_stop_open_animation() {
-	if (open_tween.is_valid()) {
-		open_tween->kill();
-		open_tween.unref();
-	}
-	if (!open_targets.is_empty() || open_slides) {
+	if (opening) {
+		opening = false;
+		SceneTree *tree = SceneTree::get_singleton();
+		if (tree && tree->is_connected(SNAME("process_frame"), callable_mp(this, &Popup::_open_animation_step))) {
+			tree->disconnect(SNAME("process_frame"), callable_mp(this, &Popup::_open_animation_step));
+		}
 		_set_open_progress(1.0);
 	}
 	open_targets.clear();
 	open_slides = false;
+}
+
+static Ref<ShaderMaterial> popup_backdrop_material;
+
+void Popup::finish_backdrop() {
+	popup_backdrop_material.unref();
+}
+
+void Popup::_update_backdrop() {
+	Window *under = is_inside_tree() ? get_parent_visible_window() : nullptr;
+	const bool wanted = backdrop_blur && under && under != this && !is_embedded();
+	if (!wanted) {
+		if (backdrop) {
+			backdrop->hide();
+		}
+		return;
+	}
+	if (popup_backdrop_material.is_null()) {
+		Ref<Shader> shader;
+		shader.instantiate();
+		// A gaussian blur, wide enough to lose detail and keep colour.
+		shader->set_code(R"(
+shader_type canvas_item;
+uniform float radius = 14.0;
+void fragment() {
+	vec3 sum = vec3(0.0);
+	float total = 0.0;
+	for (int x = -3; x <= 3; x++) {
+		for (int y = -3; y <= 3; y++) {
+			vec2 offset = vec2(float(x), float(y)) * (radius / 3.0);
+			float weight = exp(-dot(offset, offset) / (radius * radius * 0.5));
+			sum += texture(TEXTURE, UV + offset * TEXTURE_PIXEL_SIZE).rgb * weight;
+			total += weight;
+		}
+	}
+	COLOR = vec4(sum / total, 1.0);
+}
+)");
+		popup_backdrop_material.instantiate();
+		popup_backdrop_material->set_shader(shader);
+	}
+	if (!backdrop) {
+		backdrop = memnew(Control);
+		backdrop->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		backdrop->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		backdrop->set_material(popup_backdrop_material);
+		backdrop->connect(SceneStringName(draw), callable_mp(this, &Popup::_draw_backdrop));
+		add_child(backdrop, false, INTERNAL_MODE_FRONT);
+		// Under everything else it has.
+		move_child(backdrop, 0);
+	}
+	backdrop->show();
+	backdrop->queue_redraw();
+}
+
+void Popup::_draw_backdrop() {
+	Window *under = get_parent_visible_window();
+	if (!under || under == this) {
+		return;
+	}
+	const Ref<Texture2D> texture = under->get_texture();
+	if (texture.is_null()) {
+		return;
+	}
+	// Where this window is over the other, in the other's pixels.
+	const Rect2 source(Point2(get_position() - under->get_position()), Size2(get_size()));
+	backdrop->draw_texture_rect_region(texture, Rect2(Point2(), backdrop->get_size()), source);
 }
 
 void Popup::_parent_focused() {
@@ -311,7 +396,7 @@ void PopupPanel::_get_open_animation_targets(LocalVector<CanvasItem *> &r_target
 	for (int i = 0; i < get_child_count(true); i++) {
 		CanvasItem *item = Object::cast_to<CanvasItem>(get_child(i, true));
 		// Its background stays, when there is nothing behind it to fade from.
-		if (item && item->is_visible() && (p_whole || item != panel)) {
+		if (item && item->is_visible() && item != backdrop && (p_whole || item != panel)) {
 			r_targets.push_back(item);
 		}
 	}
@@ -346,7 +431,7 @@ Size2 PopupPanel::_get_contents_minimum_size() const {
 
 	for (int i = 0; i < get_child_count(); i++) {
 		Control *c = Object::cast_to<Control>(get_child(i));
-		if (!c || c == panel) {
+		if (!c || c == panel || c == backdrop) {
 			continue;
 		}
 
@@ -428,7 +513,7 @@ void PopupPanel::_update_child_rects() const {
 
 	for (int i = 0; i < get_child_count(); i++) {
 		Control *c = Object::cast_to<Control>(get_child(i));
-		if (!c || c == panel) {
+		if (!c || c == panel || c == backdrop) {
 			continue;
 		}
 
