@@ -102,6 +102,9 @@
 #include "scene/3d/camera_3d.h"
 #include "scene/3d/decal.h"
 #include "scene/3d/light_3d.h"
+#include "scene/3d/lightmap_gi.h"
+#include "scene/3d/reflection_probe.h"
+#include "scene/3d/voxel_gi.h"
 #include "scene/3d/mesh_instance_3d.h"
 #include "scene/3d/physics/collision_shape_3d.h"
 #include "scene/3d/physics/physics_body_3d.h"
@@ -992,7 +995,7 @@ ObjectID Node3DEditorViewport::_select_ray(const Point2 &p_pos) const {
 	Vector<Node3D *> nodes_with_gizmos = spatial_editor->gizmo_bvh_ray_query(pos, pos + ray * camera->get_far());
 
 	for (Node3D *spat : nodes_with_gizmos) {
-		if (!spat || _is_node_locked(spat)) {
+		if (!spat || _is_node_locked(spat) || spatial_editor->is_isolated_out(spat)) {
 			continue;
 		}
 
@@ -1371,7 +1374,7 @@ void Node3DEditorViewport::_find_items_at_pos(const Point2 &p_pos, Vector<_RayRe
 			continue;
 		}
 
-		if (found_nodes.has(spat)) {
+		if (found_nodes.has(spat) || spatial_editor->is_isolated_out(spat)) {
 			continue;
 		}
 
@@ -1546,7 +1549,7 @@ void Node3DEditorViewport::_select_region() {
 	}
 
 	for (Node3D *sp : nodes_with_gizmos) {
-		if (!sp || _is_node_locked(sp)) {
+		if (!sp || _is_node_locked(sp) || spatial_editor->is_isolated_out(sp)) {
 			continue;
 		}
 
@@ -3161,6 +3164,9 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 		if (ED_IS_SHORTCUT("spatial_editor/focus_origin", event_mod)) {
 			_menu_option(VIEW_CENTER_TO_ORIGIN);
 		}
+		if (ED_IS_SHORTCUT("spatial_editor/isolate_selection", event_mod)) {
+			spatial_editor->toggle_isolation();
+		}
 		if (ED_IS_SHORTCUT("spatial_editor/focus_selection", event_mod)) {
 			_menu_option(VIEW_CENTER_TO_SELECTION);
 			times_focused_consecutively += 1;
@@ -4253,6 +4259,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 
 			cinema_label->add_theme_style_override(CoreStringName(normal), information_3d_stylebox);
 			locked_label->add_theme_style_override(CoreStringName(normal), information_3d_stylebox);
+			isolated_label->add_theme_style_override(CoreStringName(normal), information_3d_stylebox);
 
 			ruler_label->add_theme_color_override(SceneStringName(font_color), Color(1.0, 0.9, 0.0, 1.0));
 			ruler_label->add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 1.0));
@@ -7391,6 +7398,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	ED_SHORTCUT("spatial_editor/pie_shading", TTRC("Shading Pie Menu"), Key::Z);
 	ED_SHORTCUT("spatial_editor/pie_view", TTRC("View Pie Menu"), Key::QUOTELEFT);
 	ED_SHORTCUT("spatial_editor/pie_snap", TTRC("Snap Pie Menu"), KeyModifierMask::SHIFT | Key::S);
+	ED_SHORTCUT_ARRAY("spatial_editor/isolate_selection", TTRC("Isolate Selection"), { int32_t(Key::SLASH), int32_t(Key::KP_DIVIDE) });
 	ED_SHORTCUT("spatial_editor/lock_transform_x", TTRC("Lock Transformation to X axis"), Key::X);
 	ED_SHORTCUT("spatial_editor/lock_transform_y", TTRC("Lock Transformation to Y axis"), Key::Y);
 	ED_SHORTCUT("spatial_editor/lock_transform_z", TTRC("Lock Transformation to Z axis"), Key::Z);
@@ -7480,6 +7488,13 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	bottom_center_vbox->add_child(locked_label);
 	locked_label->set_text(TTRC("View Rotation Locked"));
 	locked_label->hide();
+
+	isolated_label = memnew(Label);
+	isolated_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+	isolated_label->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+	isolated_label->set_h_size_flags(SIZE_SHRINK_CENTER);
+	bottom_center_vbox->add_child(isolated_label);
+	isolated_label->hide();
 
 	zoom_limit_label = memnew(Label);
 	zoom_limit_label->set_text(TTRC(U"To zoom further, change the camera's clipping planes (View → Settings...)"));
@@ -12832,6 +12847,82 @@ void Node3DEditor::_update_snap_pills() {
 	}
 }
 
+void Node3DEditor::toggle_isolation() {
+	if (is_isolating()) {
+		_end_isolation();
+		return;
+	}
+	Node *scene = viewports[CLAMP(last_used_viewport, 0, (int)VIEWPORTS_COUNT - 1)]->get_edited_scene();
+	const List<Node *> &selected = editor_selection->get_top_selected_node_list();
+	if (!scene || selected.is_empty()) {
+		viewports[CLAMP(last_used_viewport, 0, (int)VIEWPORTS_COUNT - 1)]->set_message(TTR("Select something to isolate."));
+		return;
+	}
+	// What stays: the selected nodes, and all that is in them.
+	HashSet<ObjectID> kept;
+	for (Node *node : selected) {
+		kept.insert(node->get_instance_id());
+		TypedArray<Node> inside = node->find_children("*", "", true, false);
+		for (int i = 0; i < inside.size(); i++) {
+			kept.insert(Object::cast_to<Node>(inside[i])->get_instance_id());
+		}
+	}
+	TypedArray<Node> everything = scene->find_children("*", "Node3D", true, false);
+	everything.push_back(scene);
+	for (int i = 0; i < everything.size(); i++) {
+		Node3D *node = Object::cast_to<Node3D>(everything[i]);
+		if (!node || kept.has(node->get_instance_id())) {
+			continue;
+		}
+		// What lights the rest, and what it reflects, stay.
+		if (Object::cast_to<Light3D>(node) || Object::cast_to<ReflectionProbe>(node) || Object::cast_to<VoxelGI>(node) || Object::cast_to<LightmapGI>(node)) {
+			continue;
+		}
+		if (VisualInstance3D *visual = Object::cast_to<VisualInstance3D>(node)) {
+			RS::get_singleton()->instance_set_visible(visual->get_instance(), false);
+		}
+		for (const Ref<Node3DGizmo> &gizmo : node->get_gizmos()) {
+			Ref<EditorNode3DGizmo> editor_gizmo = gizmo;
+			if (editor_gizmo.is_valid()) {
+				editor_gizmo->set_hidden(true);
+			}
+		}
+		isolated_out.insert(node->get_instance_id());
+	}
+	isolation_scene = scene->get_instance_id();
+	_update_isolation_labels();
+}
+
+void Node3DEditor::_end_isolation() {
+	for (const ObjectID &id : isolated_out) {
+		Node3D *node = ObjectDB::get_instance<Node3D>(id);
+		if (!node) {
+			continue;
+		}
+		if (VisualInstance3D *visual = Object::cast_to<VisualInstance3D>(node)) {
+			RS::get_singleton()->instance_set_visible(visual->get_instance(), visual->is_visible_in_tree());
+		}
+		for (const Ref<Node3DGizmo> &gizmo : node->get_gizmos()) {
+			Ref<EditorNode3DGizmo> editor_gizmo = gizmo;
+			if (editor_gizmo.is_valid() && editor_gizmo->get_plugin().is_valid()) {
+				editor_gizmo->set_hidden(editor_gizmo->get_plugin()->get_state() == EditorNode3DGizmoPlugin::HIDDEN);
+			}
+		}
+	}
+	isolated_out.clear();
+	isolation_scene = ObjectID();
+	_update_isolation_labels();
+}
+
+void Node3DEditor::_update_isolation_labels() {
+	const String shortcut = ED_GET_SHORTCUT("spatial_editor/isolate_selection")->get_as_text();
+	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+		Label *label = viewports[i]->isolated_label;
+		label->set_text(vformat(TTR("Isolated: only the selection is shown. %s shows everything."), shortcut));
+		label->set_visible(is_isolating());
+	}
+}
+
 void Node3DEditor::_update_layout_pills() {
 	if (!view_bars || !is_inside_tree()) {
 		return;
@@ -12929,6 +13020,9 @@ void Node3DEditor::_build_sidebar(Control *p_over) {
 }
 
 void Node3DEditor::_chrome_tick() {
+	if (is_isolating() && (!ObjectDB::get_instance(isolation_scene) || viewports[0]->get_edited_scene() != ObjectDB::get_instance<Node>(isolation_scene))) {
+		_end_isolation();
+	}
 	_update_hints();
 	// Split by a shortcut, or by a scene's saved state, as well as from a bar.
 	_update_layout_pills();

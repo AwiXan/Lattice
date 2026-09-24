@@ -63,6 +63,8 @@
 #include "editor/gui/editor_view_hints.h"
 #include "editor/gui/editor_view_pill.h"
 #include "editor/gui/progress_dialog.h"
+#include "scene/resources/3d/primitive_meshes.h"
+#include "scene/3d/mesh_instance_3d.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/menu_bar.h"
 #include "editor/gui/editor_view_sidebar.h"
@@ -281,6 +283,9 @@ void EditorScreenshot::_notification(int p_what) {
 								break;
 							}
 						}
+					} else if (action == "later:isolate" && later_view) {
+						later_view->toggle_isolation();
+						print_line(vformat("SHOT: isolated %s", later_view->is_isolating()));
 					} else if (action == "later:hover_pillar" && later_view) {
 						// The mouse over the pillar, which is not selected: it lights up.
 						Node *root = EditorNode::get_singleton()->get_edited_scene();
@@ -908,6 +913,40 @@ static int _item_with_text(PopupMenu *p_menu, const String &p_text) {
 		}
 	}
 	return -1;
+}
+
+void EditorSelfTest::_view_isolate() {
+	Node3DEditor *view = Node3DEditor::get_singleton();
+	Node *scene = EditorNode::get_singleton()->get_edited_scene();
+	if (!scene) {
+		_check(false, "a scene open to isolate something in");
+		return;
+	}
+	// Two boxes, one of them selected.
+	Node3D *holder = memnew(Node3D);
+	holder->set_name("LatticeIsolateTest");
+	scene->add_child(holder);
+	MeshInstance3D *kept = memnew(MeshInstance3D);
+	MeshInstance3D *other = memnew(MeshInstance3D);
+	Ref<BoxMesh> box;
+	box.instantiate();
+	kept->set_mesh(box);
+	other->set_mesh(box);
+	holder->add_child(kept);
+	holder->add_child(other);
+	EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
+	selection->clear();
+	selection->add_node(kept);
+
+	view->toggle_isolation();
+	const bool isolated = view->is_isolating() && !view->is_isolated_out(kept) && view->is_isolated_out(other);
+	view->toggle_isolation();
+	const bool back = !view->is_isolating() && !view->is_isolated_out(other);
+	_check(isolated && back, "/ isolates the selection, hiding the rest, and / again shows everything");
+
+	selection->clear();
+	scene->remove_child(holder);
+	memdelete(holder);
 }
 
 void EditorSelfTest::_addon_view_item_pressed(int p_id) {
@@ -2308,6 +2347,7 @@ EditorSelfTest::EditorSelfTest() {
 	_add("view shading", callable_mp(this, &EditorSelfTest::_view_shading));
 	_add("view overlays", callable_mp(this, &EditorSelfTest::_view_overlays));
 	_add("view bar", callable_mp(this, &EditorSelfTest::_view_bar));
+	_add("view isolate", callable_mp(this, &EditorSelfTest::_view_isolate));
 	_add("view sidebar open", callable_mp(this, &EditorSelfTest::_view_sidebar_open));
 	_add("view sidebar check", callable_mp(this, &EditorSelfTest::_view_sidebar_check));
 	_add("sidebar slide open", callable_mp(this, &EditorSelfTest::_sidebar_slide_open));

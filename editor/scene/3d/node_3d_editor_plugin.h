@@ -271,6 +271,9 @@ private:
 	// What a click would select, lit up under the mouse before the click: its
 	// meshes drawn over themselves again, a shade lighter and ringed, as other
 	// 3D editors do. Only in the editor's view, and with the gizmos.
+	// Says the view is isolated (see Node3DEditor::toggle_isolation()).
+	Label *isolated_label = nullptr;
+
 	ObjectID hovered_node;
 	LocalVector<RID> hover_instances;
 	Ref<StandardMaterial3D> hover_material;
@@ -993,6 +996,14 @@ private:
 	void _view_bar_show_pressed(int p_overlay, int p_viewport);
 	void _view_bar_gizmo_pressed(int p_gizmo, int p_viewport);
 	void _update_layout_pills();
+	// Isolated (/): only what was selected when it began, and what is in it,
+	// drawn and picked; the rest of the scene hidden from the views - not in
+	// the scene, which does not change - until / again. Lights and probes
+	// stay, for it to be lit as it is.
+	ObjectID isolation_scene;
+	HashSet<ObjectID> isolated_out;
+	void _end_isolation();
+	void _update_isolation_labels();
 	// The snap steps - moving, rotating, scaling - beside the snap toggle, each
 	// a dropdown of the usual ones; dim while snapping is off.
 	EditorViewPill *snap_pills[3] = {};
@@ -1335,6 +1346,9 @@ public:
 	// The header's View menu: out of sight with the viewports' bars, which
 	// show its items.
 	MenuButton *get_view_layout_menu() const { return view_layout_menu; }
+	void toggle_isolation();
+	bool is_isolating() const { return isolation_scene.is_valid(); }
+	bool is_isolated_out(const Node *p_node) const { return p_node && isolated_out.has(p_node->get_instance_id()); }
 	EditorViewPill *get_snap_pill(int p_which) const { return (p_which >= 0 && p_which < 3) ? snap_pills[p_which] : nullptr; }
 	// A transform option (ToolOptions) switched as its button would be.
 	void toggle_tool_option(int p_option);
