@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_view_sidebar.h                                                 */
+/*  editor_view_header_group.h                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -32,63 +32,31 @@
 
 #include "scene/gui/panel_container.h"
 
-class ScrollContainer;
-class TabBar;
-class VBoxContainer;
+class HBoxContainer;
+class StyleBoxFlat;
 
-// The sidebar a 2D or 3D view opens with N: a card of pages in the top right
-// corner of the view, over the scene rather than beside it, and only as tall
-// as the page it shows - so it covers no more of the view than it needs to.
-// A page taller than the view scrolls.
-//
-// It lays itself out in its parent, which should be a plain Control covering
-// the view. What goes on the pages is the view's business.
-class EditorViewSidebar : public PanelContainer {
-	GDCLASS(EditorViewSidebar, PanelContainer);
+// A group of a 2D or 3D view's header - its menus, its transform options,
+// how it draws - set apart in a rounded frame of its own, in the theme's
+// colours, rather than kept apart by separators. The tool column wears the
+// same frame (see apply_style()).
+class EditorViewHeaderGroup : public PanelContainer {
+	GDCLASS(EditorViewHeaderGroup, PanelContainer);
 
-	TabBar *tabs = nullptr;
-	ScrollContainer *scroll = nullptr;
-	VBoxContainer *page_box = nullptr;
-	LocalVector<Control *> pages;
-	bool fitting = false;
+	HBoxContainer *box = nullptr;
 	bool theming = false;
-	real_t top_inset = 0.0;
-	// 0 out of sight to the right, 1 in place.
-	real_t slide = 1.0;
-	bool closing = false;
-	Ref<Tween> slide_tween;
-	void _set_slide(real_t p_slide);
-	void _slide_to(real_t p_to, real_t p_seconds);
-	void _slid_out();
-
-	void _tab_changed(int p_tab);
-	void _parent_resized();
 
 protected:
 	void _notification(int p_what);
-	static void _bind_methods();
 
 public:
-	int add_page(const String &p_title, Control *p_page);
-	int get_page_count() const { return pages.size(); }
-	Control *get_page(int p_index) const;
-	int get_current_page() const;
-	// Shows the card too.
-	void show_page(int p_index);
-	// With the card shown on another page, shows this one; on this one, hides it.
-	void toggle_page(int p_index);
-	void toggle();
-	// Shown and not on its way out.
-	bool is_open() const { return is_visible() && !closing; }
-	void open();
-	void close();
-	// Where the slide would end, at once.
-	void finish_slide();
+	HBoxContainer *get_box() const { return box; }
+	// Moves p_controls into the group, in order.
+	void take(const Vector<Control *> &p_controls);
 
-	// Where it is and how big, from its parent's size and the page's.
-	void fit();
-	// Room to leave at the top of the view - the 2D view's ruler.
-	void set_top_inset(real_t p_inset);
+	// The frame, as a style box for any panel that should look like one.
+	static Ref<StyleBoxFlat> make_style(const Control *p_for);
+	// Puts that frame on p_panel; for its owner to call when the theme changes.
+	static void apply_style(PanelContainer *p_panel);
 
-	EditorViewSidebar();
+	EditorViewHeaderGroup();
 };

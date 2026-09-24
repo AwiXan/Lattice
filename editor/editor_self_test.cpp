@@ -674,6 +674,7 @@ void EditorSelfTest::_view_sidebar_check() {
 	if (!sidebar || !over) {
 		return;
 	}
+	sidebar->finish_slide();
 	const Rect2 card = sidebar->get_rect();
 	_check(sidebar->is_visible() && card.has_area() && card.size.height < over->get_size().height && card.get_end().x <= over->get_size().width,
 			vformat("N opens the sidebar in the view's corner, only as tall as its page (%s in %s)", card, over->get_size()));
@@ -692,6 +693,7 @@ void EditorSelfTest::_view_sidebar_check() {
 
 	// The snap settings are a page of it now, not a dialog.
 	view->get_sidebar_button()->set_pressed(false);
+	sidebar->finish_slide();
 	_check(!sidebar->is_visible() && Math::is_zero_approx(view->get_editor_viewport(0)->get_top_right_clearance()), "pressed again, it closes and the gizmo goes back");
 }
 
@@ -818,6 +820,9 @@ void EditorSelfTest::_view_2d_check() {
 	_check(menus_first && end_last, "the 2D header has its menus first and the view's own display at the far end");
 
 	EditorViewSidebar *sidebar = view->get_sidebar();
+	if (sidebar) {
+		sidebar->finish_slide();
+	}
 	Control *over = sidebar ? Object::cast_to<Control>(sidebar->get_parent()) : nullptr;
 	const Rect2 card = sidebar ? sidebar->get_rect() : Rect2();
 	_check(sidebar && over && sidebar->is_visible() && sidebar->get_page_count() == 2 && card.has_area() && card.size.height < over->get_size().height,

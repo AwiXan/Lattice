@@ -31,6 +31,7 @@
 #include "canvas_item_editor_plugin.h"
 
 #include "editor/gui/editor_button_mirror.h"
+#include "editor/gui/editor_view_header_group.h"
 #include "editor/gui/editor_view_hints.h"
 #include "editor/gui/editor_view_sidebar.h"
 #include "editor/scene/canvas_item_editor_chrome.h"
@@ -4396,7 +4397,7 @@ void CanvasItemEditor::_update_editor_settings() {
 
 	context_toolbar_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("ContextualToolbar"), EditorStringName(EditorStyles)));
 	if (tool_column_panel) {
-		tool_column_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("ContextualToolbar"), EditorStringName(EditorStyles)));
+		EditorViewHeaderGroup::apply_style(tool_column_panel);
 		overlays_menu->set_button_icon(get_editor_theme_icon(SNAME("GuiVisibilityVisible")));
 		sidebar_button->set_button_icon(get_editor_theme_icon(SNAME("Tools")));
 	}
@@ -6278,20 +6279,12 @@ void CanvasItemEditor::_arrange_chrome() {
 	// The header: the menus first, then how a transform is done, then what
 	// plugins add, and the view's own display at the far end. The one bar the
 	// classic toolbar had is left with only its separators, and goes.
-	HBoxContainer *menus_group = memnew(HBoxContainer);
-	HBoxContainer *options_group = memnew(HBoxContainer);
-	Control *menus[] = { view_menu, skeleton_menu };
-	for (Control *menu : menus) {
-		menu->get_parent()->remove_child(menu);
-		menus_group->add_child(menu);
-	}
-	menus_group->add_child(memnew(VSeparator));
-	Control *options[] = { local_space_button, smart_snap_button, grid_snap_button, snap_config_menu };
-	for (Control *option : options) {
-		option->get_parent()->remove_child(option);
-		options_group->add_child(option);
-	}
-	options_group->add_child(memnew(VSeparator));
+	EditorViewHeaderGroup *menus_group = memnew(EditorViewHeaderGroup);
+	menus_group->set_name("MenusGroup");
+	menus_group->take({ view_menu, skeleton_menu });
+	EditorViewHeaderGroup *options_group = memnew(EditorViewHeaderGroup);
+	options_group->set_name("OptionsGroup");
+	options_group->take({ local_space_button, smart_snap_button, grid_snap_button, snap_config_menu });
 	toolbar_flow->remove_child(old_bar);
 	memdelete(old_bar);
 	toolbar_flow->add_child(menus_group);
@@ -6345,6 +6338,18 @@ void CanvasItemEditor::_arrange_chrome() {
 
 	_build_sidebar(viewport_stack);
 
+	// The far end in frames too: what is drawn over the view, the sidebar.
+	EditorViewHeaderGroup *display_group = memnew(EditorViewHeaderGroup);
+	display_group->set_name("DisplayGroup");
+	display_group->take({ overlays_menu });
+	EditorViewHeaderGroup *sidebar_group = memnew(EditorViewHeaderGroup);
+	sidebar_group->set_name("SidebarGroup");
+	sidebar_group->take({ sidebar_button });
+	header_end->add_theme_constant_override("separation", 6 * EDSCALE);
+	header_end->add_child(display_group);
+	header_end->add_child(sidebar_group);
+	toolbar_flow->add_theme_constant_override("h_separation", 6 * EDSCALE);
+
 	addon_mirror = memnew(EditorButtonMirror);
 	addon_mirror->set_before_press(callable_mp(this, &CanvasItemEditor::_activate_for_user));
 	addon_mirror->set_shortcut_context(this);
@@ -6396,7 +6401,7 @@ void CanvasItemEditor::_build_sidebar(Control *p_over) {
 }
 
 void CanvasItemEditor::_sidebar_button_toggled(bool p_pressed) {
-	if (sidebar && sidebar->is_visible() != p_pressed) {
+	if (sidebar && sidebar->is_open() != p_pressed) {
 		sidebar->toggle();
 	}
 }
@@ -6405,7 +6410,7 @@ void CanvasItemEditor::_sidebar_fitted() {
 	// Shown or hidden some other way - Configure Snap opens it: the button
 	// says so.
 	if (sidebar && sidebar_button) {
-		sidebar_button->set_pressed_no_signal(sidebar->is_visible());
+		sidebar_button->set_pressed_no_signal(sidebar->is_open());
 	}
 }
 
@@ -6489,8 +6494,8 @@ void CanvasItemEditor::_overlays_gizmo_pressed(int p_id) {
 void CanvasItemEditor::_chrome_tick() {
 	_update_hints();
 	_sync_addon_mirrors();
-	if (sidebar && sidebar_button && sidebar_button->is_pressed() != sidebar->is_visible()) {
-		sidebar_button->set_pressed_no_signal(sidebar->is_visible());
+	if (sidebar && sidebar_button && sidebar_button->is_pressed() != sidebar->is_open()) {
+		sidebar_button->set_pressed_no_signal(sidebar->is_open());
 	}
 	if (sidebar) {
 		// Below the ruler, while there is one.

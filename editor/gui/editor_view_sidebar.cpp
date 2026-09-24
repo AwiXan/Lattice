@@ -35,6 +35,7 @@
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/scroll_container.h"
+#include "scene/animation/tween.h"
 #include "scene/gui/tab_bar.h"
 #include "scene/resources/style_box.h"
 #include "scene/resources/style_box_flat.h"
@@ -81,21 +82,79 @@ void EditorViewSidebar::show_page(int p_index) {
 	if (tabs->get_current_tab() != p_index) {
 		tabs->set_current_tab(p_index);
 	}
-	show();
-	fit();
+	open();
 }
 
 void EditorViewSidebar::toggle_page(int p_index) {
-	if (is_visible() && get_current_page() == p_index) {
-		hide();
+	if (is_open() && get_current_page() == p_index) {
+		close();
 		return;
 	}
 	show_page(p_index);
 }
 
 void EditorViewSidebar::toggle() {
-	set_visible(!is_visible());
+	if (is_open()) {
+		close();
+	} else {
+		open();
+	}
+}
+
+void EditorViewSidebar::_set_slide(real_t p_slide) {
+	slide = p_slide;
+	set_modulate(Color(1, 1, 1, 0.25 + 0.75 * slide));
 	fit();
+}
+
+void EditorViewSidebar::_slide_to(real_t p_to, real_t p_seconds) {
+	if (slide_tween.is_valid()) {
+		slide_tween->kill();
+	}
+	slide_tween = create_tween();
+	slide_tween->set_ease(Tween::EASE_OUT);
+	slide_tween->set_trans(Tween::TRANS_CUBIC);
+	slide_tween->tween_method(callable_mp(this, &EditorViewSidebar::_set_slide), slide, p_to, p_seconds);
+	if (p_to <= 0.0) {
+		slide_tween->tween_callback(callable_mp(this, &EditorViewSidebar::_slid_out));
+	}
+}
+
+void EditorViewSidebar::open() {
+	closing = false;
+	if (!is_visible()) {
+		// In from the right edge of the view, as a drawer would.
+		slide = 0.0;
+		show();
+	}
+	_slide_to(1.0, 0.16);
+}
+
+void EditorViewSidebar::close() {
+	if (!is_visible()) {
+		return;
+	}
+	closing = true;
+	_slide_to(0.0, 0.12);
+}
+
+void EditorViewSidebar::_slid_out() {
+	closing = false;
+	hide();
+	slide = 1.0;
+	set_modulate(Color(1, 1, 1));
+}
+
+void EditorViewSidebar::finish_slide() {
+	if (slide_tween.is_valid()) {
+		slide_tween->kill();
+		slide_tween.unref();
+	}
+	if (closing) {
+		_slid_out();
+	} else {
+		_set_slide(1.0);
+	}
 }
 
 void EditorViewSidebar::_parent_resized() {
@@ -136,8 +195,10 @@ void EditorViewSidebar::fit() {
 	set_anchor(SIDE_TOP, ANCHOR_BEGIN);
 	set_anchor(SIDE_BOTTOM, ANCHOR_BEGIN);
 	set_h_grow_direction(GROW_DIRECTION_BEGIN);
-	set_offset(SIDE_RIGHT, -margin);
-	set_offset(SIDE_LEFT, -margin - width);
+	// Out to the right by as much as it has yet to slide in.
+	const real_t away = (1.0 - slide) * (width + margin);
+	set_offset(SIDE_RIGHT, -margin + away);
+	set_offset(SIDE_LEFT, -margin - width + away);
 	set_offset(SIDE_TOP, top_inset + margin);
 	set_offset(SIDE_BOTTOM, top_inset + margin + height);
 	fitting = false;

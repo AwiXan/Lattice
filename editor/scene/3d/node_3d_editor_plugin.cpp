@@ -89,6 +89,7 @@
 #include "editor/scene/3d/gizmos/voxel_gi_gizmo_plugin.h"
 #include "editor/gui/editor_button_mirror.h"
 #include "editor/gui/editor_pie_menu.h"
+#include "editor/gui/editor_view_header_group.h"
 #include "editor/gui/editor_view_hints.h"
 #include "editor/gui/editor_view_sidebar.h"
 #include "editor/scene/3d/node_3d_editor_chrome.h"
@@ -10461,7 +10462,10 @@ void Node3DEditor::_update_theme() {
 
 	context_toolbar_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("ContextualToolbar"), EditorStringName(EditorStyles)));
 	if (tool_column_panel) {
-		tool_column_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("ContextualToolbar"), EditorStringName(EditorStyles)));
+		EditorViewHeaderGroup::apply_style(tool_column_panel);
+	}
+	if (display_menu) {
+		display_menu->set_button_icon(get_theme_icon(SNAME("arrow"), SNAME("OptionButton")));
 	}
 	if (overlays_menu) {
 		overlays_menu->set_button_icon(get_editor_theme_icon(SNAME("GuiVisibilityVisible")));
@@ -12282,9 +12286,114 @@ void Node3DEditor::_arrange_chrome() {
 	header_end->move_child(overlays_menu, 0);
 
 	_build_sidebar(viewport_stack);
-	VSeparator *after_shading = memnew(VSeparator);
-	header_end->add_child(after_shading);
-	header_end->move_child(after_shading, 1);
+
+	display_menu = memnew(MenuButton);
+	display_menu->set_name("DisplayModes");
+	display_menu->set_flat(false);
+	display_menu->set_theme_type_variation("FlatMenuButton");
+	display_menu->set_tooltip_text(TTRC("All Display Modes"));
+	display_menu->set_accessibility_name(TTRC("All Display Modes"));
+	PopupMenu *display_popup = display_menu->get_popup();
+	display_popup->connect("about_to_popup", callable_mp(this, &Node3DEditor::_display_menu_about_to_popup));
+	display_popup->connect(SceneStringName(id_pressed), callable_mp(this, &Node3DEditor::set_display_everywhere));
+	display_advanced_menu = memnew(PopupMenu);
+	display_advanced_menu->connect(SceneStringName(id_pressed), callable_mp(this, &Node3DEditor::set_display_everywhere));
+	display_popup->add_child(display_advanced_menu);
+
+	_group_header();
+}
+
+void Node3DEditor::_group_header() {
+	// A group of the classic toolbar - an HBoxContainer ending in a separator
+	// - put in a frame instead, where it was.
+	auto frame = [](HBoxContainer *p_row) -> EditorViewHeaderGroup * {
+		EditorViewHeaderGroup *group = memnew(EditorViewHeaderGroup);
+		Vector<Control *> keep;
+		for (int i = 0; i < p_row->get_child_count(); i++) {
+			Control *child = Object::cast_to<Control>(p_row->get_child(i));
+			if (child && !Object::cast_to<VSeparator>(child)) {
+				keep.push_back(child);
+			}
+		}
+		group->take(keep);
+		Node *parent = p_row->get_parent();
+		const int at = p_row->get_index();
+		parent->remove_child(p_row);
+		memdelete(p_row);
+		parent->add_child(group);
+		parent->move_child(group, at);
+		return group;
+	};
+	frame(Object::cast_to<HBoxContainer>(transform_menu->get_parent()))->set_name("MenusGroup");
+	frame(Object::cast_to<HBoxContainer>(tool_option_button[TOOL_OPT_LOCAL_COORDS]->get_parent()))->set_name("OptionsGroup");
+
+	// The far end: how the view draws, its preview lighting, the sidebar.
+	HBoxContainer *shading_row = Object::cast_to<HBoxContainer>(shading_buttons[0]->get_parent());
+	EditorViewHeaderGroup *display_group = memnew(EditorViewHeaderGroup);
+	display_group->set_name("DisplayGroup");
+	display_group->take({ overlays_menu, shading_row, display_menu });
+	EditorViewHeaderGroup *lighting_group = memnew(EditorViewHeaderGroup);
+	lighting_group->set_name("LightingGroup");
+	lighting_group->take({ sun_button, environ_button });
+	// Their settings are the sidebar's Environment page now; one way to
+	// them is enough. Kept, hidden, for anything that looks for it.
+	sun_environ_settings->hide();
+	EditorViewHeaderGroup *sidebar_group = memnew(EditorViewHeaderGroup);
+	sidebar_group->set_name("SidebarGroup");
+	sidebar_group->take({ sidebar_button });
+	// What is left there are the separators the frames replace.
+	for (int i = header_end->get_child_count() - 1; i >= 0; i--) {
+		Node *left = header_end->get_child(i);
+		if (Object::cast_to<VSeparator>(left)) {
+			header_end->remove_child(left);
+			memdelete(left);
+		}
+	}
+	header_end->add_theme_constant_override("separation", 6 * EDSCALE);
+	header_end->add_child(display_group);
+	header_end->add_child(lighting_group);
+	header_end->add_child(sidebar_group);
+	header_end->move_child(sun_environ_settings, -1);
+	toolbar_flow->add_theme_constant_override("h_separation", 6 * EDSCALE);
+}
+
+void Node3DEditor::_display_menu_about_to_popup() {
+	PopupMenu *popup = display_menu->get_popup();
+	popup->clear(false);
+	const Node3DEditorViewport *viewport = viewports[CLAMP(last_used_viewport, 0, (int)VIEWPORTS_COUNT - 1)];
+	const PopupMenu *source = viewport->view_display_menu->get_popup();
+	const int ids[] = {
+		Node3DEditorViewport::VIEW_DISPLAY_NORMAL,
+		Node3DEditorViewport::VIEW_DISPLAY_WIREFRAME,
+		Node3DEditorViewport::VIEW_DISPLAY_OVERDRAW,
+		Node3DEditorViewport::VIEW_DISPLAY_LIGHTING,
+		Node3DEditorViewport::VIEW_DISPLAY_UNSHADED,
+	};
+	for (int id : ids) {
+		const int index = source->get_item_index(id);
+		if (index < 0) {
+			continue;
+		}
+		popup->add_radio_check_item(source->get_item_text(index), id);
+		popup->set_item_checked(popup->get_item_count() - 1, source->is_item_checked(index));
+	}
+	// The advanced ones, as the viewport has them: which the renderer in use
+	// can draw, and which is on.
+	display_advanced_menu->clear();
+	const PopupMenu *advanced = viewport->display_submenu;
+	for (int i = 0; i < advanced->get_item_count(); i++) {
+		if (advanced->is_item_separator(i)) {
+			display_advanced_menu->add_separator();
+			continue;
+		}
+		display_advanced_menu->add_radio_check_item(advanced->get_item_text(i), advanced->get_item_id(i));
+		const int index = display_advanced_menu->get_item_count() - 1;
+		display_advanced_menu->set_item_checked(index, advanced->is_item_checked(i));
+		display_advanced_menu->set_item_disabled(index, advanced->is_item_disabled(i));
+		display_advanced_menu->set_item_tooltip(index, advanced->get_item_tooltip(i));
+	}
+	popup->add_separator();
+	popup->add_submenu_node_item(TTR("Display Advanced..."), display_advanced_menu);
 }
 
 void Node3DEditor::_build_sidebar(Control *p_over) {
@@ -12499,7 +12608,7 @@ void Node3DEditor::_update_hints() {
 }
 
 void Node3DEditor::_sidebar_button_toggled(bool p_pressed) {
-	if (sidebar->is_visible() != p_pressed) {
+	if (sidebar->is_open() != p_pressed) {
 		sidebar->toggle();
 	}
 }
@@ -12508,7 +12617,7 @@ void Node3DEditor::_sidebar_fitted() {
 	if (!sidebar) {
 		return;
 	}
-	sidebar_button->set_pressed_no_signal(sidebar->is_visible());
+	sidebar_button->set_pressed_no_signal(sidebar->is_open());
 	// The navigation gizmo of a viewport the card covers the corner of moves
 	// out from under it.
 	const Rect2 card = sidebar->is_visible_in_tree() ? sidebar->get_global_rect() : Rect2();

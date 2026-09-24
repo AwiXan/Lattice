@@ -929,6 +929,14 @@ private:
 	// viewports at once. See Node3DEditorChrome::Shading.
 	Button *shading_buttons[4] = {};
 	void _shading_pressed(int p_shading);
+	// Every way a viewport can draw, beside the four buttons: the viewports'
+	// own Display items and their Display Advanced submenu, copied when it
+	// opens so that it is always what those say.
+	MenuButton *display_menu = nullptr;
+	PopupMenu *display_advanced_menu = nullptr;
+	void _display_menu_about_to_popup();
+	// The header's parts in frames of their own; see EditorViewHeaderGroup.
+	void _group_header();
 	// Everything drawn over the scene, in one place, for all of the view's
 	// viewports at once. Each item is an item some existing menu already has -
 	// the View menu, or each viewport's own - and reads its state from there.
