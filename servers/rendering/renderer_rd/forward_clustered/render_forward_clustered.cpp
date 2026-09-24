@@ -3816,7 +3816,7 @@ RID RenderForwardClustered::_setup_render_pass_uniform_set(RenderListType p_rend
 #ifdef MODULE_TEXTURE_STREAMING_ENABLED
 	{
 		RD::Uniform u;
-		u.binding = 37;
+		u.binding = 39;
 		u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
 		RID instance_buffer = TextureStreaming::get_singleton()->feedback_buffer_get_uniform_rid();
 		if (instance_buffer.is_null()) {
@@ -4033,7 +4033,7 @@ RID RenderForwardClustered::_setup_hddagi_render_pass_uniform_set(RID p_albedo_t
 	}
 	{
 		RD::Uniform u;
-		u.binding = 38;
+		u.binding = 39;
 		u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
 		RID instance_buffer = scene_shader.default_material_feedback_buffer;
 		u.append_id(instance_buffer);

@@ -511,7 +511,7 @@ vec3 get_energy_compensation(vec3 f0, float env) {
 
 #ifdef TEXTURE_STREAMING
 // Texture streaming material feedback buffer access
-layout(set = 1, binding = 37, std430) buffer restrict MaterialFeedbackBuffer {
+layout(set = 1, binding = 39, std430) buffer restrict MaterialFeedbackBuffer {
 	uint data[];
 }
 material_feedback;
