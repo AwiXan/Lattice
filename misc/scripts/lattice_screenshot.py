@@ -40,6 +40,43 @@ mesh = SubResource("box")
 mesh = SubResource("floor")
 """
 
+def write_checker_png(path, size=512, cells=8):
+    """A checker texture, for something textured to look at."""
+    import struct
+    import zlib
+
+    rows = []
+    for y in range(size):
+        row = bytearray([0])
+        for x in range(size):
+            light = ((x * cells // size) + (y * cells // size)) % 2 == 0
+            row += bytes((230, 180, 90) if light else (60, 90, 160))
+        rows.append(bytes(row))
+    raw = zlib.compress(b"".join(rows), 9)
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    with open(path, "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n")
+        f.write(chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)))
+        f.write(chunk(b"IDAT", raw))
+        f.write(chunk(b"IEND", b""))
+
+
+def textured(scene):
+    """The 3D scene with the crate and the floor wearing the checker texture."""
+    scene = scene.replace('[sub_resource type="BoxMesh" id="box"]', '[ext_resource type="Texture2D" path="res://checker.png" id="1"]\n\n'
+                          '[sub_resource type="StandardMaterial3D" id="checker"]\nalbedo_texture = ExtResource("1")\nuv1_scale = Vector3(2, 2, 2)\n\n'
+                          '[sub_resource type="BoxMesh" id="box"]')
+    for name in ("Crate", "Floor"):
+        at = scene.index('[node name="%s"' % name)
+        end = scene.index("mesh = ", at)
+        end = scene.index("\n", end) + 1
+        scene = scene[:end] + 'material_override = SubResource("checker")\n' + scene[end:]
+    return scene
+
+
 SCENE_2D = """[gd_scene format=3]
 
 [node name="Hud" type="Control"]
@@ -73,6 +110,8 @@ def main():
     parser.add_argument("--camera", action="store_true", help="give the 3D scene a camera looking at the crate")
     parser.add_argument("--select", help="the name of the node to select, instead of the first mesh")
     parser.add_argument("--streaming", action="store_true", help="turn texture streaming on in the project")
+    parser.add_argument("--textured", action="store_true", help="put a checker texture on the 3D scene's crate and floor")
+    parser.add_argument("--renderer", choices=["forward_plus", "mobile", "gl_compatibility"], help="the project's rendering method")
     parser.add_argument("--editor", help="editor binary to run (default: the newest one in bin/)")
     parser.add_argument("--timeout", type=int, default=60, help="seconds before calling it hung (it is left running)")
     parser.add_argument("--stress", type=int, default=0, help="seconds of opening and closing every dropdown first")
@@ -88,13 +127,19 @@ def main():
     project = tempfile.mkdtemp(prefix="lattice-shot-")
     with open(os.path.join(project, "project.godot"), "w", encoding="utf-8", newline="\n") as f:
         f.write('config_version=5\n\n[application]\n\nconfig/name="Lattice screenshot"\n')
+        if args.streaming or args.renderer:
+            f.write('\n[rendering]\n\n')
         if args.streaming:
-            f.write('\n[rendering]\n\ntextures/streaming/enabled=true\n')
+            f.write('textures/streaming/enabled=true\n')
+        if args.renderer:
+            f.write('renderer/rendering_method="%s"\n' % args.renderer)
+    if args.textured:
+        write_checker_png(os.path.join(project, "checker.png"))
     with open(os.path.join(project, "probe.gd"), "w", encoding="utf-8", newline="\n") as f:
         f.write("extends Node\n")
     scene = "scene_3d.tscn" if args.scene == "3d" else "scene_2d.tscn"
     with open(os.path.join(project, scene), "w", encoding="utf-8", newline="\n") as f:
-        f.write(SCENE_3D if args.scene == "3d" else SCENE_2D)
+        f.write((textured(SCENE_3D) if args.textured else SCENE_3D) if args.scene == "3d" else SCENE_2D)
         if args.lit and args.scene == "3d":
             # Its own sun and environment: the preview ones step aside and say so.
             f.write('\n[node name="Sun" type="DirectionalLight3D" parent="."]\n')
