@@ -88,6 +88,7 @@
 #include "editor/scene/3d/gizmos/visible_on_screen_notifier_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/voxel_gi_gizmo_plugin.h"
 #include "editor/gui/editor_button_mirror.h"
+#include "editor/gui/editor_pie_menu.h"
 #include "editor/gui/editor_view_hints.h"
 #include "editor/gui/editor_view_sidebar.h"
 #include "editor/scene/3d/node_3d_editor_chrome.h"
@@ -567,6 +568,140 @@ void Node3DEditorViewport::_view_settings_confirmed(real_t p_interp_delta) {
 	view_3d_controller->cursor.fov_scale = 1.0;
 
 	view_3d_controller->update_camera(p_interp_delta);
+}
+
+bool Node3DEditorViewport::_open_pie_for(const Ref<InputEvent> &p_event, Key p_key) {
+	if (ED_IS_SHORTCUT("spatial_editor/pie_shading", p_event)) {
+		open_pie("shading", p_key);
+		return true;
+	}
+	if (ED_IS_SHORTCUT("spatial_editor/pie_view", p_event)) {
+		open_pie("view", p_key);
+		return true;
+	}
+	return false;
+}
+
+void Node3DEditorViewport::open_pie(const StringName &p_name, Key p_key) {
+	if (!pie) {
+		pie = memnew(EditorPieMenu);
+		add_child(pie);
+		pie->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+		// Back to the view once it closes, so its keys work again.
+		pie->connect(SNAME("closed"), callable_mp(this, &Node3DEditorViewport::_pie_closed), CONNECT_DEFERRED);
+	}
+	pie->clear();
+	if (p_name == StringName("shading")) {
+		_fill_shading_pie();
+	} else if (p_name == StringName("view")) {
+		_fill_view_pie();
+	} else {
+		return;
+	}
+	pie->open(pie->get_local_mouse_position(), p_key);
+}
+
+void Node3DEditorViewport::_fill_shading_pie() {
+	pie->set_title(TTR("Shading"));
+	const Color ink = get_theme_color(SNAME("icon_normal_color"), SNAME("Button"));
+	const Color accent = get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
+	const int icon_size = get_editor_theme_icon(SNAME("ToolMove"))->get_width();
+	const Viewport::DebugDraw drawn = viewport->get_debug_draw();
+
+	struct Shading {
+		EditorPieMenu::Direction direction;
+		Node3DEditorChrome::Shading shading;
+		const char *name;
+		Viewport::DebugDraw draw;
+	};
+	const Shading shadings[] = {
+		{ EditorPieMenu::DIRECTION_LEFT, Node3DEditorChrome::SHADING_WIREFRAME, TTRC("Wireframe"), Viewport::DEBUG_DRAW_WIREFRAME },
+		{ EditorPieMenu::DIRECTION_BOTTOM, Node3DEditorChrome::SHADING_UNSHADED, TTRC("Unshaded"), Viewport::DEBUG_DRAW_UNSHADED },
+		{ EditorPieMenu::DIRECTION_TOP, Node3DEditorChrome::SHADING_LIGHTING, TTRC("Lighting"), Viewport::DEBUG_DRAW_LIGHTING },
+		{ EditorPieMenu::DIRECTION_RIGHT, Node3DEditorChrome::SHADING_NORMAL, TTRC("Normal"), Viewport::DEBUG_DRAW_DISABLED },
+	};
+	for (const Shading &shading : shadings) {
+		EditorPieMenu::Item item;
+		item.text = TTRGET(shading.name);
+		item.icon = Node3DEditorChrome::make_shading_icon(shading.shading, icon_size, ink, accent);
+		item.action = callable_mp(spatial_editor, &Node3DEditor::set_shading).bind((int)shading.shading);
+		item.current = drawn == shading.draw;
+		pie->set_item(shading.direction, item);
+	}
+
+	// And what else is drawn, one step away.
+	struct Toggle {
+		EditorPieMenu::Direction direction;
+		Node3DEditor::Overlay overlay;
+		const char *name;
+		const char *icon;
+	};
+	const Toggle toggles[] = {
+		{ EditorPieMenu::DIRECTION_TOP_LEFT, Node3DEditor::OVERLAY_GIZMOS, TTRC("Gizmos"), "Node3D" },
+		{ EditorPieMenu::DIRECTION_TOP_RIGHT, Node3DEditor::OVERLAY_ENVIRONMENT, TTRC("Environment"), "WorldEnvironment" },
+		{ EditorPieMenu::DIRECTION_BOTTOM_LEFT, Node3DEditor::OVERLAY_GRID, TTRC("Grid"), "Grid" },
+	};
+	for (const Toggle &toggle : toggles) {
+		EditorPieMenu::Item item;
+		item.text = TTRGET(toggle.name);
+		item.icon = get_editor_theme_icon(toggle.icon);
+		item.action = callable_mp(spatial_editor, &Node3DEditor::toggle_overlay).bind((int)toggle.overlay);
+		item.current = spatial_editor->is_overlay_shown_everywhere(toggle.overlay);
+		pie->set_item(toggle.direction, item);
+	}
+	EditorPieMenu::Item overdraw;
+	overdraw.text = TTR("Overdraw");
+	overdraw.action = callable_mp(spatial_editor, &Node3DEditor::set_display_everywhere).bind((int)VIEW_DISPLAY_OVERDRAW);
+	overdraw.current = drawn == Viewport::DEBUG_DRAW_OVERDRAW;
+	pie->set_item(EditorPieMenu::DIRECTION_BOTTOM_RIGHT, overdraw);
+}
+
+void Node3DEditorViewport::_fill_view_pie() {
+	pie->set_title(TTR("View"));
+	const View3DController::ViewType type = view_3d_controller->get_view_type();
+	struct View {
+		EditorPieMenu::Direction direction;
+		int option;
+		const char *name;
+		View3DController::ViewType type;
+	};
+	const View views[] = {
+		{ EditorPieMenu::DIRECTION_LEFT, VIEW_LEFT, TTRC("Left"), View3DController::VIEW_TYPE_LEFT },
+		{ EditorPieMenu::DIRECTION_RIGHT, VIEW_RIGHT, TTRC("Right"), View3DController::VIEW_TYPE_RIGHT },
+		{ EditorPieMenu::DIRECTION_BOTTOM, VIEW_BOTTOM, TTRC("Bottom"), View3DController::VIEW_TYPE_BOTTOM },
+		{ EditorPieMenu::DIRECTION_TOP, VIEW_TOP, TTRC("Top"), View3DController::VIEW_TYPE_TOP },
+		{ EditorPieMenu::DIRECTION_TOP_LEFT, VIEW_FRONT, TTRC("Front"), View3DController::VIEW_TYPE_FRONT },
+		{ EditorPieMenu::DIRECTION_TOP_RIGHT, VIEW_REAR, TTRC("Rear"), View3DController::VIEW_TYPE_REAR },
+	};
+	for (const View &view : views) {
+		EditorPieMenu::Item item;
+		item.text = TTRGET(view.name);
+		item.action = callable_mp(this, &Node3DEditorViewport::_menu_option).bind(view.option);
+		item.current = type == view.type;
+		pie->set_item(view.direction, item);
+	}
+	EditorPieMenu::Item projection;
+	projection.text = view_3d_controller->is_orthogonal() ? TTR("Perspective") : TTR("Orthogonal");
+	projection.icon = get_editor_theme_icon(SNAME("Camera3D"));
+	projection.action = callable_mp(this, &Node3DEditorViewport::_menu_option).bind((int)VIEW_SWITCH_PERSPECTIVE_ORTHOGONAL);
+	pie->set_item(EditorPieMenu::DIRECTION_BOTTOM_LEFT, projection);
+	EditorPieMenu::Item focus;
+	focus.text = TTR("Focus Selection");
+	focus.icon = get_editor_theme_icon(SNAME("CenterView"));
+	focus.action = callable_mp(this, &Node3DEditorViewport::_menu_option).bind((int)VIEW_CENTER_TO_SELECTION);
+	pie->set_item(EditorPieMenu::DIRECTION_BOTTOM_RIGHT, focus);
+}
+
+void Node3DEditorViewport::_pie_closed() {
+	// Unless it closed because the view went away - the editor quitting, the
+	// pane closing - or because the focus went somewhere else on purpose.
+	if (surface->is_visible_in_tree() && get_viewport() && !get_viewport()->gui_get_focus_owner()) {
+		surface->grab_focus();
+	}
+}
+
+bool Node3DEditorViewport::is_view_type_top() const {
+	return view_3d_controller.is_valid() && view_3d_controller->get_view_type() == View3DController::VIEW_TYPE_TOP;
 }
 
 void Node3DEditorViewport::set_top_right_clearance(real_t p_width) {
@@ -2886,6 +3021,10 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 				accept_event();
 				return;
 			}
+		}
+		if (_edit.mode == TRANSFORM_NONE && k->is_pressed() && !k->is_echo() && _open_pie_for(event_mod, k->get_keycode())) {
+			accept_event();
+			return;
 		}
 		if (ED_IS_SHORTCUT("spatial_editor/bottom_view", event_mod)) {
 			_menu_option(VIEW_BOTTOM);
@@ -7021,6 +7160,10 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	_load_viewport_inputs();
 	InputMap::get_singleton()->connect("project_settings_loaded", callable_mp(this, &Node3DEditorViewport::_load_viewport_inputs));
 
+	// Z and ` only mean something here while nothing is being transformed; Z
+	// then locks to the Z axis, which is checked first.
+	ED_SHORTCUT("spatial_editor/pie_shading", TTRC("Shading Pie Menu"), Key::Z);
+	ED_SHORTCUT("spatial_editor/pie_view", TTRC("View Pie Menu"), Key::QUOTELEFT);
 	ED_SHORTCUT("spatial_editor/lock_transform_x", TTRC("Lock Transformation to X axis"), Key::X);
 	ED_SHORTCUT("spatial_editor/lock_transform_y", TTRC("Lock Transformation to Y axis"), Key::Y);
 	ED_SHORTCUT("spatial_editor/lock_transform_z", TTRC("Lock Transformation to Z axis"), Key::Z);
@@ -12387,6 +12530,20 @@ void Node3DEditor::_view_settings_changed() {
 	}
 }
 
+void Node3DEditor::set_shading(int p_shading) {
+	_shading_pressed(p_shading);
+}
+
+void Node3DEditor::set_display_everywhere(int p_display_option) {
+	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+		viewports[i]->_menu_option(p_display_option);
+	}
+}
+
+void Node3DEditor::toggle_overlay(int p_overlay) {
+	_overlays_id_pressed(p_overlay);
+}
+
 void Node3DEditor::_shading_pressed(int p_shading) {
 	ERR_FAIL_INDEX(p_shading, Node3DEditorChrome::SHADING_MAX);
 	static const int shading_display_options[Node3DEditorChrome::SHADING_MAX] = {
@@ -12484,10 +12641,12 @@ void Node3DEditor::_overlays_id_pressed(int p_overlay) {
 			}
 		}
 	}
-	PopupMenu *popup = overlays_menu->get_popup();
-	const int index = popup->get_item_index(p_overlay);
-	if (index >= 0) {
-		popup->set_item_checked(index, _overlay_shown_in(p_overlay, viewport));
+	if (overlays_menu) {
+		PopupMenu *popup = overlays_menu->get_popup();
+		const int index = popup->get_item_index(p_overlay);
+		if (index >= 0) {
+			popup->set_item_checked(index, _overlay_shown_in(p_overlay, viewport));
+		}
 	}
 }
 

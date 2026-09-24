@@ -51,6 +51,7 @@
 #include "editor/gui/editor_pane.h"
 #include "editor/gui/editor_pane_tree.h"
 #include "editor/gui/editor_spin_slider.h"
+#include "editor/gui/editor_pie_menu.h"
 #include "editor/gui/editor_view_hints.h"
 #include "editor/gui/editor_view_sidebar.h"
 #include "editor/scene/3d/node_3d_editor_chrome.h"
@@ -123,6 +124,16 @@ void EditorScreenshot::_notification(int p_what) {
 						view_2d->get_sidebar_button()->set_pressed(true);
 					} else if (action.begins_with("sidebar_page_") && view && view->get_sidebar()) {
 						view->get_sidebar()->show_page(action.trim_prefix("sidebar_page_").to_int());
+					} else if (action.begins_with("pie_") && view) {
+						// In the middle of the view, pointing left, wherever the
+						// mouse happens to be.
+						Node3DEditorViewport *viewport = view->get_editor_viewport(0);
+						viewport->open_pie(action.trim_prefix("pie_"));
+						EditorPieMenu *pie = viewport->get_pie();
+						if (pie) {
+							pie->open(pie->get_size() * 0.5, Key::NONE);
+							pie->hover_towards(pie->get_center() + Vector2(-120, 0) * EDSCALE);
+						}
 					}
 				}
 			}
@@ -792,6 +803,74 @@ void EditorSelfTest::_view_2d_check() {
 	memdelete(plugin);
 	_check(placed, "an addon's controls go into the 2D view's containers and come back out, as before");
 	_tree()->get_first_pane()->show_panel_of_type("view_3d");
+}
+
+void EditorSelfTest::_press_key(Control *p_focus, Key p_key, bool p_pressed) {
+	// Through the window, to whatever has the focus, as a key on the keyboard.
+	Ref<InputEventKey> key;
+	key.instantiate();
+	key->set_keycode(p_key);
+	key->set_physical_keycode(p_key);
+	key->set_pressed(p_pressed);
+	p_focus->get_viewport()->push_input(key);
+}
+
+static bool _all_viewports_draw(Node3DEditor *p_view, Viewport::DebugDraw p_draw) {
+	for (uint32_t i = 0; i < Node3DEditor::VIEWPORTS_COUNT; i++) {
+		if (p_view->get_editor_viewport(i)->get_viewport_node()->get_debug_draw() != p_draw) {
+			return false;
+		}
+	}
+	return true;
+}
+
+void EditorSelfTest::_pie_shading() {
+	Node3DEditor *view = ObjectDB::get_instance<Node3DEditor>(sidebar_view);
+	if (!view) {
+		_check(false, "a 3D view to open a pie menu in");
+		return;
+	}
+	Node3DEditorViewport *viewport = view->get_editor_viewport(0);
+	viewport->get_surface()->grab_focus();
+	_press_key(viewport->get_surface(), Key::Z, true);
+	EditorPieMenu *pie = viewport->get_pie();
+	_check(pie && pie->is_open(), "Z opens the shading pie over the 3D view");
+	if (!pie) {
+		return;
+	}
+	// Held, moved towards Wireframe on the left, let go.
+	pie->hover_towards(pie->get_center() + Vector2(-120, 0) * EDSCALE);
+	_press_key(pie, Key::Z, false);
+	_check(!pie->is_open() && _all_viewports_draw(view, Viewport::DEBUG_DRAW_WIREFRAME), "holding Z, moving left and letting go draws the view in wireframe");
+}
+
+void EditorSelfTest::_pie_tap() {
+	Node3DEditor *view = ObjectDB::get_instance<Node3DEditor>(sidebar_view);
+	Node3DEditorViewport *viewport = view ? view->get_editor_viewport(0) : nullptr;
+	if (!viewport) {
+		return;
+	}
+	// Tapped: it stays open, and the digit pointing right chooses Normal.
+	viewport->get_surface()->grab_focus();
+	_press_key(viewport->get_surface(), Key::Z, true);
+	EditorPieMenu *pie = viewport->get_pie();
+	_press_key(pie, Key::Z, false);
+	const bool stayed = pie->is_open();
+	_press_key(pie, Key::KEY_6, true);
+	_check(stayed && !pie->is_open() && _all_viewports_draw(view, Viewport::DEBUG_DRAW_DISABLED), "a tap of Z leaves the pie open, and 6 chooses what is on the right");
+}
+
+void EditorSelfTest::_pie_view() {
+	Node3DEditor *view = ObjectDB::get_instance<Node3DEditor>(sidebar_view);
+	Node3DEditorViewport *viewport = view ? view->get_editor_viewport(0) : nullptr;
+	if (!viewport) {
+		return;
+	}
+	viewport->open_pie("view");
+	EditorPieMenu *pie = viewport->get_pie();
+	pie->hover_towards(pie->get_center() + Vector2(0, -120) * EDSCALE);
+	pie->choose_hovered();
+	_check(!pie->is_open() && viewport->is_view_type_top(), "the view pie turns the view to look from the top");
 }
 
 EditorPane *EditorSelfTest::_pane_with_script(const String &p_path, int *r_index) const {
@@ -1546,6 +1625,9 @@ EditorSelfTest::EditorSelfTest() {
 	_add("view sidebar open", callable_mp(this, &EditorSelfTest::_view_sidebar_open));
 	_add("view sidebar check", callable_mp(this, &EditorSelfTest::_view_sidebar_check));
 	_add("view hints", callable_mp(this, &EditorSelfTest::_view_hints));
+	_add("pie shading", callable_mp(this, &EditorSelfTest::_pie_shading));
+	_add("pie tap", callable_mp(this, &EditorSelfTest::_pie_tap));
+	_add("pie view", callable_mp(this, &EditorSelfTest::_pie_view));
 	_add("addon mirror prepare", callable_mp(this, &EditorSelfTest::_addon_mirror_prepare));
 	_add("addon mirror check", callable_mp(this, &EditorSelfTest::_addon_mirror_check));
 	_add("view 2d open", callable_mp(this, &EditorSelfTest::_view_2d_open));

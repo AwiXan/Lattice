@@ -35,6 +35,7 @@
 #include "core/templates/safe_refcount.h"
 #include "scene/main/node.h"
 
+class Control;
 class EditorPane;
 class EditorPaneTree;
 
@@ -133,6 +134,10 @@ class EditorSelfTest : public Node {
 	void _view_sidebar_open();
 	void _view_sidebar_check();
 	void _view_hints();
+	void _pie_shading();
+	void _pie_tap();
+	void _pie_view();
+	static void _press_key(Control *p_focus, Key p_key, bool p_pressed);
 	void _addon_mirror_prepare();
 	void _addon_mirror_check();
 	void _view_2d_open();

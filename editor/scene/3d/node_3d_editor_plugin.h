@@ -52,6 +52,7 @@ class EditorData;
 class EditorSelection;
 class EditorSpinSlider;
 class EditorButtonMirror;
+class EditorPieMenu;
 class EditorViewHints;
 class EditorViewSidebar;
 class HFlowContainer;
@@ -265,6 +266,13 @@ private:
 
 	MenuButton *view_display_menu = nullptr;
 	real_t top_right_clearance = 0.0;
+
+	// The pie menus: how the view draws (Z), and where it looks from (`).
+	EditorPieMenu *pie = nullptr;
+	bool _open_pie_for(const Ref<InputEvent> &p_event, Key p_key);
+	void _fill_shading_pie();
+	void _fill_view_pie();
+	void _pie_closed();
 	PopupMenu *display_submenu = nullptr;
 
 	Control *surface = nullptr;
@@ -578,6 +586,12 @@ public:
 	// covering: the navigation gizmo moves left of it.
 	void set_top_right_clearance(real_t p_width);
 	real_t get_top_right_clearance() const { return top_right_clearance; }
+	// Opens a pie menu - "shading" or "view" - around the mouse, as its key
+	// does; p_key is the key held, if any.
+	void open_pie(const StringName &p_name, Key p_key = Key::NONE);
+	EditorPieMenu *get_pie() const { return pie; }
+	Control *get_surface() const { return surface; }
+	bool is_view_type_top() const;
 	static int get_display_normal_id() { return VIEW_DISPLAY_NORMAL; }
 	Camera3D *get_camera_3d() { return camera; } // return the default camera object.
 	Control *get_surface() { return surface; }
@@ -1244,6 +1258,11 @@ public:
 	// The header's shading buttons say what the viewport last worked in
 	// shows; a viewport calls this whenever it changes how it draws.
 	void update_shading_buttons();
+	// For all of the view's viewports: a shading (Node3DEditorChrome::Shading),
+	// any of a viewport's display options, an overlay switched on or off.
+	void set_shading(int p_shading);
+	void set_display_everywhere(int p_display_option);
+	void toggle_overlay(int p_overlay);
 	Button *get_shading_button(int p_shading) const { return (p_shading >= 0 && p_shading < 4) ? shading_buttons[p_shading] : nullptr; }
 	enum Overlay {
 		OVERLAY_GRID,
