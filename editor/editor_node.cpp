@@ -91,6 +91,9 @@
 #include "editor/gui/editor_quick_open_dialog.h"
 #include "editor/gui/editor_title_bar.h"
 #include "editor/gui/editor_toaster.h"
+#include "editor/gui/editor_history_timeline.h"
+#include "editor/gui/editor_pane.h"
+#include "editor/gui/editor_pane_tree.h"
 #include "editor/gui/editor_workspace_tabs.h"
 #include "editor/gui/progress_dialog.h"
 #include "editor/gui/window_wrapper.h"
@@ -784,6 +787,9 @@ void EditorNode::_update_theme(bool p_skip_creation) {
 		editor_main_screen->add_theme_style_override(SceneStringName(panel), theme->get_stylebox(SNAME("Content"), EditorStringName(EditorStyles)));
 		bottom_panel->_theme_changed();
 		distraction_free->set_button_icon(theme->get_icon(SNAME("DistractionFree"), EditorStringName(EditorIcons)));
+		if (timeline_button) {
+			timeline_button->set_button_icon(theme->get_icon(SNAME("History"), EditorStringName(EditorIcons)));
+		}
 		// Panels2 is two panels one above the other, Panels2Alt two side by side.
 		split_right->set_button_icon(theme->get_icon(SNAME("Panels2Alt"), EditorStringName(EditorIcons)));
 		split_down->set_button_icon(theme->get_icon(SNAME("Panels2"), EditorStringName(EditorIcons)));
@@ -6803,6 +6809,24 @@ void EditorNode::delete_workspace(const String &p_name) {
 	_update_layouts_menu();
 }
 
+void EditorNode::open_history_timeline() {
+	EditorPane *pane = editor_main_screen->open_panel("history_timeline", Variant());
+	if (pane) {
+		// Once it is laid out.
+		callable_mp(this, &EditorNode::_fit_timeline_pane).call_deferred(pane->get_instance_id());
+	}
+}
+
+void EditorNode::_fit_timeline_pane(ObjectID p_pane) {
+	// A row of cards needs no more than their height: below another pane, the
+	// timeline's gets that and the other the rest.
+	EditorPane *pane = ObjectDB::get_instance<EditorPane>(p_pane);
+	EditorPaneTree *tree = pane ? Object::cast_to<EditorPaneTree>(pane->get_parent()) : nullptr;
+	if (tree) {
+		tree->fit_pane(pane);
+	}
+}
+
 void EditorNode::_workspace_save_new() {
 	// The dialog the Editor Layout menu uses.
 	_layout_menu_option(LAYOUT_SAVE);
@@ -9125,6 +9149,20 @@ EditorNode::EditorNode() {
 		EditorPanelRegistry::register_type(type);
 	}
 
+	{
+		// The scene's history as a strip of pictures, which goes below the
+		// pane being worked in; and what takes the pictures.
+		add_child(memnew(EditorHistoryThumbnails));
+		EditorPanelRegistry::PanelType type;
+		type.id = "history_timeline";
+		type.title = TTRC("Timeline");
+		type.icon = "History";
+		type.binding = EditorPanelRegistry::BINDING_CONTEXT;
+		type.side = EditorPanelRegistry::SIDE_BOTTOM;
+		type.create = callable_mp_static(&EditorHistoryTimeline::create_panel);
+		EditorPanelRegistry::register_type(type);
+	}
+
 	editor_data.set_scene_root_host(this);
 	editor_data.add_edited_scene(-1);
 	editor_data.set_edited_scene(0);
@@ -9369,6 +9407,15 @@ EditorNode::EditorNode() {
 	right_menu_hb->add_child(workspace_button);
 	// The tabs after the menus do what it did.
 	workspace_button->hide();
+
+	timeline_button = memnew(Button);
+	timeline_button->set_flat(true);
+	timeline_button->set_theme_type_variation("TopBarOptionButton");
+	timeline_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
+	timeline_button->set_tooltip_text(TTRC("Timeline: every step done in this scene, with a picture of how it looked. Hover one to see it; click one to go back to it."));
+	timeline_button->set_accessibility_name(TTRC("Timeline"));
+	timeline_button->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::open_history_timeline));
+	right_menu_hb->add_child(timeline_button);
 
 	renderer = memnew(OptionButton);
 	renderer->set_flat(true);

@@ -302,6 +302,9 @@ private:
 	// The same, as tabs after the menus; the button above stays, out of sight.
 	class EditorWorkspaceTabs *workspace_tabs = nullptr;
 	void _workspace_save_new();
+	// Opens the history timeline (EditorHistoryTimeline), from the title bar.
+	Button *timeline_button = nullptr;
+	void _fit_timeline_pane(ObjectID p_pane);
 
 #ifdef ANDROID_ENABLED
 	VBoxContainer *base_vbox = nullptr; // It only contains the title_bar and main_hbox.
@@ -692,6 +695,9 @@ public:
 	void delete_workspace(const String &p_name);
 	String get_current_workspace() const { return current_workspace; }
 	class EditorWorkspaceTabs *get_workspace_tabs() const { return workspace_tabs; }
+	// Opens the history timeline below the pane being worked in, only as tall
+	// as its cards, as the title bar's button does.
+	void open_history_timeline();
 	Vector<String> get_workspace_names() const;
 
 private:

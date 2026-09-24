@@ -187,6 +187,9 @@ public:
 	// pane it was split from, so splitting is a way to compare rather than a way
 	// to lose your place; empty, it is about to be given something.
 	EditorPane *split_pane(EditorPane *p_pane, bool p_vertical, bool p_before = false, bool p_fill = true);
+	// Gives p_pane only as much of the split it is in as it needs, and the
+	// rest to the other side: for a strip, such as the history timeline.
+	void fit_pane(EditorPane *p_pane);
 
 	// Splits p_target and moves a panel of p_source into the pane that appears.
 	// This is what dropping a tab on the edge of a pane does.

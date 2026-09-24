@@ -63,6 +63,10 @@ class EditorScreenshot : public Node {
 	int watch_frames = 0;
 	bool watch_real = false;
 	Vector<String> shot_workspaces;
+	// later:timeline - things done a few frames apart, then the timeline.
+	int timeline_demo = 0;
+	uint64_t timeline_demo_frame = 0;
+	void _timeline_demo_step();
 	uint64_t stress_until = 0;
 	int stress_step = 0;
 	Vector<ObjectID> stress_targets;
@@ -157,6 +161,10 @@ class EditorSelfTest : public Node {
 	void _view_bar();
 	void _view_isolate();
 	void _view_camera_preview();
+	void _timeline_open();
+	void _timeline_check();
+	ObjectID timeline_panel;
+	String timeline_description;
 	int addon_view_item_pressed = -1;
 	void _addon_view_item_pressed(int p_id);
 	void _view_sidebar_open();

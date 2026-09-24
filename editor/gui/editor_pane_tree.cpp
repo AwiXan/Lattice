@@ -365,6 +365,22 @@ void EditorPaneTree::_pane_return_requested(int p_panel, EditorPane *p_pane) {
 	emit_signal(SNAME("panel_return_requested"), p_pane, p_panel);
 }
 
+void EditorPaneTree::fit_pane(EditorPane *p_pane) {
+	Slot *leaf = _leaf_for(p_pane);
+	if (!leaf || !leaf->parent) {
+		return;
+	}
+	Slot *branch = leaf->parent;
+	const real_t total = branch->vertical ? branch->rect.size.y : branch->rect.size.x;
+	if (total <= 0) {
+		return;
+	}
+	const Size2 needed = p_pane->get_combined_minimum_size();
+	const real_t share = CLAMP(((branch->vertical ? needed.y : needed.x) + 6 * EDSCALE) / total, (real_t)0.05, (real_t)0.95);
+	branch->ratio = branch->first == leaf ? share : 1.0 - share;
+	queue_sort();
+}
+
 EditorPane *EditorPaneTree::split_pane(EditorPane *p_pane, bool p_vertical, bool p_before, bool p_fill) {
 	ERR_FAIL_NULL_V(p_pane, nullptr);
 	Slot *leaf = _leaf_for(p_pane);

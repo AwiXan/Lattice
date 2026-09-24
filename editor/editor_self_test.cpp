@@ -63,6 +63,7 @@
 #include "editor/gui/editor_view_hints.h"
 #include "editor/gui/editor_view_pill.h"
 #include "editor/gui/editor_workspace_tabs.h"
+#include "editor/gui/editor_history_timeline.h"
 #include "editor/gui/progress_dialog.h"
 #include "scene/resources/3d/primitive_meshes.h"
 #include "scene/3d/camera_3d.h"
@@ -161,6 +162,36 @@ void EditorScreenshot::_stress_popups() {
 	if (popup) {
 		stress_open = popup->get_instance_id();
 	}
+}
+
+void EditorScreenshot::_timeline_demo_step() {
+	Node *root = EditorNode::get_singleton()->get_edited_scene();
+	Node3D *crate = root ? Object::cast_to<Node3D>(root->find_child("Crate", true, false)) : nullptr;
+	if (!crate) {
+		timeline_demo = 0;
+		return;
+	}
+	if (timeline_demo <= 4) {
+		// Moved, a step at a time: each its own picture.
+		EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+		undo_redo->create_action(vformat("Move Crate %d", timeline_demo), UndoRedo::MERGE_DISABLE, crate);
+		undo_redo->add_do_property(crate, "position", crate->get_position() + Vector3(0.7, 0, (timeline_demo % 2) ? 0.5 : -0.5));
+		undo_redo->add_undo_property(crate, "position", crate->get_position());
+		undo_redo->commit_action();
+	} else if (timeline_demo == 5) {
+		EditorNode::get_singleton()->open_history_timeline();
+	} else if (timeline_demo == 6) {
+		TypedArray<Node> timelines = EditorNode::get_singleton()->get_gui_base()->find_children("*", "EditorHistoryTimeline", true, false);
+		EditorHistoryTimeline *timeline = timelines.is_empty() ? nullptr : Object::cast_to<EditorHistoryTimeline>(timelines[0]);
+		if (timeline) {
+			timeline->preview_step(2);
+			print_line(vformat("SHOT: timeline with %d steps, %d pictures", timeline->get_step_count(), EditorHistoryThumbnails::get_singleton()->get_count()));
+		}
+	} else {
+		timeline_demo = 0;
+		return;
+	}
+	timeline_demo++;
 }
 
 void EditorScreenshot::_notification(int p_what) {
@@ -295,6 +326,9 @@ void EditorScreenshot::_notification(int p_what) {
 							shot_workspaces.push_back(name);
 						}
 						EditorNode::get_singleton()->switch_workspace("Shot Level");
+					} else if (action == "later:timeline") {
+						timeline_demo = 1;
+						timeline_demo_frame = Engine::get_singleton()->get_process_frames();
 					} else if (action == "later:isolate" && later_view) {
 						later_view->toggle_isolation();
 						print_line(vformat("SHOT: isolated %s", later_view->is_isolating()));
@@ -382,6 +416,10 @@ void EditorScreenshot::_notification(int p_what) {
 					}
 				}
 			}
+			if (timeline_demo > 0 && Engine::get_singleton()->get_process_frames() - timeline_demo_frame >= 12) {
+				timeline_demo_frame = Engine::get_singleton()->get_process_frames();
+				_timeline_demo_step();
+			}
 			if (watch_frames > 0) {
 				watch_frames--;
 				MenuButton *menu = ObjectDB::get_instance<MenuButton>(watched_menu);
@@ -426,7 +464,7 @@ void EditorScreenshot::_notification(int p_what) {
 					break;
 				}
 			}
-			if (!taken && elapsed > 4500) {
+			if (!taken && elapsed > 4500 && timeline_demo == 0) {
 				taken = true;
 				Ref<Image> image = get_tree()->get_root()->get_texture()->get_image();
 				// A dialog is a window of its own, which the editor's picture
@@ -1000,6 +1038,48 @@ void EditorSelfTest::_view_camera_preview() {
 	_check(shown && gone, "a selected camera's view shows in the viewport's corner, and goes with the selection (" + state + ")");
 	scene->remove_child(camera);
 	memdelete(camera);
+}
+
+void EditorSelfTest::_timeline_open() {
+	EditorPane *pane = EditorNode::get_singleton()->get_editor_main_screen()->open_panel("history_timeline", Variant());
+	EditorHistoryTimeline *timeline = nullptr;
+	for (int i = 0; pane && i < pane->get_panel_count() && !timeline; i++) {
+		timeline = Object::cast_to<EditorHistoryTimeline>(pane->get_panel_at(i));
+	}
+	_check(timeline != nullptr, "the history timeline opens as a panel");
+	if (!timeline) {
+		return;
+	}
+	timeline_panel = timeline->get_instance_id();
+	// Something done in the scene, to be in it.
+	Node *scene = EditorNode::get_singleton()->get_edited_scene();
+	if (scene) {
+		timeline_description = scene->get_editor_description();
+		EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+		undo_redo->create_action("Lattice Timeline Test", UndoRedo::MERGE_DISABLE, scene);
+		undo_redo->add_do_method(scene, "set_editor_description", "timeline test");
+		undo_redo->add_undo_method(scene, "set_editor_description", timeline_description);
+		undo_redo->commit_action();
+	}
+}
+
+void EditorSelfTest::_timeline_check() {
+	EditorHistoryTimeline *timeline = ObjectDB::get_instance<EditorHistoryTimeline>(timeline_panel);
+	Node *scene = EditorNode::get_singleton()->get_edited_scene();
+	if (!timeline || !scene) {
+		return;
+	}
+	const int last = timeline->get_step_count() - 1;
+	const bool listed = last >= 1 && timeline->get_step_name(last) == "Lattice Timeline Test" && timeline->get_current_step() == last;
+	// A click on the step before goes back to it; on the last, forward again.
+	timeline->seek(last - 1);
+	const bool back = scene->get_editor_description() == timeline_description;
+	timeline->seek(last);
+	const bool forward = scene->get_editor_description() == "timeline test";
+	_check(listed && back && forward, vformat("what was done is on the timeline, and its cards go back and forward to it (%d steps, at %d)", timeline->get_step_count(), timeline->get_current_step()));
+	// Undone for good, and the panel closed.
+	timeline->seek(last - 1);
+	EditorNode::get_singleton()->get_editor_main_screen()->remove_panel(timeline);
 }
 
 void EditorSelfTest::_addon_view_item_pressed(int p_id) {
@@ -2411,6 +2491,8 @@ EditorSelfTest::EditorSelfTest() {
 	_add("view bar", callable_mp(this, &EditorSelfTest::_view_bar));
 	_add("view isolate", callable_mp(this, &EditorSelfTest::_view_isolate));
 	_add("view camera preview", callable_mp(this, &EditorSelfTest::_view_camera_preview));
+	_add("timeline open", callable_mp(this, &EditorSelfTest::_timeline_open));
+	_add("timeline check", callable_mp(this, &EditorSelfTest::_timeline_check));
 	_add("view sidebar open", callable_mp(this, &EditorSelfTest::_view_sidebar_open));
 	_add("view sidebar check", callable_mp(this, &EditorSelfTest::_view_sidebar_check));
 	_add("sidebar slide open", callable_mp(this, &EditorSelfTest::_sidebar_slide_open));
