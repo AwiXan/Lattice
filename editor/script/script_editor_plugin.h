@@ -394,12 +394,36 @@ class ScriptEditor : public PanelContainer {
 
 	static ScriptEditor *script_editor;
 
+	// What is done to a tab goes through this to reach the editor itself,
+	// wherever a panel is showing it: see ScriptEditorStandIn.
+	Node *_resolve_tab(Node *p_tab) const;
+	int _tab_index_of_editor(const Control *p_editor) const;
+	void _close_lent(ObjectID p_editor);
+
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();
 
 public:
 	static ScriptEditor *get_singleton() { return script_editor; }
+
+	// Whether opening a script gives it a panel of its own
+	// (text_editor/behavior/files/open_scripts_in_own_panels) rather than a tab
+	// here.
+	static bool opens_scripts_in_panels();
+	// Lends the editor of this script to a panel, opening it here first if it
+	// is not open; it stays one of the scripts open, with a stand-in in its tab.
+	// Null if another panel has it already, or it is not a script's.
+	Control *lend_editor(const Ref<Resource> &p_resource, Control *p_panel);
+	// Takes it back where its stand-in is. With p_close the script is closed
+	// as well - asking first, if it has changes not saved.
+	void take_back_editor(Control *p_editor, bool p_close);
+	// Makes a lent editor's script the one the rest of this acts on.
+	void activate_lent_editor(Control *p_editor);
+	bool is_editor_lent(const Control *p_editor) const;
+	// Shows the script being edited: in its own panel, or - a help page, a
+	// script never saved - here.
+	void show_current_in_panel();
 
 	bool toggle_files_panel();
 	bool is_files_panel_toggled();

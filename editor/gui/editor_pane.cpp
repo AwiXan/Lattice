@@ -336,8 +336,18 @@ void EditorPane::_palette_pressed(const StringName &p_type) {
 }
 
 String EditorPane::_title_of(const PanelEntry &p_entry) const {
-	const EditorPanelRegistry::PanelType *type = EditorPanelRegistry::get_type(p_entry.type);
-	return type && !type->title.is_empty() ? type->title : String(p_entry.type);
+	return EditorPanelRegistry::get_panel_title(p_entry.type, p_entry.control);
+}
+
+void EditorPane::refresh_titles() {
+	// Only the words: a script says it has changes on the way to having them,
+	// and rebuilding the whole header each time would be for nothing.
+	for (int i = 0; i < panels.size() && i < tab_bar->get_tab_count(); i++) {
+		const String title = _title_of(panels[i]);
+		if (tab_bar->get_tab_title(i) != title) {
+			tab_bar->set_tab_title(i, title);
+		}
+	}
 }
 
 void EditorPane::_update_tabs() {
@@ -468,6 +478,13 @@ void EditorPane::_note_closing(int p_index) {
 	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
 	if (main_screen) {
 		main_screen->note_panel_closing(this, p_index);
+	}
+}
+
+void EditorPane::_note_touched(int p_index) {
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	if (main_screen) {
+		main_screen->note_panel_touched(this, p_index);
 	}
 }
 
@@ -631,6 +648,7 @@ void EditorPane::set_current_panel(int p_index) {
 	current = p_index;
 	_show_only_current();
 	_update_tabs();
+	_note_touched(p_index);
 }
 
 bool EditorPane::show_panel(Control *p_panel) {
@@ -1065,17 +1083,21 @@ bool EditorPane::open_resource(const String &p_path) {
 		return false;
 	}
 
-	const int at = show_panel_of_type(type);
-	if (at < 0) {
-		return false;
+	for (int i = 0; i < panels.size(); i++) {
+		if (panels[i].type == type && panels[i].subject == Variant(p_path)) {
+			set_current_panel(i);
+			return true;
+		}
 	}
-	// A type that keeps its own tabs opens the file in them; anything else is
-	// simply pointed at it.
-	if (!EditorPanelRegistry::open_resource(type, get_panel_at(at), p_path)) {
-		set_current_panel(at);
-		set_panel_subject(p_path);
+	const EditorPanelRegistry::PanelType *panel_type = EditorPanelRegistry::get_type(type);
+	if (panel_type && panel_type->open.is_valid()) {
+		// A type that keeps its own tabs opens the file in them.
+		const int at = show_panel_of_type(type);
+		return at >= 0 && EditorPanelRegistry::open_resource(type, get_panel_at(at), p_path);
 	}
-	return true;
+	// Anything else gets a panel of its own for it, beside the ones already
+	// here rather than instead of them.
+	return add_panel(type, p_path) >= 0;
 }
 
 String EditorPane::first_openable_file(const Variant &p_data) {
@@ -1218,6 +1240,8 @@ bool EditorPane::transfer_panel_to(EditorPane *p_target, int p_index, int p_targ
 	p_target->current = at;
 	p_target->_show_only_current();
 	p_target->_update_tabs();
+	// Put there by hand, so that is where the next of its kind goes.
+	p_target->_note_touched(at);
 
 	emit_signal(SNAME("panels_changed"));
 	if (p_target != this) {

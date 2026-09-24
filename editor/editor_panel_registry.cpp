@@ -250,6 +250,27 @@ bool EditorPanelRegistry::release_panel(const StringName &p_id, Control *p_panel
 	return answer.get_type() == Variant::BOOL ? (bool)answer : true;
 }
 
+String EditorPanelRegistry::get_panel_title(const StringName &p_id, Control *p_panel) {
+	const PanelType *type = get_type(p_id);
+	if (!type) {
+		return String(p_id);
+	}
+	if (type->title_of.is_valid() && p_panel) {
+		const String title = type->title_of.call(p_panel);
+		if (!title.is_empty()) {
+			return title;
+		}
+	}
+	return type->title.is_empty() ? String(p_id) : type->title;
+}
+
+void EditorPanelRegistry::notify_closed_by_user(const StringName &p_id, Control *p_panel) {
+	const PanelType *type = get_type(p_id);
+	if (type && type->closed_by_user.is_valid() && p_panel) {
+		type->closed_by_user.call(p_panel);
+	}
+}
+
 void EditorPanelRegistry::cleanup() {
 	// The callables hold the plugins that registered them, and those are gone by
 	// the time the editor is torn down.

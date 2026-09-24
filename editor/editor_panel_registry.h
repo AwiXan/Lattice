@@ -145,6 +145,13 @@ public:
 		// reopening the document and binding to the id it gets, rather than by
 		// writing the id down.
 		Callable bind;
+		// What a panel's tab says, when that is more than the kind of panel -
+		// which script, and whether it has changes not saved. Called with the
+		// panel; optional.
+		Callable title_of;
+		// Told, with the panel, that the user closed it - as against it going
+		// with a layout being replaced. Optional.
+		Callable closed_by_user;
 	};
 
 	static void register_type(const PanelType &p_type);
@@ -192,6 +199,10 @@ public:
 
 	// The Command Palette's name for showing a panel of this type.
 	static String get_palette_command_key(const StringName &p_id);
+
+	// What a panel's tab says.
+	static String get_panel_title(const StringName &p_id, Control *p_panel);
+	static void notify_closed_by_user(const StringName &p_id, Control *p_panel);
 
 	static void cleanup();
 

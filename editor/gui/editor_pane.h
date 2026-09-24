@@ -169,6 +169,7 @@ private:
 	void _recent_selected(int p_index);
 	void _tab_bar_input(const Ref<InputEvent> &p_event);
 	void _note_closing(int p_index);
+	void _note_touched(int p_index);
 	// The color of the scene the current panel is showing, when it shows one
 	// and colors are shown at all; transparent otherwise.
 	Color _scene_color() const;
@@ -264,6 +265,8 @@ public:
 
 	// Whether this pane offers to be closed. The last one does not.
 	void set_closable(bool p_closable);
+	// Says the tabs again, for a panel whose tab says something that changed.
+	void refresh_titles();
 	// Whether this pane is the one shown over all the others.
 	void set_maximized(bool p_maximized);
 	// Gives the keyboard to what the current panel is mostly made of - its

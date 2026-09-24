@@ -56,6 +56,10 @@ class EditorSelfTest : public Node {
 	LocalVector<Step> steps;
 	int next_step = 0;
 	int frames_to_wait = 0;
+	// A step can ask for time to pass before the next, for what the editor
+	// does on a timer - a script is checked a moment after it is typed in.
+	double seconds_to_wait = 0.0;
+	uint64_t waiting_since = 0;
 	bool started = false;
 
 	int passed = 0;
@@ -82,7 +86,28 @@ class EditorSelfTest : public Node {
 	void _scene_panel();
 	void _inspector_panel();
 	void _script_open();
-	void _script_reopen();
+	void _script_opened();
+	void _script_edited();
+	void _script_saved();
+	void _script_close();
+	void _script_closed();
+	void _script_back_where_it_was();
+	void _script_close_unsaved();
+	void _script_close_unsaved_asked();
+	void _second_script_open();
+	void _second_script_stacked();
+	static void _check_second_script(ObjectID p_self, ObjectID p_first_pane);
+	void _second_script_check(ObjectID p_first_pane);
+	EditorPane *_pane_with_script(const String &p_path, int *r_index = nullptr) const;
+	ObjectID moved_script_pane;
+	void _script_moved();
+	void _script_follows_the_move();
+	void _script_pane_gone();
+	void _script_with_the_others();
+	void _script_left_open();
+	void _script_stand_in();
+	EditorPane *_script_pane(int *r_index = nullptr) const;
+	ObjectID script_pane;
 	void _shader_open();
 	void _shader_close_tab();
 	void _shader_back_in_its_pane();

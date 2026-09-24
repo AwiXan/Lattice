@@ -40,6 +40,7 @@
 #include "editor/gui/editor_pane_tree.h"
 #include "editor/editor_string_names.h"
 #include "editor/plugins/editor_plugin.h"
+#include "editor/script/script_editor_plugin.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
@@ -131,17 +132,9 @@ bool EditorMainScreen::load_workspace_from_config(Ref<ConfigFile> p_config_file,
 		return false;
 	}
 
-	// The windows of the arrangement being left go with it. What they lent
-	// goes home first, and at once: there is one FileSystem, and the
-	// arrangement being loaded may want it.
+	// The windows of the arrangement being left go with it.
 	while (!pane_windows.is_empty()) {
-		EditorPaneWindow *window = pane_windows[0];
-		for (EditorPane *pane : window->get_pane_tree()->get_panes()) {
-			while (pane->get_panel_count() > 0) {
-				pane->close_panel(0);
-			}
-		}
-		_close_pane_window(window, false);
+		_close_pane_window(pane_windows[0], false);
 	}
 
 	pane_tree->load_layout(panes);
@@ -257,13 +250,90 @@ EditorPane *EditorMainScreen::_pane_for_new(const StringName &p_type, const Pane
 	return active;
 }
 
-void EditorMainScreen::note_panel_closing(EditorPane *p_pane, int p_index) {
-	ERR_FAIL_NULL(p_pane);
-	const StringName type = p_pane->get_panel_type_at(p_index);
-	if (type == StringName()) {
-		return;
-	}
+StringName EditorMainScreen::get_main_panel_type_id(const EditorPlugin *p_editor) {
+	return p_editor ? _main_panel_type_id(p_editor) : StringName();
+}
 
+EditorPane *EditorMainScreen::open_panel(const StringName &p_type, const Variant &p_subject) {
+	const StringName type = EditorPanelRegistry::resolve(p_type);
+	if (!EditorPanelRegistry::has_type(type)) {
+		return nullptr;
+	}
+	const PanelPlace *place = last_places.getptr(type);
+	const EditorPane *remembered = place ? ObjectDB::get_instance<EditorPane>(place->pane) : nullptr;
+	EditorPane *pane = nullptr;
+	if (!remembered || !remembered->is_inside_tree()) {
+		// The pane the last one was worked with is gone. With the others of the
+		// kind still open, rather than in a pane of its own where that one was:
+		// a script goes with the scripts.
+		pane = _pane_showing(type);
+	}
+	if (!pane) {
+		pane = _pane_for_new(type, place);
+	}
+	if (!pane) {
+		return nullptr;
+	}
+	const int at = pane->add_panel(type, p_subject);
+	if (at < 0) {
+		return nullptr;
+	}
+	if (pane_tree && pane_tree->is_ancestor_of(pane)) {
+		pane_tree->set_active_pane(pane);
+	}
+	EditorPaneWindow *window = _window_of(pane);
+	if (window) {
+		window->grab_window_focus();
+	}
+	// Where the next one of the kind goes too.
+	note_panel_touched(pane, at);
+	return pane;
+}
+
+static EditorPane *_pane_holding(EditorPaneTree *p_tree, Control *p_panel, int *r_index) {
+	if (!p_tree) {
+		return nullptr;
+	}
+	for (EditorPane *pane : p_tree->get_panes()) {
+		for (int i = 0; i < pane->get_panel_count(); i++) {
+			if (pane->get_panel_at(i) == p_panel) {
+				*r_index = i;
+				return pane;
+			}
+		}
+	}
+	return nullptr;
+}
+
+bool EditorMainScreen::reveal_panel(Control *p_panel) {
+	int index = -1;
+	EditorPane *pane = _pane_holding(pane_tree, p_panel, &index);
+	for (int i = 0; !pane && i < pane_windows.size(); i++) {
+		pane = _pane_holding(pane_windows[i]->get_pane_tree(), p_panel, &index);
+	}
+	if (!pane) {
+		return false;
+	}
+	pane->set_current_panel(index);
+	EditorPaneWindow *window = _window_of(pane);
+	if (window) {
+		window->grab_window_focus();
+	}
+	return true;
+}
+
+void EditorMainScreen::remove_panel(Control *p_panel) {
+	int index = -1;
+	EditorPane *pane = _pane_holding(pane_tree, p_panel, &index);
+	for (int i = 0; !pane && i < pane_windows.size(); i++) {
+		pane = _pane_holding(pane_windows[i]->get_pane_tree(), p_panel, &index);
+	}
+	if (pane) {
+		pane->close_panel(index);
+	}
+}
+
+EditorMainScreen::PanelPlace EditorMainScreen::_place_of(EditorPane *p_pane) {
 	PanelPlace place;
 	place.pane = p_pane->get_instance_id();
 	for (Node *n = p_pane->get_parent(); n; n = n->get_parent()) {
@@ -274,6 +344,26 @@ void EditorMainScreen::note_panel_closing(EditorPane *p_pane, int p_index) {
 			break;
 		}
 	}
+	return place;
+}
+
+void EditorMainScreen::note_panel_touched(EditorPane *p_pane, int p_index) {
+	ERR_FAIL_NULL(p_pane);
+	const StringName type = p_pane->get_panel_type_at(p_index);
+	if (type != StringName()) {
+		last_places[type] = _place_of(p_pane);
+	}
+}
+
+void EditorMainScreen::note_panel_closing(EditorPane *p_pane, int p_index) {
+	ERR_FAIL_NULL(p_pane);
+	const StringName type = p_pane->get_panel_type_at(p_index);
+	if (type == StringName()) {
+		return;
+	}
+	EditorPanelRegistry::notify_closed_by_user(type, p_pane->get_panel_at(p_index));
+
+	const PanelPlace place = _place_of(p_pane);
 	last_places[type] = place;
 
 	ClosedPanel closed;
@@ -582,6 +672,17 @@ void EditorMainScreen::_close_pane_window(EditorPaneWindow *p_window, bool p_kee
 		}
 	}
 
+	// What it still holds goes now, while the window is in the tree: what it
+	// was lent goes home at once - there is one FileSystem and one script
+	// editor, and whoever closed the window may want either next - and a
+	// script in a panel goes back to a script editor that is not on its way
+	// out with the window.
+	for (EditorPane *pane : p_window->get_pane_tree()->get_panes()) {
+		while (pane->get_panel_count() > 0) {
+			pane->close_panel(0);
+		}
+	}
+
 	pane_windows.erase(p_window);
 	p_window->queue_free();
 }
@@ -695,7 +796,11 @@ void EditorMainScreen::select(int p_index) {
 			? selected_plugin->get_main_screen_panel_type()
 			: _main_panel_type_id(selected_plugin);
 
-	if (!show_panel(type)) {
+	if (Object::cast_to<ScriptEditorPlugin>(selected_plugin) && ScriptEditor::opens_scripts_in_panels()) {
+		// Scripts have panels of their own. Which one is known once whatever
+		// asked for the script editor has opened the script in it.
+		callable_mp(ScriptEditor::get_singleton(), &ScriptEditor::show_current_in_panel).call_deferred();
+	} else if (!show_panel(type)) {
 		// Nothing can show it - an addon that keeps its view to itself - so it
 		// falls back to the way it always worked.
 		selected_plugin->make_visible(true);

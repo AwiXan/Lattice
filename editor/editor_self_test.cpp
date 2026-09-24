@@ -51,6 +51,10 @@
 #include "editor/gui/editor_pane_tree.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/scene/editor_scene_panel.h"
+#include "editor/script/editor_script_panel.h"
+#include "editor/script/script_editor_base.h"
+#include "editor/script/script_editor_plugin.h"
+#include "editor/gui/code_editor.h"
 #include "editor/scene/scene_tree_editor.h"
 #include "editor/settings/editor_command_palette.h"
 #include "editor/themes/editor_scale.h"
@@ -239,19 +243,221 @@ void EditorSelfTest::_inspector_panel() {
 	pane->close_panel(index);
 }
 
-void EditorSelfTest::_script_open() {
-	_edit("res://probe.gd");
-	_check(_pane_showing("main_Script") != nullptr, "opening a script shows the script editor");
+EditorPane *EditorSelfTest::_script_pane(int *r_index) const {
+	for (EditorPane *pane : _tree()->get_panes()) {
+		for (int i = 0; i < pane->get_panel_count(); i++) {
+			if (pane->get_panel_type_at(i) == StringName("script") && pane->get_panel_subject_at(i) == Variant("res://probe.gd")) {
+				if (r_index) {
+					*r_index = i;
+				}
+				return pane;
+			}
+		}
+	}
+	return nullptr;
 }
 
-void EditorSelfTest::_script_reopen() {
-	EditorPane *pane = _pane_showing("main_Script");
-	if (pane) {
-		_close_tab(pane, "main_Script");
+static bool _probe_open_in_script_editor() {
+	for (const Ref<Script> &script : ScriptEditor::get_singleton()->get_open_scripts()) {
+		if (script.is_valid() && script->get_path() == "res://probe.gd") {
+			return true;
+		}
 	}
-	_check(_pane_showing("main_Script") == nullptr, "the script editor's tab closes");
+	return false;
+}
+
+void EditorSelfTest::_script_open() {
 	_edit("res://probe.gd");
-	_check(_pane_showing("main_Script") == pane, "opening a script again shows it again, where it was");
+}
+
+void EditorSelfTest::_script_opened() {
+	int index = -1;
+	EditorPane *pane = _script_pane(&index);
+	_check(pane != nullptr, "opening a script gives it a panel of its own");
+	if (!pane) {
+		return;
+	}
+	script_pane = pane->get_instance_id();
+	EditorScriptPanel *panel = Object::cast_to<EditorScriptPanel>(pane->get_panel_at(index));
+	_check(panel && panel->get_editor() && ScriptEditor::get_singleton()->is_editor_lent(panel->get_editor()), "the script editor lends it the script's editor");
+	_check(_probe_open_in_script_editor(), "and still counts it among the scripts open");
+	_check(pane->get_tab_bar()->get_tab_title(index) == "probe.gd", "its tab says which script");
+
+	// A change, as typing would make one; the editor looks at it a moment later.
+	TextEditorBase *editor = panel ? Object::cast_to<TextEditorBase>(panel->get_editor()) : nullptr;
+	if (editor) {
+		editor->get_code_editor()->get_text_editor()->insert_text("\n# changed by the self-test", 0, 0);
+	}
+	seconds_to_wait = 3.0;
+	waiting_since = OS::get_singleton()->get_ticks_msec();
+}
+
+void EditorSelfTest::_script_edited() {
+	int index = -1;
+	EditorPane *pane = _script_pane(&index);
+	const PackedStringArray unsaved = ScriptEditor::get_singleton()->get_unsaved_scripts();
+	_check(pane && pane->get_tab_bar()->get_tab_title(index).ends_with("(*)") && !unsaved.is_empty(), "changed, its tab says so, and the script editor knows it is not saved");
+	if (pane) {
+		EditorScriptPanel *panel = Object::cast_to<EditorScriptPanel>(pane->get_panel_at(index));
+		// Working in it makes it the script the script editor acts on.
+		ScriptEditor::get_singleton()->activate_lent_editor(panel->get_editor());
+		ScriptEditor::get_singleton()->save_current_script();
+	}
+}
+
+void EditorSelfTest::_script_saved() {
+	int index = -1;
+	EditorPane *pane = _script_pane(&index);
+	const String title = pane ? pane->get_tab_bar()->get_tab_title(index) : String();
+	const PackedStringArray unsaved = ScriptEditor::get_singleton()->get_unsaved_scripts();
+	_check(pane && !title.ends_with("(*)") && unsaved.is_empty(), "saved from its panel, it is saved" + (pane && !title.ends_with("(*)") && unsaved.is_empty() ? String() : vformat(" - tab '%s', unsaved %s", title, String(", ").join(unsaved))));
+}
+
+void EditorSelfTest::_script_close() {
+	int index = -1;
+	EditorPane *pane = _script_pane(&index);
+	if (pane) {
+		_close_tab(pane, "script");
+	}
+}
+
+void EditorSelfTest::_script_closed() {
+	_check(!_script_pane() && !_probe_open_in_script_editor(), "closing its panel closes the script");
+	_edit("res://probe.gd");
+}
+
+void EditorSelfTest::_script_back_where_it_was() {
+	EditorPane *pane = _script_pane();
+	_check(pane && pane->get_instance_id() == script_pane, "opened again, it is back in the pane it was closed in");
+	// Changed again, and closed without saving.
+	int index = -1;
+	pane = _script_pane(&index);
+	EditorScriptPanel *panel = pane ? Object::cast_to<EditorScriptPanel>(pane->get_panel_at(index)) : nullptr;
+	TextEditorBase *editor = panel ? Object::cast_to<TextEditorBase>(panel->get_editor()) : nullptr;
+	if (editor) {
+		editor->get_code_editor()->get_text_editor()->insert_text("\n# changed again", 0, 0);
+	}
+	seconds_to_wait = 3.0;
+	waiting_since = OS::get_singleton()->get_ticks_msec();
+}
+
+void EditorSelfTest::_script_close_unsaved() {
+	int index = -1;
+	EditorPane *pane = _script_pane(&index);
+	if (pane) {
+		_close_tab(pane, "script");
+	}
+}
+
+void EditorSelfTest::_script_close_unsaved_asked() {
+	// Asked, as closing its tab in the script editor would be - and still
+	// open, not lost, until answered.
+	bool asked = false;
+	TypedArray<Node> dialogs = ScriptEditor::get_singleton()->find_children("*", "ConfirmationDialog", true, false);
+	for (int i = 0; i < dialogs.size(); i++) {
+		Window *dialog = Object::cast_to<Window>(dialogs[i]);
+		if (dialog && dialog->is_visible()) {
+			asked = true;
+			dialog->hide();
+		}
+	}
+	_check(asked && _probe_open_in_script_editor() && !ScriptEditor::get_singleton()->get_unsaved_scripts().is_empty(), "closing it with changes not saved asks first, and loses nothing");
+}
+
+void EditorSelfTest::_second_script_open() {
+	_edit("res://probe.gd");
+}
+
+void EditorSelfTest::_second_script_stacked() {
+	// probe.gd has a panel again; a second script goes beside it.
+	EditorPane *first = _script_pane();
+	_edit("res://probe_b.gd");
+	callable_mp_static(&EditorSelfTest::_check_second_script).call_deferred(get_instance_id(), first ? first->get_instance_id() : ObjectID());
+}
+
+void EditorSelfTest::_check_second_script(ObjectID p_self, ObjectID p_first_pane) {
+	EditorSelfTest *self = ObjectDB::get_instance<EditorSelfTest>(p_self);
+	if (!self) {
+		return;
+	}
+	// Twice deferred: the script editor shows the new panel deferred too.
+	callable_mp(self, &EditorSelfTest::_second_script_check).call_deferred(p_first_pane);
+}
+
+void EditorSelfTest::_second_script_check(ObjectID p_first_pane) {
+	EditorPane *second = nullptr;
+	for (EditorPane *pane : _tree()->get_panes()) {
+		for (int i = 0; i < pane->get_panel_count(); i++) {
+			if (pane->get_panel_type_at(i) == StringName("script") && pane->get_panel_subject_at(i) == Variant("res://probe_b.gd")) {
+				second = pane;
+			}
+		}
+	}
+	_check(second && second->get_instance_id() == p_first_pane, "a second script gets its own panel, stacked with the first");
+}
+
+EditorPane *EditorSelfTest::_pane_with_script(const String &p_path, int *r_index) const {
+	for (EditorPane *pane : _tree()->get_panes()) {
+		for (int i = 0; i < pane->get_panel_count(); i++) {
+			if (pane->get_panel_type_at(i) == StringName("script") && pane->get_panel_subject_at(i) == Variant(p_path)) {
+				if (r_index) {
+					*r_index = i;
+				}
+				return pane;
+			}
+		}
+	}
+	return nullptr;
+}
+
+void EditorSelfTest::_script_moved() {
+	// probe_b.gd dragged off to a pane of its own, and another script opened.
+	int index = -1;
+	EditorPane *from = _pane_with_script("res://probe_b.gd", &index);
+	EditorPane *to = from ? _tree()->split_pane(from, false, false, false) : nullptr;
+	if (to) {
+		from->transfer_panel_to(to, index);
+		moved_script_pane = to->get_instance_id();
+	}
+	_edit("res://probe_c.gd");
+}
+
+void EditorSelfTest::_script_follows_the_move() {
+	EditorPane *pane = _pane_with_script("res://probe_c.gd");
+	_check(pane && pane->get_instance_id() == moved_script_pane, "a script opens in the pane a script was last moved to");
+	EditorPane *moved = ObjectDB::get_instance<EditorPane>(moved_script_pane);
+	if (moved) {
+		_tree()->close_pane(moved);
+	}
+}
+
+void EditorSelfTest::_script_pane_gone() {
+	_edit("res://probe_c.gd");
+}
+
+void EditorSelfTest::_script_with_the_others() {
+	// That pane is gone: with the scripts still open, not in a new pane.
+	EditorPane *pane = _pane_with_script("res://probe_c.gd");
+	EditorPane *others = _pane_with_script("res://probe.gd");
+	_check(pane && pane == others && !ObjectDB::get_instance<EditorPane>(moved_script_pane), "with that pane gone, it opens with the other scripts");
+}
+
+void EditorSelfTest::_script_left_open() {
+	// Left in its own panel for the editor to quit with.
+	_edit("res://probe_b.gd");
+}
+
+void EditorSelfTest::_script_stand_in() {
+	// The script editor itself, showing the tab of a script a panel has.
+	EditorPane *pane = _tree()->get_first_pane();
+	pane->show_panel_of_type(EditorMainScreen::get_main_panel_type_id(EditorNode::get_editor_data().get_editor_by_name("Script")));
+	bool stand_in = false;
+	TypedArray<Node> stand_ins = ScriptEditor::get_singleton()->find_children("*", "ScriptEditorStandIn", true, false);
+	for (int i = 0; i < stand_ins.size(); i++) {
+		TypedArray<Node> buttons = Object::cast_to<Node>(stand_ins[i])->find_children("*", "Button", true, false);
+		stand_in = stand_in || !buttons.is_empty();
+	}
+	_check(stand_in, "the script editor keeps a stand-in, with a way to the panel, for a script shown elsewhere");
 }
 
 void EditorSelfTest::_shader_open() {
@@ -823,6 +1029,7 @@ void EditorSelfTest::_finish() {
 	remove_error_handler(&error_handler);
 	const uint32_t error_count = errors.get();
 	print_line(vformat("SELFTEST DONE: %d passed, %d failed, %d errors", passed, failed, error_count));
+	OS::get_singleton()->printerr("SELFTEST QUITTING\n");
 	get_tree()->quit(failed > 0 || error_count > 0 ? 1 : 0);
 }
 
@@ -851,11 +1058,18 @@ void EditorSelfTest::_notification(int p_what) {
 				frames_to_wait--;
 				return;
 			}
+			if (seconds_to_wait > 0.0 && (OS::get_singleton()->get_ticks_msec() - waiting_since) < seconds_to_wait * 1000.0) {
+				return;
+			}
+			seconds_to_wait = 0.0;
 			if (next_step >= (int)steps.size()) {
 				return;
 			}
 			const Step &step = steps[next_step++];
 			print_line("SELFTEST STEP: " + step.name);
+			// On the error stream too, where errors are: which step an error
+			// came in shows there, in order.
+			OS::get_singleton()->printerr("SELFTEST STEP: %s\n", step.name.utf8().get_data());
 			step.run.call();
 			frames_to_wait = 3;
 		} break;
@@ -873,7 +1087,20 @@ EditorSelfTest::EditorSelfTest() {
 	_add("scene panel", callable_mp(this, &EditorSelfTest::_scene_panel));
 	_add("inspector panel", callable_mp(this, &EditorSelfTest::_inspector_panel));
 	_add("script open", callable_mp(this, &EditorSelfTest::_script_open));
-	_add("script reopen", callable_mp(this, &EditorSelfTest::_script_reopen));
+	_add("script opened", callable_mp(this, &EditorSelfTest::_script_opened));
+	_add("script edited", callable_mp(this, &EditorSelfTest::_script_edited));
+	_add("script saved", callable_mp(this, &EditorSelfTest::_script_saved));
+	_add("script close", callable_mp(this, &EditorSelfTest::_script_close));
+	_add("script closed", callable_mp(this, &EditorSelfTest::_script_closed));
+	_add("script back where it was", callable_mp(this, &EditorSelfTest::_script_back_where_it_was));
+	_add("script close unsaved", callable_mp(this, &EditorSelfTest::_script_close_unsaved));
+	_add("script close unsaved asked", callable_mp(this, &EditorSelfTest::_script_close_unsaved_asked));
+	_add("second script open", callable_mp(this, &EditorSelfTest::_second_script_open));
+	_add("second script stacked", callable_mp(this, &EditorSelfTest::_second_script_stacked));
+	_add("script moved", callable_mp(this, &EditorSelfTest::_script_moved));
+	_add("script follows the move", callable_mp(this, &EditorSelfTest::_script_follows_the_move));
+	_add("script pane gone", callable_mp(this, &EditorSelfTest::_script_pane_gone));
+	_add("script with the others", callable_mp(this, &EditorSelfTest::_script_with_the_others));
 	_add("shader open", callable_mp(this, &EditorSelfTest::_shader_open));
 	_add("shader close tab", callable_mp(this, &EditorSelfTest::_shader_close_tab));
 	_add("shader back in its pane", callable_mp(this, &EditorSelfTest::_shader_back_in_its_pane));
@@ -915,6 +1142,8 @@ EditorSelfTest::EditorSelfTest() {
 	_add("worlds check", callable_mp(this, &EditorSelfTest::_worlds_check));
 	_add("worlds after camera moved", callable_mp(this, &EditorSelfTest::_worlds_after_camera_moved));
 	_add("worlds one view closed", callable_mp(this, &EditorSelfTest::_worlds_one_view_closed));
+	_add("script left open", callable_mp(this, &EditorSelfTest::_script_left_open));
+	_add("script stand-in", callable_mp(this, &EditorSelfTest::_script_stand_in));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
 }
 

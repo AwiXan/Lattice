@@ -45,6 +45,10 @@ run/main_scene="res://scene_a.tscn"
 func _ready() -> void:
 \tpass
 """,
+    "probe_b.gd": """extends Node
+""",
+    "probe_c.gd": """extends Node
+""",
     "probe.gdshader": """shader_type spatial;
 
 void fragment() {

@@ -106,14 +106,15 @@ private:
 	// and the window it is in, if it is not the main one.
 	EditorPane *_pane_showing(const StringName &p_type, EditorPaneWindow **r_window = nullptr) const;
 
-	// Where a panel was when it was last closed: its pane, or - the pane having
-	// gone with it - the pane beside it and how the two were split.
+	// Where a panel was when it was last closed or worked with: its pane, or -
+	// the pane having gone - the pane beside it and how the two were split.
 	struct PanelPlace {
 		ObjectID tree;
 		ObjectID pane;
 		EditorPaneTree::Place at;
 	};
 	HashMap<StringName, PanelPlace> last_places;
+	static PanelPlace _place_of(EditorPane *p_pane);
 	struct ClosedPanel {
 		StringName type;
 		Variant subject;
@@ -179,9 +180,21 @@ public:
 	// worked in, else one anywhere else - another window is raised - else a new
 	// one in the pane being worked in. False when nothing could show it.
 	bool show_panel(const StringName &p_type);
+	// A new panel of this type pointed at p_subject, where one of the kind was
+	// last - the next script goes beside the last one opened. Returns the pane.
+	EditorPane *open_panel(const StringName &p_type, const Variant &p_subject);
+	// Brings forward the pane showing this panel, in whichever window.
+	bool reveal_panel(Control *p_panel);
+	// Takes a panel out of its pane, as closing its tab would, but not noted as
+	// closed by the user.
+	void remove_panel(Control *p_panel);
+	static StringName get_main_panel_type_id(const EditorPlugin *p_editor);
 
 	// Panels closed by hand, oldest first, to have back where they were.
 	void note_panel_closing(EditorPane *p_pane, int p_index);
+	// A panel chosen, moved or worked in: the next one of its kind opens in
+	// the same pane.
+	void note_panel_touched(EditorPane *p_pane, int p_index);
 	// The last one closed when p_index is -1. False when there was none, or
 	// it can no longer be shown.
 	bool reopen_closed_panel(int p_index = -1);
