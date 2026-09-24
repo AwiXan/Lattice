@@ -145,6 +145,7 @@ def main():
     parser.add_argument("--streaming", action="store_true", help="turn texture streaming on in the project")
     parser.add_argument("--textured", action="store_true", help="put a checker texture on the 3D scene's crate and floor")
     parser.add_argument("--renderer", choices=["forward_plus", "mobile", "gl_compatibility"], help="the project's rendering method")
+    parser.add_argument("--driver", choices=["vulkan", "d3d12"], help="the project's rendering device on Windows (default: vulkan)")
     parser.add_argument("--editor", help="editor binary to run (default: the newest one in bin/)")
     parser.add_argument("--timeout", type=int, default=60, help="seconds before calling it hung (it is left running)")
     parser.add_argument("--stress", type=int, default=0, help="seconds of opening and closing every dropdown first")
@@ -160,12 +161,14 @@ def main():
     project = tempfile.mkdtemp(prefix="lattice-shot-")
     with open(os.path.join(project, "project.godot"), "w", encoding="utf-8", newline="\n") as f:
         f.write('config_version=5\n\n[application]\n\nconfig/name="Lattice screenshot"\n')
-        if args.streaming or args.renderer:
+        if args.streaming or args.renderer or args.driver:
             f.write('\n[rendering]\n\n')
         if args.streaming:
             f.write('textures/streaming/enabled=true\n')
         if args.renderer:
             f.write('renderer/rendering_method="%s"\n' % args.renderer)
+        if args.driver:
+            f.write('rendering_device/driver.windows="%s"\n' % args.driver)
     if args.textured:
         write_checker_png(os.path.join(project, "checker.png"))
     with open(os.path.join(project, "probe.gd"), "w", encoding="utf-8", newline="\n") as f:
