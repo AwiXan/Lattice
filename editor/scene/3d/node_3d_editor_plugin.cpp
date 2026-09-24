@@ -87,6 +87,7 @@
 #include "editor/scene/3d/gizmos/two_bone_ik_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/visible_on_screen_notifier_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/voxel_gi_gizmo_plugin.h"
+#include "editor/gui/editor_view_hints.h"
 #include "editor/gui/editor_view_sidebar.h"
 #include "editor/scene/3d/node_3d_editor_chrome.h"
 #include "editor/scene/3d/node_3d_editor_gizmos.h"
@@ -12154,6 +12155,99 @@ void Node3DEditor::_build_sidebar(Control *p_over) {
 	sidebar_button->set_shortcut_context(this);
 	sidebar_button->connect(SceneStringName(toggled), callable_mp(this, &Node3DEditor::_sidebar_button_toggled));
 	header_end->add_child(sidebar_button);
+
+	hints = memnew(EditorViewHints);
+	hints->set_visible(EditorSettings::get_singleton()->get_project_metadata("3d_editor", "key_hints", true));
+	add_child(hints);
+	// Often enough to follow a drag starting or a flight ending, and only
+	// while the line is on screen.
+	Timer *hints_timer = memnew(Timer);
+	hints_timer->set_wait_time(0.15);
+	hints_timer->set_autostart(true);
+	hints_timer->connect("timeout", callable_mp(this, &Node3DEditor::_update_hints));
+	add_child(hints_timer);
+}
+
+void Node3DEditor::_update_hints() {
+	if (!hints || !hints->is_visible_in_tree()) {
+		return;
+	}
+	using Hint = EditorViewHints::Hint;
+	Vector<Hint> list;
+	const Node3DEditorViewport *viewport = viewports[CLAMP(last_used_viewport, 0, (int)VIEWPORTS_COUNT - 1)];
+	const String ctrl = keycode_get_string((Key)KeyModifierMask::CMD_OR_CTRL);
+	const String lmb = EditorViewHints::mouse_button_name(MouseButton::LEFT);
+	const String shift = keycode_get_string((Key)KeyModifierMask::SHIFT) + "+";
+
+	if (viewport->_edit.mode != Node3DEditorViewport::TRANSFORM_NONE) {
+		const String axes = ED_GET_SHORTCUT("spatial_editor/lock_transform_x")->get_as_text() + " " + ED_GET_SHORTCUT("spatial_editor/lock_transform_y")->get_as_text() + " " + ED_GET_SHORTCUT("spatial_editor/lock_transform_z")->get_as_text();
+		list.push_back(Hint{ axes, TTR("Lock to axis") });
+		list.push_back(Hint{ shift + axes, TTR("Lock to plane") });
+		list.push_back(Hint{ ctrl, TTR("Snap") });
+		list.push_back(Hint{ ED_GET_SHORTCUT("spatial_editor/cancel_transform")->get_as_text(), TTR("Cancel") });
+		hints->set_hints(list);
+		return;
+	}
+
+	if (viewport->view_3d_controller.is_valid() && viewport->view_3d_controller->is_freelook_enabled()) {
+		const String move = EditorViewHints::action_key("spatial_editor/freelook_forward") + EditorViewHints::action_key("spatial_editor/freelook_left") + EditorViewHints::action_key("spatial_editor/freelook_backwards") + EditorViewHints::action_key("spatial_editor/freelook_right");
+		list.push_back(Hint{ move, TTR("Fly") });
+		list.push_back(Hint{ EditorViewHints::action_key("spatial_editor/freelook_down") + " " + EditorViewHints::action_key("spatial_editor/freelook_up"), TTR("Down, up") });
+		list.push_back(Hint{ EditorViewHints::action_key("spatial_editor/freelook_speed_modifier"), TTR("Faster") });
+		list.push_back(Hint{ EditorViewHints::action_key("spatial_editor/freelook_slow_modifier"), TTR("Slower") });
+		list.push_back(Hint{ TTR("Wheel"), TTR("Speed") });
+		hints->set_hints(list);
+		return;
+	}
+
+	switch (tool_mode) {
+		case TOOL_MODE_SELECT: {
+			list.push_back(Hint{ lmb, TTR("Select") });
+			list.push_back(Hint{ shift + lmb, TTR("Add to selection") });
+			list.push_back(Hint{ vformat(TTR("%s drag"), lmb), TTR("Box select") });
+		} break;
+		case TOOL_MODE_MOVE:
+		case TOOL_MODE_ROTATE:
+		case TOOL_MODE_SCALE: {
+			static const char *actions[] = { TTRC("Move"), TTRC("Rotate"), TTRC("Scale") };
+			list.push_back(Hint{ vformat(TTR("%s drag"), lmb), TTRGET(actions[tool_mode - TOOL_MODE_MOVE]) });
+			list.push_back(Hint{ ctrl, TTR("Snap") });
+		} break;
+		case TOOL_MODE_TRANSFORM: {
+			list.push_back(Hint{ lmb, TTR("Select, or drag the manipulator") });
+			list.push_back(Hint{ vformat(TTR("%s drag"), ctrl), TTR("Rotate around pivot") });
+		} break;
+		case TOOL_RULER: {
+			list.push_back(Hint{ vformat(TTR("%s drag"), lmb), TTR("Measure") });
+			list.push_back(Hint{ shift + vformat(TTR("%s drag"), lmb), TTR("Each axis") });
+		} break;
+		default: {
+		} break;
+	}
+
+	// Getting around, the way the navigation settings have it.
+	static const MouseButton buttons[] = { MouseButton::LEFT, MouseButton::MIDDLE, MouseButton::RIGHT, MouseButton::MB_XBUTTON1, MouseButton::MB_XBUTTON2 };
+	struct Navigation {
+		const char *setting;
+		const char *modifier;
+		const char *action;
+	};
+	static const Navigation navigation[] = {
+		{ "editors/3d/navigation/orbit_mouse_button", "spatial_editor/viewport_orbit_modifier_1", TTRC("Orbit") },
+		{ "editors/3d/navigation/pan_mouse_button", "spatial_editor/viewport_pan_modifier_1", TTRC("Pan") },
+		{ "editors/3d/navigation/zoom_mouse_button", "spatial_editor/viewport_zoom_modifier_1", TTRC("Zoom") },
+	};
+	for (const Navigation &way : navigation) {
+		const int button = CLAMP((int)EDITOR_GET(way.setting), 0, 4);
+		const String modifier = EditorViewHints::action_key(way.modifier);
+		list.push_back(Hint{ (modifier.is_empty() ? String() : modifier + "+") + EditorViewHints::mouse_button_name(buttons[button]), TTRGET(way.action) });
+	}
+	list.push_back(Hint{ vformat(TTR("%s hold"), EditorViewHints::mouse_button_name(MouseButton::RIGHT)), TTR("Fly") });
+	list.push_back(Hint{ ED_GET_SHORTCUT("spatial_editor/focus_selection")->get_as_text(), TTR("Focus") });
+	if (sidebar_button) {
+		list.push_back(Hint{ sidebar_button->get_shortcut()->get_as_text(), TTR("Sidebar") });
+	}
+	hints->set_hints(list);
 }
 
 void Node3DEditor::_sidebar_button_toggled(bool p_pressed) {
@@ -12211,6 +12305,8 @@ const Node3DEditor::OverlayItem *Node3DEditor::_overlay_items(int &r_count) {
 		{ TTRC("Information"), -1, Node3DEditorViewport::VIEW_INFORMATION },
 		{ TTRC("Frame Time"), -1, Node3DEditorViewport::VIEW_FRAME_TIME },
 		{ TTRC("Environment"), -1, Node3DEditorViewport::VIEW_ENVIRONMENT },
+		// The view's own: the line of hints under it.
+		{ TTRC("Key Hints"), -1, -1 },
 	};
 	static_assert(std::size(items) == OVERLAY_MAX);
 	r_count = std::size(items);
@@ -12222,6 +12318,9 @@ bool Node3DEditor::_overlay_shown_in(int p_overlay, int p_viewport) const {
 	const OverlayItem *items = _overlay_items(count);
 	ERR_FAIL_INDEX_V(p_overlay, count, false);
 	const OverlayItem &item = items[p_overlay];
+	if (p_overlay == OVERLAY_KEY_HINTS) {
+		return hints && hints->is_visible();
+	}
 	if (item.layout_option >= 0) {
 		const PopupMenu *popup = view_layout_menu->get_popup();
 		return popup->is_item_checked(popup->get_item_index(item.layout_option));
@@ -12264,7 +12363,13 @@ void Node3DEditor::_overlays_id_pressed(int p_overlay) {
 	const OverlayItem &item = items[p_overlay];
 	const int viewport = CLAMP(last_used_viewport, 0, (int)VIEWPORTS_COUNT - 1);
 	const bool show = !_overlay_shown_in(p_overlay, viewport);
-	if (item.layout_option >= 0) {
+	if (p_overlay == OVERLAY_KEY_HINTS) {
+		if (hints) {
+			hints->set_visible(show);
+			EditorSettings::get_singleton()->set_project_metadata("3d_editor", "key_hints", show);
+			_update_hints();
+		}
+	} else if (item.layout_option >= 0) {
 		_menu_item_activated(item.layout_option);
 	} else {
 		// Every viewport of the view ends up the same, whatever each had.

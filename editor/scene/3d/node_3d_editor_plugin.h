@@ -51,6 +51,7 @@ class DirectionalLight3D;
 class EditorData;
 class EditorSelection;
 class EditorSpinSlider;
+class EditorViewHints;
 class EditorViewSidebar;
 class HFlowContainer;
 class HSplitContainer;
@@ -939,6 +940,9 @@ private:
 	void _sidebar_fitted();
 	void _sidebar_button_toggled(bool p_pressed);
 	void _view_settings_changed();
+	// What the mouse and keys do right now, under the viewports.
+	EditorViewHints *hints = nullptr;
+	void _update_hints();
 
 	void _generate_selection_boxes();
 
@@ -1231,6 +1235,7 @@ public:
 		OVERLAY_INFORMATION,
 		OVERLAY_FRAME_TIME,
 		OVERLAY_ENVIRONMENT,
+		OVERLAY_KEY_HINTS,
 		OVERLAY_MAX
 	};
 	MenuButton *get_overlays_menu() const { return overlays_menu; }
@@ -1243,6 +1248,7 @@ public:
 	EditorViewSidebar *get_sidebar() const { return sidebar; }
 	Button *get_sidebar_button() const { return sidebar_button; }
 	Node3DEditorItemPanel *get_item_panel() const { return item_panel; }
+	EditorViewHints *get_hints() const { return hints; }
 	// Whether every viewport of the view shows it.
 	bool is_overlay_shown_everywhere(Overlay p_overlay) const;
 

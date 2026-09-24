@@ -132,6 +132,7 @@ class EditorSelfTest : public Node {
 	void _view_overlays();
 	void _view_sidebar_open();
 	void _view_sidebar_check();
+	void _view_hints();
 	ObjectID sidebar_view;
 	ObjectID sidebar_node;
 	real_t sidebar_node_x = 0.0;

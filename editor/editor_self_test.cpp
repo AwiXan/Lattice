@@ -51,6 +51,7 @@
 #include "editor/gui/editor_pane.h"
 #include "editor/gui/editor_pane_tree.h"
 #include "editor/gui/editor_spin_slider.h"
+#include "editor/gui/editor_view_hints.h"
 #include "editor/gui/editor_view_sidebar.h"
 #include "editor/scene/3d/node_3d_editor_chrome.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
@@ -604,6 +605,25 @@ void EditorSelfTest::_view_sidebar_check() {
 	// The snap settings are a page of it now, not a dialog.
 	view->get_sidebar_button()->set_pressed(false);
 	_check(!sidebar->is_visible() && Math::is_zero_approx(view->get_editor_viewport(0)->get_top_right_clearance()), "pressed again, it closes and the gizmo goes back");
+}
+
+void EditorSelfTest::_view_hints() {
+	Node3DEditor *view = ObjectDB::get_instance<Node3DEditor>(sidebar_view);
+	EditorViewHints *hints = view ? view->get_hints() : nullptr;
+	if (!hints) {
+		_check(false, "the 3D view has a line of key hints");
+		return;
+	}
+	const String text = hints->get_text();
+	_check(hints->is_visible_in_tree() && text.contains(TTR("Orbit")) && text.contains(TTR("Sidebar")), "under the 3D view, a line says what the mouse and keys do: " + text);
+
+	// Switched off from the Overlays menu, and back on.
+	PopupMenu *popup = view->get_overlays_menu()->get_popup();
+	popup->emit_signal(SNAME("about_to_popup"));
+	popup->emit_signal(SceneStringName(id_pressed), (int)Node3DEditor::OVERLAY_KEY_HINTS);
+	const bool hidden = !hints->is_visible();
+	popup->emit_signal(SceneStringName(id_pressed), (int)Node3DEditor::OVERLAY_KEY_HINTS);
+	_check(hidden && hints->is_visible(), "the key hints are an overlay that can be switched off");
 }
 
 EditorPane *EditorSelfTest::_pane_with_script(const String &p_path, int *r_index) const {
@@ -1357,6 +1377,7 @@ EditorSelfTest::EditorSelfTest() {
 	_add("view overlays", callable_mp(this, &EditorSelfTest::_view_overlays));
 	_add("view sidebar open", callable_mp(this, &EditorSelfTest::_view_sidebar_open));
 	_add("view sidebar check", callable_mp(this, &EditorSelfTest::_view_sidebar_check));
+	_add("view hints", callable_mp(this, &EditorSelfTest::_view_hints));
 	_add("script left open", callable_mp(this, &EditorSelfTest::_script_left_open));
 	_add("script stand-in", callable_mp(this, &EditorSelfTest::_script_stand_in));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
