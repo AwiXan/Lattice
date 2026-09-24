@@ -267,6 +267,18 @@ private:
 
 	MenuButton *view_display_menu = nullptr;
 	real_t top_right_clearance = 0.0;
+
+	// What a click would select, lit up under the mouse before the click: its
+	// meshes drawn over themselves again, a shade lighter and ringed, as other
+	// 3D editors do. Only in the editor's view, and with the gizmos.
+	ObjectID hovered_node;
+	LocalVector<RID> hover_instances;
+	Ref<StandardMaterial3D> hover_material;
+	Ref<StandardMaterial3D> hover_rim_material;
+	uint64_t hover_checked_msec = 0;
+	void _update_hover(const Point2 &p_pos);
+	void _set_hovered(Node *p_node);
+	void _clear_hover();
 	// The bar over its top edge, unless the classic toolbar is in use:
 	// Node3DEditor::_build_view_bar() builds it and says what is where. The
 	// View menu above is then kept out of sight.
@@ -616,6 +628,14 @@ public:
 	// does; p_key is the key held, if any.
 	void open_pie(const StringName &p_name, Key p_key = Key::NONE);
 	EditorPieMenu *get_pie() const { return pie; }
+	// The node lit up under the mouse (see _update_hover()), and how many
+	// meshes light it; checking it as the mouse would.
+	ObjectID get_hovered_node() const { return hovered_node; }
+	int get_hover_mesh_count() const { return hover_instances.size(); }
+	void hover_at(const Point2 &p_pos) {
+		hover_checked_msec = 0;
+		_update_hover(p_pos);
+	}
 	Control *get_surface() const { return surface; }
 	bool is_view_type_top() const;
 	static int get_display_normal_id() { return VIEW_DISPLAY_NORMAL; }

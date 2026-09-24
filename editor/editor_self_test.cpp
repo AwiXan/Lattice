@@ -281,6 +281,15 @@ void EditorScreenshot::_notification(int p_what) {
 								break;
 							}
 						}
+					} else if (action == "later:hover_pillar" && later_view) {
+						// The mouse over the pillar, which is not selected: it lights up.
+						Node *root = EditorNode::get_singleton()->get_edited_scene();
+						Node3D *pillar = root ? Object::cast_to<Node3D>(root->find_child("Pillar", true, false)) : nullptr;
+						Node3DEditorViewport *viewport = later_view->get_editor_viewport(0);
+						if (pillar) {
+							viewport->hover_at(viewport->point_to_screen(pillar->get_global_position()));
+							print_line(vformat("SHOT: hovering the pillar lights %d meshes (%s)", viewport->get_hover_mesh_count(), viewport->get_hovered_node() == pillar->get_instance_id() ? "the pillar" : "something else"));
+						}
 					} else if (action == "later:real_click_transform" && later_view) {
 #ifdef WINDOWS_ENABLED
 						// A real click, from the OS, on the 3D header's first menu.

@@ -2143,6 +2143,7 @@ void Node3DEditorViewport::_surface_mouse_enter() {
 }
 
 void Node3DEditorViewport::_surface_mouse_exit() {
+	_clear_hover();
 	_remove_preview_node();
 	_reset_preview_material();
 	_remove_preview_material();
@@ -2866,6 +2867,11 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 	// Instant transforms process mouse motion in input() to handle wrapping.
 	if (m.is_valid() && !_edit.instant) {
 		_edit.mouse_pos = m->get_position();
+		if (m->get_button_mask().is_empty()) {
+			_update_hover(m->get_position());
+		} else {
+			_clear_hover();
+		}
 
 		if (vertex_snap_mode || vertex_snap_dragging) {
 			if (!vertex_snap_dragging) {
@@ -4162,6 +4168,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
+			_clear_hover();
 			_finish_gizmo_instances();
 			_release_gizmo_layer();
 		} break;
@@ -5213,6 +5220,100 @@ void Node3DEditorViewport::_finish_gizmo_instances() {
 void Node3DEditorViewport::_disable_follow_mode() {
 	// Exit follow mode by resetting the number of times the follow shortcut was used consecutively.
 	times_focused_consecutively = 0;
+}
+
+void Node3DEditorViewport::_update_hover(const Point2 &p_pos) {
+	if (!EDITOR_GET("editors/3d/hover_highlight") || _edit.mode != TRANSFORM_NONE || previewing || previewing_cinema ||
+			(view_3d_controller.is_valid() && view_3d_controller->is_freelook_enabled())) {
+		_clear_hover();
+		return;
+	}
+	// A ray into the scene for every mouse move is more than needed.
+	const uint64_t now = OS::get_singleton()->get_ticks_msec();
+	if (now - hover_checked_msec < 30) {
+		return;
+	}
+	hover_checked_msec = now;
+	Node *node = ObjectDB::get_instance<Node>(_select_ray(p_pos));
+	if (node && editor_selection->is_selected(node)) {
+		// Already has its box.
+		node = nullptr;
+	}
+	_set_hovered(node);
+}
+
+void Node3DEditorViewport::_set_hovered(Node *p_node) {
+	const ObjectID id = p_node ? p_node->get_instance_id() : ObjectID();
+	if (id == hovered_node) {
+		return;
+	}
+	_clear_hover();
+	hovered_node = id;
+	if (!p_node) {
+		return;
+	}
+
+	// Its meshes, all of them: a scene instanced whole is selected whole.
+	LocalVector<MeshInstance3D *> meshes;
+	if (MeshInstance3D *own = Object::cast_to<MeshInstance3D>(p_node)) {
+		meshes.push_back(own);
+	}
+	TypedArray<Node> found = p_node->find_children("*", "MeshInstance3D", true, false);
+	for (int i = 0; i < found.size() && meshes.size() < 64; i++) {
+		meshes.push_back(Object::cast_to<MeshInstance3D>(found[i]));
+	}
+
+	if (hover_material.is_null()) {
+		const Color color = Color(EDITOR_GET("editors/3d/selection_box_color")).lerp(Color(1, 1, 1), 0.6);
+		hover_material.instantiate();
+		hover_material->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);
+		hover_material->set_transparency(StandardMaterial3D::TRANSPARENCY_ALPHA);
+		hover_material->set_flag(StandardMaterial3D::FLAG_DISABLE_FOG, true);
+		hover_material->set_albedo(Color(color.r, color.g, color.b, 0.1));
+		hover_material->set_grow_enabled(true);
+		// The ring: the back of a shell a little bigger than it, which shows
+		// only around its edges.
+		hover_rim_material.instantiate();
+		hover_rim_material->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);
+		hover_rim_material->set_transparency(StandardMaterial3D::TRANSPARENCY_ALPHA);
+		hover_rim_material->set_flag(StandardMaterial3D::FLAG_DISABLE_FOG, true);
+		hover_rim_material->set_cull_mode(StandardMaterial3D::CULL_FRONT);
+		hover_rim_material->set_albedo(Color(color.r, color.g, color.b, 0.9));
+		hover_rim_material->set_grow_enabled(true);
+		hover_material->set_next_pass(hover_rim_material);
+	}
+
+	for (MeshInstance3D *mesh_instance : meshes) {
+		if (!mesh_instance || !mesh_instance->is_visible_in_tree() || mesh_instance->get_mesh().is_null() || mesh_instance->get_world_3d().is_null()) {
+			continue;
+		}
+		const Transform3D xform = mesh_instance->get_global_transform();
+		// A ring a couple of pixels wide on screen, however far or scaled.
+		const real_t distance = MAX((real_t)0.01, camera->get_global_position().distance_to(xform.origin));
+		const real_t height = MAX((real_t)1.0, (real_t)viewport->get_size().height);
+		const real_t per_pixel = camera->get_projection() == Camera3D::PROJECTION_ORTHOGONAL ? camera->get_size() / height : 2.0 * distance * Math::tan(Math::deg_to_rad(camera->get_fov()) * 0.5) / height;
+		const real_t scale = MAX((real_t)0.0001, (xform.basis.get_scale().x + xform.basis.get_scale().y + xform.basis.get_scale().z) / 3.0);
+		hover_material->set_grow(per_pixel * 0.4 / scale);
+		hover_rim_material->set_grow(per_pixel * 2.2 / scale);
+
+		RID instance = RS::get_singleton()->instance_create2(mesh_instance->get_mesh()->get_rid(), mesh_instance->get_world_3d()->get_scenario());
+		RS::get_singleton()->instance_set_transform(instance, xform);
+		RS::get_singleton()->instance_geometry_set_material_override(instance, hover_material->get_rid());
+		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(instance, RSE::SHADOW_CASTING_SETTING_OFF);
+		RS::get_singleton()->instance_geometry_set_flag(instance, RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
+		RS::get_singleton()->instance_geometry_set_flag(instance, RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+		// Like the selection boxes: the editor's view only, and gone with the gizmos.
+		RS::get_singleton()->instance_set_layer_mask(instance, 1 << GIZMO_EDIT_LAYER);
+		hover_instances.push_back(instance);
+	}
+}
+
+void Node3DEditorViewport::_clear_hover() {
+	for (const RID &instance : hover_instances) {
+		RS::get_singleton()->free_rid(instance);
+	}
+	hover_instances.clear();
+	hovered_node = ObjectID();
 }
 
 void Node3DEditorViewport::_reset_follow_mode_count() {
@@ -7080,6 +7181,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	index = p_index;
 	editor_selection = EditorNode::get_singleton()->get_editor_selection();
 	editor_selection->connect("selection_changed", callable_mp(this, &Node3DEditorViewport::_reset_follow_mode_count));
+	editor_selection->connect("selection_changed", callable_mp(this, &Node3DEditorViewport::_clear_hover));
 
 	message_time = 0;
 	zoom_indicator_delay = 0.0;
@@ -7536,6 +7638,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 }
 
 Node3DEditorViewport::~Node3DEditorViewport() {
+	_clear_hover();
 	memdelete(ruler);
 }
 
