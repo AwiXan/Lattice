@@ -141,6 +141,7 @@ def main():
     parser.add_argument("--lit", action="store_true", help="give the 3D scene a sun and an environment of its own")
     parser.add_argument("--camera", action="store_true", help="give the 3D scene a camera looking at the crate")
     parser.add_argument("--gi", action="store_true", help="give the 3D scene a sun, a sky, a red wall and real-time GI (SDFGI, or what replaced it)")
+    parser.add_argument("--fog", action="store_true", help="with --gi, volumetric fog as well")
     parser.add_argument("--select", help="the name of the node to select, instead of the first mesh")
     parser.add_argument("--streaming", action="store_true", help="turn texture streaming on in the project")
     parser.add_argument("--textured", action="store_true", help="put a checker texture on the 3D scene's crate and floor")
@@ -177,7 +178,11 @@ def main():
     with open(os.path.join(project, scene), "w", encoding="utf-8", newline="\n") as f:
         text = (textured(SCENE_3D) if args.textured else SCENE_3D) if args.scene == "3d" else SCENE_2D
         if args.gi and args.scene == "3d":
-            text = text.replace('[sub_resource type="BoxMesh" id="box"]', GI_RESOURCES + '[sub_resource type="BoxMesh" id="box"]')
+            resources = GI_RESOURCES
+            if args.fog:
+                # GI lights the fog too (see volumetric_fog_process.glsl).
+                resources = resources.replace("sdfgi_enabled = true\n", "sdfgi_enabled = true\nvolumetric_fog_enabled = true\nvolumetric_fog_density = 0.03\n")
+            text = text.replace('[sub_resource type="BoxMesh" id="box"]', resources + '[sub_resource type="BoxMesh" id="box"]')
         f.write(text)
         if args.lit and args.scene == "3d":
             # Its own sun and environment: the preview ones step aside and say so.
