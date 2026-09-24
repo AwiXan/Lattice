@@ -290,7 +290,12 @@ private:
 		Button *shading[4] = {};
 		EditorViewPill *display = nullptr;
 		EditorViewPill *layout = nullptr;
+		// How fast it flies (freelook), as a multiple of the base speed.
+		EditorViewPill *speed = nullptr;
 	} bar;
+	void _speed_menu_about_to_popup();
+	void _speed_menu_pressed(int p_id);
+	void _update_speed_pill();
 
 	// The pie menus: how the view draws (Z), and where it looks from (`).
 	EditorPieMenu *pie = nullptr;
@@ -617,6 +622,8 @@ public:
 	EditorViewPill *get_show_pill() const { return bar.show; }
 	EditorViewPill *get_display_pill() const { return bar.display; }
 	EditorViewPill *get_layout_pill() const { return bar.layout; }
+	EditorViewPill *get_speed_pill() const { return bar.speed; }
+	float get_freelook_speed() const;
 	Button *get_shading_button(int p_shading) const { return (p_shading >= 0 && p_shading < 4) ? bar.shading[p_shading] : nullptr; }
 	// Draws it one of the four ways (Node3DEditorChrome::Shading).
 	void set_shading(int p_shading);
@@ -986,6 +993,13 @@ private:
 	void _view_bar_show_pressed(int p_overlay, int p_viewport);
 	void _view_bar_gizmo_pressed(int p_gizmo, int p_viewport);
 	void _update_layout_pills();
+	// The snap steps - moving, rotating, scaling - beside the snap toggle, each
+	// a dropdown of the usual ones; dim while snapping is off.
+	EditorViewPill *snap_pills[3] = {};
+	void _build_snap_pills();
+	void _snap_pill_about_to_popup(int p_which);
+	void _snap_pill_pressed(int p_id, int p_which);
+	void _update_snap_pills();
 	// What can be drawn over the scene. Each item is an item some existing
 	// menu already has - the View menu, or each viewport's own - and reads its
 	// state from there.
@@ -1321,6 +1335,7 @@ public:
 	// The header's View menu: out of sight with the viewports' bars, which
 	// show its items.
 	MenuButton *get_view_layout_menu() const { return view_layout_menu; }
+	EditorViewPill *get_snap_pill(int p_which) const { return (p_which >= 0 && p_which < 3) ? snap_pills[p_which] : nullptr; }
 	// A transform option (ToolOptions) switched as its button would be.
 	void toggle_tool_option(int p_option);
 	bool is_tool_option_on(int p_option) const;

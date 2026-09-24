@@ -975,6 +975,32 @@ void EditorSelfTest::_view_bar() {
 	MenuButton *layout_menu = view->get_view_layout_menu();
 	_check(!layout_menu->is_pressed() && !layout_menu->is_processing_internal() && !viewport->get_view_menu()->is_pressed(), "opening a viewport's dropdowns does not make the hidden View menus think they are open");
 
+	// The snap steps, from the header.
+	EditorViewPill *move_snap = view->get_snap_pill(0);
+	if (move_snap) {
+		PopupMenu *popup = move_snap->get_popup();
+		popup->emit_signal(SNAME("about_to_popup"));
+		const int quarter = _item_with_text(popup, "0.25");
+		if (quarter >= 0) {
+			popup->emit_signal(SceneStringName(id_pressed), popup->get_item_id(quarter));
+		}
+		_check(quarter >= 0 && Math::is_equal_approx(view->get_translate_snap(), (real_t)0.25) && move_snap->get_text() == "0.25", "the header's snap step dropdown sets the step, and says it");
+	} else {
+		_check(false, "the 3D header has snap step dropdowns");
+	}
+	// And how fast a viewport flies.
+	EditorViewPill *speed = viewport->get_speed_pill();
+	if (speed) {
+		PopupMenu *popup = speed->get_popup();
+		popup->emit_signal(SNAME("about_to_popup"));
+		const float before = viewport->get_freelook_speed();
+		popup->emit_signal(SceneStringName(id_pressed), 5); // Four times the base.
+		const float base = EDITOR_GET("editors/3d/freelook/freelook_base_speed");
+		const bool set = Math::is_equal_approx(viewport->get_freelook_speed(), base * 4.0f) || viewport->get_freelook_speed() != before;
+		popup->emit_signal(SceneStringName(id_pressed), 3); // Back to the base.
+		_check(set && Math::is_equal_approx(viewport->get_freelook_speed(), base), vformat("a viewport's speed dropdown sets how fast it flies (%s)", speed->get_text()));
+	}
+
 	// What an addon added to the menu is not lost with it.
 	source->add_item("Lattice Test Item", 9000);
 	source->connect(SceneStringName(id_pressed), callable_mp(this, &EditorSelfTest::_addon_view_item_pressed));

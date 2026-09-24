@@ -3364,6 +3364,46 @@ void Node3DEditorViewport::_pilot_tick_undo_session(real_t p_delta) {
 void Node3DEditorViewport::_freelook_speed_scaled() {
 	zoom_indicator_delay = ZOOM_FREELOOK_INDICATOR_DELAY_S;
 	surface->queue_redraw();
+	_update_speed_pill();
+}
+
+float Node3DEditorViewport::get_freelook_speed() const {
+	return view_3d_controller.is_valid() ? view_3d_controller->get_freelook_speed() : 0.0f;
+}
+
+static const float freelook_speed_multiples[] = { 0.125f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 8.0f, 16.0f };
+
+void Node3DEditorViewport::_speed_menu_about_to_popup() {
+	PopupMenu *popup = bar.speed->get_popup();
+	popup->clear();
+	const float base = EDITOR_GET("editors/3d/freelook/freelook_base_speed");
+	const float current = get_freelook_speed();
+	for (int i = 0; i < (int)std::size(freelook_speed_multiples); i++) {
+		const float speed = base * freelook_speed_multiples[i];
+		popup->add_radio_check_item(vformat(U"%s  ×%s", String::num(speed, 2), String::num(freelook_speed_multiples[i], 3)), i);
+		popup->set_item_checked(-1, Math::is_equal_approx(speed, current));
+	}
+	popup->add_separator();
+	popup->add_item(TTR("The mouse wheel changes it while flying."), 100);
+	popup->set_item_disabled(-1, true);
+}
+
+void Node3DEditorViewport::_speed_menu_pressed(int p_id) {
+	if (p_id < 0 || p_id >= (int)std::size(freelook_speed_multiples) || view_3d_controller.is_null()) {
+		return;
+	}
+	const float base = EDITOR_GET("editors/3d/freelook/freelook_base_speed");
+	const float current = get_freelook_speed();
+	if (current > 0.0f) {
+		view_3d_controller->scale_freelook_speed(base * freelook_speed_multiples[p_id] / current);
+	}
+	_update_speed_pill();
+}
+
+void Node3DEditorViewport::_update_speed_pill() {
+	if (bar.speed) {
+		bar.speed->set_text(String::num(get_freelook_speed(), get_freelook_speed() < 10.0f ? 2 : 1));
+	}
 }
 
 bool Node3DEditorViewport::_is_nav_modifier_pressed(const String &p_name) {
@@ -4294,6 +4334,7 @@ void Node3DEditorViewport::_update_view_3d_controller(bool p_update_all) {
 
 		view_3d_controller->set_freelook_scheme((View3DController::FreelookScheme)EDITOR_GET("editors/3d/freelook/freelook_navigation_scheme").operator int());
 		view_3d_controller->set_freelook_base_speed(EDITOR_GET("editors/3d/freelook/freelook_base_speed"));
+		_update_speed_pill();
 		view_3d_controller->set_freelook_sensitivity(EDITOR_GET("editors/3d/freelook/freelook_sensitivity"));
 		view_3d_controller->set_freelook_inertia(EDITOR_GET("editors/3d/freelook/freelook_inertia"));
 		view_3d_controller->set_freelook_speed_zoom_link(EDITOR_GET("editors/3d/freelook/freelook_speed_zoom_link"));
@@ -8648,6 +8689,7 @@ void Node3DEditor::_snap_update() {
 	snap_translate->set_value(snap_translate_value);
 	snap_rotate->set_value(snap_rotate_value);
 	snap_scale->set_value(snap_scale_value);
+	_update_snap_pills();
 }
 
 void Node3DEditor::_update_vertex_snap_tooltips() {
@@ -10687,8 +10729,15 @@ void Node3DEditor::_update_theme() {
 			bar.options->set_button_icon(get_editor_theme_icon(SNAME("TripleBar")));
 			bar.camera->set_button_icon(get_editor_theme_icon(SNAME("Camera")));
 			bar.show->set_button_icon(get_editor_theme_icon(SNAME("GuiVisibilityVisible")));
+			bar.speed->set_button_icon(get_editor_theme_icon(SNAME("ViewportSpeed")));
 		}
 		_update_layout_pills();
+		const char *snap_icons[] = { "SnapGrid", "ToolRotate", "ToolScale" };
+		for (int i = 0; i < 3; i++) {
+			if (snap_pills[i]) {
+				snap_pills[i]->set_button_icon(get_editor_theme_icon(snap_icons[i]));
+			}
+		}
 	}
 }
 
@@ -12501,7 +12550,14 @@ void Node3DEditor::_group_header() {
 		return group;
 	};
 	frame(Object::cast_to<HBoxContainer>(transform_menu->get_parent()))->set_name("MenusGroup");
-	frame(Object::cast_to<HBoxContainer>(tool_option_button[TOOL_OPT_LOCAL_COORDS]->get_parent()))->set_name("OptionsGroup");
+	EditorViewHeaderGroup *options_group = frame(Object::cast_to<HBoxContainer>(tool_option_button[TOOL_OPT_LOCAL_COORDS]->get_parent()));
+	options_group->set_name("OptionsGroup");
+	_build_snap_pills();
+	EditorViewHeaderGroup *snap_group = memnew(EditorViewHeaderGroup);
+	snap_group->set_name("SnapGroup");
+	snap_group->take({ snap_pills[0], snap_pills[1], snap_pills[2] });
+	toolbar_flow->add_child(snap_group);
+	toolbar_flow->move_child(snap_group, options_group->get_index() + 1);
 
 	// The far end: the preview lighting, the sidebar.
 	EditorViewHeaderGroup *lighting_group = memnew(EditorViewHeaderGroup);
@@ -12595,6 +12651,17 @@ void Node3DEditor::_build_view_bar(int p_viewport) {
 	EditorViewHeaderGroup *camera_group = group({ bar.camera });
 	top_left->add_child(camera_group);
 	top_left->move_child(camera_group, 1);
+
+	bar.speed = memnew(EditorViewPill);
+	bar.speed->set_name("ViewSpeed");
+	bar.speed->set_tooltip_text(TTRC("Flying speed: how fast the view moves while flying (right mouse button held)."));
+	bar.speed->set_accessibility_name(TTRC("Flying Speed"));
+	bar.speed->get_popup()->connect("about_to_popup", callable_mp(viewport, &Node3DEditorViewport::_speed_menu_about_to_popup));
+	bar.speed->get_popup()->connect(SceneStringName(id_pressed), callable_mp(viewport, &Node3DEditorViewport::_speed_menu_pressed));
+	EditorViewHeaderGroup *speed_group = group({ bar.speed });
+	top_left->add_child(speed_group);
+	top_left->move_child(speed_group, 2);
+	viewport->_update_speed_pill();
 
 	// The top right, over the navigation gizmo: what is drawn over the scene,
 	// how the scene is drawn, and how the view is split into viewports.
@@ -12692,6 +12759,77 @@ void Node3DEditor::_view_bar_gizmo_pressed(int p_gizmo, int p_viewport) {
 	// The View menu's Gizmos submenu keeps the state; this one shows it.
 	_menu_gizmo_toggled(p_gizmo);
 	_fill_gizmos_menu(viewports[p_viewport]->bar.show_gizmos);
+}
+
+static const real_t snap_presets_translate[] = { 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10 };
+static const real_t snap_presets_rotate[] = { 1, 5, 10, 15, 22.5, 30, 45, 90 };
+static const real_t snap_presets_scale[] = { 1, 5, 10, 25, 50, 100 };
+
+static String _snap_text(int p_which, real_t p_value) {
+	const String number = String::num(p_value, 3);
+	return p_which == 1 ? number + U"°" : (p_which == 2 ? number + "%" : number);
+}
+
+void Node3DEditor::_build_snap_pills() {
+	const char *tooltips[] = {
+		TTRC("Snap step for moving, in meters."),
+		TTRC("Snap step for rotating, in degrees."),
+		TTRC("Snap step for scaling, in percent."),
+	};
+	EditorSpinSlider *fields[] = { snap_translate, snap_rotate, snap_scale };
+	for (int i = 0; i < 3; i++) {
+		snap_pills[i] = memnew(EditorViewPill);
+		snap_pills[i]->set_tooltip_text(tooltips[i]);
+		snap_pills[i]->set_accessibility_name(tooltips[i]);
+		snap_pills[i]->get_popup()->connect("about_to_popup", callable_mp(this, &Node3DEditor::_snap_pill_about_to_popup).bind(i));
+		snap_pills[i]->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &Node3DEditor::_snap_pill_pressed).bind(i));
+		fields[i]->connect(SceneStringName(value_changed), callable_mp(this, &Node3DEditor::_update_snap_pills).unbind(1));
+	}
+	tool_option_button[TOOL_OPT_USE_SNAP]->connect(SceneStringName(toggled), callable_mp(this, &Node3DEditor::_update_snap_pills).unbind(1));
+	_update_snap_pills();
+}
+
+void Node3DEditor::_snap_pill_about_to_popup(int p_which) {
+	ERR_FAIL_INDEX(p_which, 3);
+	PopupMenu *popup = snap_pills[p_which]->get_popup();
+	popup->clear();
+	const real_t *presets[] = { snap_presets_translate, snap_presets_rotate, snap_presets_scale };
+	const int counts[] = { (int)std::size(snap_presets_translate), (int)std::size(snap_presets_rotate), (int)std::size(snap_presets_scale) };
+	const real_t current = p_which == 0 ? snap_translate_value : (p_which == 1 ? snap_rotate_value : snap_scale_value);
+	for (int i = 0; i < counts[p_which]; i++) {
+		popup->add_radio_check_item(_snap_text(p_which, presets[p_which][i]), i);
+		popup->set_item_checked(-1, Math::is_equal_approx(presets[p_which][i], current));
+	}
+	popup->add_separator();
+	popup->add_item(TTR("Other..."), 100);
+}
+
+void Node3DEditor::_snap_pill_pressed(int p_id, int p_which) {
+	ERR_FAIL_INDEX(p_which, 3);
+	if (p_id == 100) {
+		show_snap_settings();
+		return;
+	}
+	const real_t *presets[] = { snap_presets_translate, snap_presets_rotate, snap_presets_scale };
+	const int counts[] = { (int)std::size(snap_presets_translate), (int)std::size(snap_presets_rotate), (int)std::size(snap_presets_scale) };
+	ERR_FAIL_INDEX(p_id, counts[p_which]);
+	EditorSpinSlider *fields[] = { snap_translate, snap_rotate, snap_scale };
+	// Through the field, as typing it there does: saved and applied the same way.
+	fields[p_which]->set_value(presets[p_which][p_id]);
+}
+
+void Node3DEditor::_update_snap_pills() {
+	if (!snap_pills[0]) {
+		return;
+	}
+	// As set, not as Shift makes them for now.
+	const real_t values[] = { snap_translate_value, snap_rotate_value, snap_scale_value };
+	const bool snapping = tool_option_button[TOOL_OPT_USE_SNAP]->is_pressed();
+	for (int i = 0; i < 3; i++) {
+		snap_pills[i]->set_text(_snap_text(i, values[i]));
+		// Still set, not in use.
+		snap_pills[i]->set_modulate(Color(1, 1, 1, snapping ? 1.0 : 0.55));
+	}
 }
 
 void Node3DEditor::_update_layout_pills() {
