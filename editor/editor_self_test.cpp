@@ -958,6 +958,14 @@ void EditorSelfTest::_view_bar() {
 	const bool back = !source->is_item_checked(source->get_item_index(orthogonal_id));
 	_check(switched && named && back, "choosing Orthogonal in the camera dropdown chooses it in the viewport's menu, and the dropdown says so");
 
+	// Opening them leaves the hidden menus' buttons as they were: a button
+	// that thinks its menu open, and switches on hover, would open the
+	// Transform menu and close it again under the mouse, every frame.
+	viewport->get_options_pill()->get_popup()->emit_signal(SNAME("about_to_popup"));
+	camera_popup->emit_signal(SNAME("about_to_popup"));
+	MenuButton *layout_menu = view->get_view_layout_menu();
+	_check(!layout_menu->is_pressed() && !layout_menu->is_processing_internal() && !viewport->get_view_menu()->is_pressed(), "opening a viewport's dropdowns does not make the hidden View menus think they are open");
+
 	// What an addon added to the menu is not lost with it.
 	source->add_item("Lattice Test Item", 9000);
 	source->connect(SceneStringName(id_pressed), callable_mp(this, &EditorSelfTest::_addon_view_item_pressed));

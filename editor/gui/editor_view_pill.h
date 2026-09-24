@@ -65,6 +65,7 @@ private:
 	void _copy_pressed(int p_index, ObjectID p_copy);
 	void _sync(PopupMenu *p_copy);
 	static void _end_group(PopupMenu *p_menu);
+	static void _prepare_source(PopupMenu *p_menu);
 	// A submenu added without an id has its index for one, which can be any
 	// other item's id too: an id means the item that is not a submenu first.
 	static int _find(const PopupMenu *p_menu, int p_id);

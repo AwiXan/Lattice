@@ -33,6 +33,7 @@
 #include "core/object/callable_mp.h"
 #include "editor/gui/editor_view_header_group.h"
 #include "editor/themes/editor_scale.h"
+#include "scene/gui/base_button.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/resources/style_box_flat.h"
 
@@ -45,6 +46,24 @@ void EditorViewPill::add_mirror(PopupMenu *p_source, const Vector<int> &p_ids, c
 		}
 	}
 	mirrors.push_back(mirror);
+}
+
+void EditorViewPill::_prepare_source(PopupMenu *p_menu) {
+	// Whatever it does to be up to date as it opens, it does now - all but
+	// what its own button does, which takes it for open: a button that
+	// switches on hover would then open its neighbours under the mouse, every
+	// frame, for good.
+	const Object *button = Object::cast_to<BaseButton>(p_menu->get_parent());
+	List<Object::Connection> connections;
+	p_menu->get_signal_connection_list(SNAME("about_to_popup"), &connections);
+	for (const Object::Connection &connection : connections) {
+		if (button && connection.callable.get_object() == button) {
+			continue;
+		}
+		Variant result;
+		Callable::CallError error;
+		connection.callable.callp(nullptr, 0, result, error);
+	}
 }
 
 int EditorViewPill::_find(const PopupMenu *p_menu, int p_id) {
@@ -86,8 +105,7 @@ void EditorViewPill::_about_to_popup() {
 		if (!source) {
 			continue;
 		}
-		// Whatever it does to be up to date as it opens, it does now.
-		source->emit_signal(SNAME("about_to_popup"));
+		_prepare_source(source);
 		_end_group(menu);
 		for (int id : mirror.ids) {
 			if (id == SEPARATOR) {
@@ -123,7 +141,7 @@ void EditorViewPill::_copy_item(PopupMenu *p_to, PopupMenu *p_from, int p_index)
 	const int id = p_from->get_item_id(p_index);
 	PopupMenu *submenu = p_from->get_item_submenu_node(p_index);
 	if (submenu) {
-		submenu->emit_signal(SNAME("about_to_popup"));
+		_prepare_source(submenu);
 		PopupMenu *copy = memnew(PopupMenu);
 		copy->set_hide_on_checkable_item_selection(submenu->is_hide_on_checkable_item_selection());
 		copy->connect(SNAME("index_pressed"), callable_mp(this, &EditorViewPill::_copy_pressed).bind(copy->get_instance_id()));
