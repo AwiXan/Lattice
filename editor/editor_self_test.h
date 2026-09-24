@@ -133,6 +133,13 @@ class EditorSelfTest : public Node {
 	void _view_sidebar_open();
 	void _view_sidebar_check();
 	void _view_hints();
+	void _addon_mirror_prepare();
+	void _addon_mirror_check();
+	void _addon_button_pressed() { addon_presses++; }
+	int addon_presses = 0;
+	ObjectID addon_pane;
+	ObjectID addon_button;
+	ObjectID addon_plugin;
 	ObjectID sidebar_view;
 	ObjectID sidebar_node;
 	real_t sidebar_node_x = 0.0;

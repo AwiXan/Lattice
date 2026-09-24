@@ -87,6 +87,7 @@
 #include "editor/scene/3d/gizmos/two_bone_ik_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/visible_on_screen_notifier_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/voxel_gi_gizmo_plugin.h"
+#include "editor/gui/editor_button_mirror.h"
 #include "editor/gui/editor_view_hints.h"
 #include "editor/gui/editor_view_sidebar.h"
 #include "editor/scene/3d/node_3d_editor_chrome.h"
@@ -10379,6 +10380,9 @@ void Node3DEditor::_notification(int p_what) {
 			// A view opened after registration has an empty Gizmos menu until it
 			// is built from the set that is already there.
 			_update_gizmos_menu();
+			if (addon_mirror && primary_instance != this) {
+				_queue_addon_mirror_rebuild();
+			}
 			_init_indicators();
 			// Every open document, not only the one this view shows: a document
 			// loaded before any view existed asked for gizmos when nothing was
@@ -10497,8 +10501,13 @@ void Node3DEditor::clear_subgizmo_selection(Object *p_obj) {
 }
 
 void Node3DEditor::add_control_to_menu_panel(Control *p_control) {
+	if (primary_instance && primary_instance != this) {
+		primary_instance->add_control_to_menu_panel(p_control);
+		return;
+	}
 	ERR_FAIL_NULL(p_control);
 	ERR_FAIL_COND(p_control->get_parent());
+	_queue_addon_mirror_rebuild();
 
 	VSeparator *sep = memnew(VSeparator);
 	context_toolbar_hbox->add_child(sep);
@@ -10511,6 +10520,11 @@ void Node3DEditor::add_control_to_menu_panel(Control *p_control) {
 }
 
 void Node3DEditor::remove_control_from_menu_panel(Control *p_control) {
+	if (primary_instance && primary_instance != this) {
+		primary_instance->remove_control_from_menu_panel(p_control);
+		return;
+	}
+	_queue_addon_mirror_rebuild();
 	ERR_FAIL_NULL(p_control);
 	ERR_FAIL_COND(p_control->get_parent() != context_toolbar_hbox);
 
@@ -10555,6 +10569,10 @@ void Node3DEditor::set_can_preview(Camera3D *p_preview) {
 }
 
 VSplitContainer *Node3DEditor::get_shader_split() {
+	// Where addons put their bottom panels: the view that stays.
+	if (primary_instance && primary_instance != this) {
+		return primary_instance->get_shader_split();
+	}
 	return shader_split;
 }
 
@@ -10563,24 +10581,44 @@ Node3DEditorViewport *Node3DEditor::get_last_used_viewport() {
 }
 
 void Node3DEditor::add_control_to_left_panel(Control *p_control) {
+	if (primary_instance && primary_instance != this) {
+		primary_instance->add_control_to_left_panel(p_control);
+		return;
+	}
 	left_panel_split->add_child(p_control);
 	left_panel_split->move_child(p_control, 0);
 }
 
 void Node3DEditor::add_control_to_right_panel(Control *p_control) {
+	if (primary_instance && primary_instance != this) {
+		primary_instance->add_control_to_right_panel(p_control);
+		return;
+	}
 	right_panel_split->add_child(p_control);
 	right_panel_split->move_child(p_control, 1);
 }
 
 void Node3DEditor::remove_control_from_left_panel(Control *p_control) {
+	if (primary_instance && primary_instance != this) {
+		primary_instance->remove_control_from_left_panel(p_control);
+		return;
+	}
 	left_panel_split->remove_child(p_control);
 }
 
 void Node3DEditor::remove_control_from_right_panel(Control *p_control) {
+	if (primary_instance && primary_instance != this) {
+		primary_instance->remove_control_from_right_panel(p_control);
+		return;
+	}
 	right_panel_split->remove_child(p_control);
 }
 
 void Node3DEditor::move_control_to_left_panel(Control *p_control) {
+	if (primary_instance && primary_instance != this) {
+		primary_instance->move_control_to_left_panel(p_control);
+		return;
+	}
 	ERR_FAIL_NULL(p_control);
 	if (p_control->get_parent() == left_panel_split) {
 		return;
@@ -10593,6 +10631,10 @@ void Node3DEditor::move_control_to_left_panel(Control *p_control) {
 }
 
 void Node3DEditor::move_control_to_right_panel(Control *p_control) {
+	if (primary_instance && primary_instance != this) {
+		primary_instance->move_control_to_right_panel(p_control);
+		return;
+	}
 	ERR_FAIL_NULL(p_control);
 	if (p_control->get_parent() == right_panel_split) {
 		return;
@@ -12156,6 +12198,12 @@ void Node3DEditor::_build_sidebar(Control *p_over) {
 	sidebar_button->connect(SceneStringName(toggled), callable_mp(this, &Node3DEditor::_sidebar_button_toggled));
 	header_end->add_child(sidebar_button);
 
+	addon_mirror = memnew(EditorButtonMirror);
+	// Pressing a copy acts in this view, on its document, as pressing
+	// anything else in it does.
+	addon_mirror->set_before_press(callable_mp(this, &Node3DEditor::_activate_for_user));
+	addon_mirror->set_shortcut_context(this);
+
 	hints = memnew(EditorViewHints);
 	hints->set_visible(EditorSettings::get_singleton()->get_project_metadata("3d_editor", "key_hints", true));
 	add_child(hints);
@@ -12164,8 +12212,63 @@ void Node3DEditor::_build_sidebar(Control *p_over) {
 	Timer *hints_timer = memnew(Timer);
 	hints_timer->set_wait_time(0.15);
 	hints_timer->set_autostart(true);
-	hints_timer->connect("timeout", callable_mp(this, &Node3DEditor::_update_hints));
+	hints_timer->connect("timeout", callable_mp(this, &Node3DEditor::_chrome_tick));
 	add_child(hints_timer);
+}
+
+void Node3DEditor::_chrome_tick() {
+	_update_hints();
+	_sync_addon_mirrors();
+}
+
+void Node3DEditor::_activate_for_user() {
+	make_active();
+	EditorMainScreen *main_screen = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_editor_main_screen() : nullptr;
+	if (main_screen) {
+		main_screen->view_activated(this);
+	}
+}
+
+void Node3DEditor::_queue_addon_mirror_rebuild() {
+	if (addon_mirrors_queued) {
+		return;
+	}
+	addon_mirrors_queued = true;
+	callable_mp_static(&Node3DEditor::_rebuild_all_addon_mirrors).call_deferred();
+}
+
+void Node3DEditor::_rebuild_all_addon_mirrors() {
+	addon_mirrors_queued = false;
+	for (Node3DEditor *instance : instances) {
+		instance->_rebuild_addon_mirrors();
+	}
+}
+
+void Node3DEditor::_rebuild_addon_mirrors() {
+	if (!addon_mirror || !primary_instance || primary_instance == this) {
+		return;
+	}
+	addon_mirror->clear();
+	while (context_toolbar_hbox->get_child_count() > 0) {
+		Node *copy = context_toolbar_hbox->get_child(0);
+		context_toolbar_hbox->remove_child(copy);
+		memdelete(copy);
+	}
+	addon_mirror->mirror_all(primary_instance->context_toolbar_hbox, context_toolbar_hbox);
+	_sync_addon_mirrors();
+}
+
+void Node3DEditor::_sync_addon_mirrors() {
+	if (!addon_mirror || !primary_instance || primary_instance == this) {
+		return;
+	}
+	addon_mirror->sync();
+	bool any = false;
+	for (int i = 0; i < context_toolbar_hbox->get_child_count() && !any; i++) {
+		const Control *copy = Object::cast_to<Control>(context_toolbar_hbox->get_child(i));
+		any = copy && copy->is_visible();
+	}
+	context_toolbar_panel->set_visible(any);
 }
 
 void Node3DEditor::_update_hints() {
@@ -12420,6 +12523,13 @@ void Node3DEditor::update_shading_buttons() {
 }
 Node3DEditor::~Node3DEditor() {
 	instances.erase(this);
+	if (primary_instance == this) {
+		primary_instance = nullptr;
+	}
+	if (addon_mirror) {
+		memdelete(addon_mirror);
+		addon_mirror = nullptr;
+	}
 	_release_world_visuals();
 	_release_preview_owner();
 	if (active_instance == this) {
@@ -12792,6 +12902,7 @@ Node3DEditorPlugin::Node3DEditorPlugin() {
 	}
 
 	spatial_editor = memnew(Node3DEditor);
+	spatial_editor->make_primary();
 	spatial_editor->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	parked_parent = EditorNode::get_singleton()->get_editor_main_screen()->get_control();
 	parked_parent->add_child(spatial_editor);

@@ -51,6 +51,7 @@ class DirectionalLight3D;
 class EditorData;
 class EditorSelection;
 class EditorSpinSlider;
+class EditorButtonMirror;
 class EditorViewHints;
 class EditorViewSidebar;
 class HFlowContainer;
@@ -943,6 +944,21 @@ private:
 	// What the mouse and keys do right now, under the viewports.
 	EditorViewHints *hints = nullptr;
 	void _update_hints();
+	void _chrome_tick();
+
+	// The view the 3D editor plugin made, which lasts as long as the editor.
+	// What plugins and addons hand the 3D editor - its context toolbar, side
+	// panels, bottom split - goes into this one whichever view is active: any
+	// other can be closed, and would take an addon's controls with it. The
+	// other views show copies of its context toolbar.
+	static inline Node3DEditor *primary_instance = nullptr;
+	EditorButtonMirror *addon_mirror = nullptr;
+	static inline bool addon_mirrors_queued = false;
+	static void _queue_addon_mirror_rebuild();
+	static void _rebuild_all_addon_mirrors();
+	void _rebuild_addon_mirrors();
+	void _sync_addon_mirrors();
+	void _activate_for_user();
 
 	void _generate_selection_boxes();
 
@@ -1129,6 +1145,8 @@ public:
 	// The active instance. With a single editor space open this is the only
 	// instance, so callers keep the behavior they had when it was a singleton.
 	static Node3DEditor *get_singleton() { return active_instance; }
+	static Node3DEditor *get_primary() { return primary_instance ? primary_instance : active_instance; }
+	void make_primary() { primary_instance = this; }
 	static const Vector<Node3DEditor *> &get_instances() { return instances; }
 	// For the self-test: whether a world has its grid and origin lines, and how
 	// many preview suns are lighting it.

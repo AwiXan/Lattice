@@ -626,6 +626,78 @@ void EditorSelfTest::_view_hints() {
 	_check(hidden && hints->is_visible(), "the key hints are an overlay that can be switched off");
 }
 
+void EditorSelfTest::_addon_mirror_prepare() {
+	// A second 3D view, beside the first.
+	EditorPane *first = _pane_showing("view_3d");
+	if (!first) {
+		first = _tree()->get_first_pane();
+		first->show_panel_of_type("view_3d");
+	}
+	EditorPane *second = _tree()->split_pane(first, false, false, false);
+	second->add_panel("view_3d");
+	addon_pane = second->get_instance_id();
+
+	// And an addon putting a button in the 3D editor's toolbar, while the
+	// second view is the one being worked in.
+	for (int i = 0; i < second->get_panel_count(); i++) {
+		Node3DEditor *view = Object::cast_to<Node3DEditor>(second->get_panel_at(i));
+		if (view) {
+			view->make_active();
+		}
+	}
+	EditorPlugin *plugin = memnew(EditorPlugin);
+	Button *button = memnew(Button);
+	button->set_text("SelfTestAddonButton");
+	button->connect(SceneStringName(pressed), callable_mp(this, &EditorSelfTest::_addon_button_pressed));
+	plugin->add_control_to_container(EditorPlugin::CONTAINER_SPATIAL_EDITOR_MENU, button);
+	addon_plugin = plugin->get_instance_id();
+	addon_button = button->get_instance_id();
+}
+
+void EditorSelfTest::_addon_mirror_check() {
+	EditorPane *second = ObjectDB::get_instance<EditorPane>(addon_pane);
+	Button *button = ObjectDB::get_instance<Button>(addon_button);
+	EditorPlugin *plugin = ObjectDB::get_instance<EditorPlugin>(addon_plugin);
+	Node3DEditor *primary = Node3DEditor::get_primary();
+	// Whichever of the two views is not the one that stays.
+	Node3DEditor *view = nullptr;
+	for (EditorPane *pane : _tree()->get_panes()) {
+		for (int i = 0; i < pane->get_panel_count(); i++) {
+			Node3DEditor *candidate = Object::cast_to<Node3DEditor>(pane->get_panel_at(i));
+			if (candidate && candidate != primary && !view) {
+				view = candidate;
+			}
+		}
+	}
+	_check(button && button->get_parent() == primary->get_context_toolbar(), "an addon's toolbar button goes to the view that stays, whichever view is active");
+
+	Button *copy = nullptr;
+	if (view && view != primary) {
+		TypedArray<Node> buttons = view->get_context_toolbar()->find_children("*", "Button", true, false);
+		for (int i = 0; i < buttons.size(); i++) {
+			Button *candidate = Object::cast_to<Button>(buttons[i]);
+			if (candidate && candidate->get_text() == "SelfTestAddonButton") {
+				copy = candidate;
+			}
+		}
+	}
+	if (copy) {
+		copy->emit_signal(SceneStringName(pressed));
+	}
+	_check(copy && addon_presses == 1, vformat("another 3D view shows a copy of it, and pressing the copy presses it (view %s, primary %s, copies %d, presses %d)", view != nullptr, view == primary, view ? view->get_context_toolbar()->get_child_count() : -1, addon_presses));
+
+	if (plugin && button) {
+		plugin->remove_control_from_container(EditorPlugin::CONTAINER_SPATIAL_EDITOR_MENU, button);
+		memdelete(button);
+	}
+	if (plugin) {
+		memdelete(plugin);
+	}
+	if (second) {
+		_tree()->close_pane(second);
+	}
+}
+
 EditorPane *EditorSelfTest::_pane_with_script(const String &p_path, int *r_index) const {
 	for (EditorPane *pane : _tree()->get_panes()) {
 		for (int i = 0; i < pane->get_panel_count(); i++) {
@@ -1378,6 +1450,8 @@ EditorSelfTest::EditorSelfTest() {
 	_add("view sidebar open", callable_mp(this, &EditorSelfTest::_view_sidebar_open));
 	_add("view sidebar check", callable_mp(this, &EditorSelfTest::_view_sidebar_check));
 	_add("view hints", callable_mp(this, &EditorSelfTest::_view_hints));
+	_add("addon mirror prepare", callable_mp(this, &EditorSelfTest::_addon_mirror_prepare));
+	_add("addon mirror check", callable_mp(this, &EditorSelfTest::_addon_mirror_check));
 	_add("script left open", callable_mp(this, &EditorSelfTest::_script_left_open));
 	_add("script stand-in", callable_mp(this, &EditorSelfTest::_script_stand_in));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
