@@ -3996,8 +3996,10 @@ RID RenderForwardClustered::_setup_sdfgi_render_pass_uniform_set(RID p_albedo_te
 		uniforms.push_back(u);
 	}
 	{
+		// Where the scene shader declares it (see scene_forward_clustered_inc.glsl);
+		// the SDF pass writes feedback too, into the dummy buffer.
 		RD::Uniform u;
-		u.binding = 38;
+		u.binding = 37;
 		u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
 		RID instance_buffer = scene_shader.default_material_feedback_buffer;
 		u.append_id(instance_buffer);
