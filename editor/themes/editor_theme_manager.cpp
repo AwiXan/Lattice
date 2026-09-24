@@ -44,6 +44,7 @@
 #include "editor/themes/editor_theme.h"
 #include "editor/themes/theme_classic.h"
 #include "editor/themes/theme_modern.h"
+#include "scene/gui/popup.h"
 #include "scene/resources/style_box_flat.h"
 #include "scene/resources/style_box_line.h"
 #include "scene/resources/style_box_texture.h"
@@ -685,6 +686,9 @@ void EditorThemeManager::_reset_dirty_flag() {
 
 Ref<EditorTheme> EditorThemeManager::generate_theme(const Ref<EditorTheme> &p_old_theme) {
 	OS::get_singleton()->benchmark_begin_measure(get_benchmark_key(), "Generate Theme");
+
+	// Not the theme's, but set with it: every popup of the editor at once.
+	Popup::set_open_animation_time(EDITOR_GET("interface/theme/animate_popups") ? 0.13 : 0.0);
 
 	Ref<EditorTheme> theme = _create_base_theme(p_old_theme);
 

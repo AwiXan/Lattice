@@ -91,6 +91,7 @@
 #include "editor/gui/editor_pie_menu.h"
 #include "editor/gui/editor_view_header_group.h"
 #include "editor/gui/editor_view_hints.h"
+#include "editor/gui/editor_view_pill.h"
 #include "editor/gui/editor_view_sidebar.h"
 #include "editor/scene/3d/node_3d_editor_chrome.h"
 #include "editor/scene/3d/node_3d_editor_gizmos.h"
@@ -631,7 +632,7 @@ void Node3DEditorViewport::_fill_shading_pie() {
 		EditorPieMenu::Item item;
 		item.text = TTRGET(shading.name);
 		item.icon = Node3DEditorChrome::make_shading_icon(shading.shading, icon_size, ink, accent);
-		item.action = callable_mp(spatial_editor, &Node3DEditor::set_shading).bind((int)shading.shading);
+		item.action = callable_mp(this, &Node3DEditorViewport::set_shading).bind((int)shading.shading);
 		item.current = drawn == shading.draw;
 		pie->set_item(shading.direction, item);
 	}
@@ -652,13 +653,13 @@ void Node3DEditorViewport::_fill_shading_pie() {
 		EditorPieMenu::Item item;
 		item.text = TTRGET(toggle.name);
 		item.icon = get_editor_theme_icon(toggle.icon);
-		item.action = callable_mp(spatial_editor, &Node3DEditor::toggle_overlay).bind((int)toggle.overlay);
-		item.current = spatial_editor->is_overlay_shown_everywhere(toggle.overlay);
+		item.action = callable_mp(spatial_editor, &Node3DEditor::toggle_overlay_in).bind((int)toggle.overlay, index);
+		item.current = spatial_editor->is_overlay_shown_in(toggle.overlay, index);
 		pie->set_item(toggle.direction, item);
 	}
 	EditorPieMenu::Item overdraw;
 	overdraw.text = TTR("Overdraw");
-	overdraw.action = callable_mp(spatial_editor, &Node3DEditor::set_display_everywhere).bind((int)VIEW_DISPLAY_OVERDRAW);
+	overdraw.action = callable_mp(this, &Node3DEditorViewport::_menu_option).bind((int)VIEW_DISPLAY_OVERDRAW);
 	overdraw.current = drawn == Viewport::DEBUG_DRAW_OVERDRAW;
 	pie->set_item(EditorPieMenu::DIRECTION_BOTTOM_RIGHT, overdraw);
 }
@@ -1626,6 +1627,31 @@ void Node3DEditorViewport::_view_state_changed() {
 void Node3DEditorViewport::_update_name() {
 	view_display_menu->set_text(view_3d_controller->get_view_type_name());
 	view_display_menu->reset_size();
+	if (bar.camera) {
+		bar.camera->set_text(view_3d_controller->get_view_type_name());
+	}
+}
+
+void Node3DEditorViewport::shortcut_input(const Ref<InputEvent> &p_event) {
+	// The View menu took its own shortcuts while the viewport had the focus;
+	// out of sight it takes none, so they come here instead.
+	if (!bar.camera || view_display_menu->is_visible() || !surface->has_focus() || p_event.is_null() || !p_event->is_pressed()) {
+		return;
+	}
+	if (view_display_menu->get_popup()->activate_item_by_event(p_event, false)) {
+		accept_event();
+	}
+}
+
+void Node3DEditorViewport::set_shading(int p_shading) {
+	ERR_FAIL_INDEX(p_shading, Node3DEditorChrome::SHADING_MAX);
+	static const int options[Node3DEditorChrome::SHADING_MAX] = {
+		VIEW_DISPLAY_WIREFRAME,
+		VIEW_DISPLAY_UNSHADED,
+		VIEW_DISPLAY_LIGHTING,
+		VIEW_DISPLAY_NORMAL,
+	};
+	_menu_option(options[p_shading]);
 }
 
 void Node3DEditorViewport::_compute_edit(const Point2 &p_point) {
@@ -4997,7 +5023,8 @@ void Node3DEditorViewport::_preview_exited_scene() {
 	preview_camera->set_pressed(false);
 	_toggle_camera_preview(false);
 	preview_camera->connect(SceneStringName(toggled), callable_mp(this, &Node3DEditorViewport::_toggle_camera_preview));
-	view_display_menu->show();
+	// Unless the viewport's bar shows what it has.
+	view_display_menu->set_visible(!bar.camera);
 }
 
 void Node3DEditorViewport::_preview_camera_property_changed() {
@@ -5270,7 +5297,8 @@ void Node3DEditorViewport::_toggle_cinema_preview(bool p_activate) {
 		} else {
 			preview_camera->show();
 		}
-		view_display_menu->show();
+		// Unless the viewport's bar shows what it has.
+	view_display_menu->set_visible(!bar.camera);
 		surface->queue_redraw();
 	}
 }
@@ -10396,6 +10424,11 @@ void Node3DEditor::shortcut_input(const Ref<InputEvent> &p_event) {
 	}
 
 	snap_key_enabled = Input::get_singleton()->is_key_pressed(Key::CMD_OR_CTRL);
+
+	// Out of sight, the View menu takes no shortcuts; they are the view's.
+	if (view_bars && !view_layout_menu->is_visible() && p_event->is_pressed() && view_layout_menu->get_popup()->activate_item_by_event(p_event, false)) {
+		accept_event();
+	}
 }
 
 void Node3DEditor::_sun_environ_settings_pressed() {
@@ -10528,32 +10561,31 @@ void Node3DEditor::_update_theme() {
 		for (int i = 0; i < TOOL_OPT_MAX; i++) {
 			EditorViewHeaderGroup::style_tool_button(tool_option_button[i]);
 		}
-		for (int i = 0; i < 4; i++) {
-			EditorViewHeaderGroup::style_tool_button(shading_buttons[i]);
-		}
 		EditorViewHeaderGroup::style_tool_button(sun_button);
 		EditorViewHeaderGroup::style_tool_button(environ_button);
 		EditorViewHeaderGroup::style_tool_button(sidebar_button);
 		// What plugins add is a group of the header like the rest.
 		EditorViewHeaderGroup::apply_style(context_toolbar_panel);
 	}
-	if (display_menu) {
-		display_menu->set_button_icon(get_theme_icon(SNAME("arrow"), SNAME("OptionButton")));
-	}
-	if (overlays_menu) {
-		overlays_menu->set_button_icon(get_editor_theme_icon(SNAME("GuiVisibilityVisible")));
-	}
 	if (sidebar_button) {
 		sidebar_button->set_button_icon(get_editor_theme_icon(SNAME("Tools")));
 	}
-	if (shading_buttons[0]) {
-		// Drawn rather than loaded, in the theme's own colors.
+	if (view_bars) {
+		// The shading buttons drawn rather than loaded, in the theme's own colors.
 		const Color ink = get_theme_color(SNAME("icon_normal_color"), SNAME("Button"));
 		const Color accent = get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
 		const int size = get_editor_theme_icon(SNAME("ToolMove"))->get_width();
-		for (int i = 0; i < Node3DEditorChrome::SHADING_MAX; i++) {
-			shading_buttons[i]->set_button_icon(Node3DEditorChrome::make_shading_icon((Node3DEditorChrome::Shading)i, size, ink, accent));
+		for (uint32_t v = 0; v < VIEWPORTS_COUNT; v++) {
+			Node3DEditorViewport::ViewBar &bar = viewports[v]->bar;
+			for (int i = 0; i < Node3DEditorChrome::SHADING_MAX; i++) {
+				EditorViewHeaderGroup::style_tool_button(bar.shading[i]);
+				bar.shading[i]->set_button_icon(Node3DEditorChrome::make_shading_icon((Node3DEditorChrome::Shading)i, size, ink, accent));
+			}
+			bar.options->set_button_icon(get_editor_theme_icon(SNAME("TripleBar")));
+			bar.camera->set_button_icon(get_editor_theme_icon(SNAME("Camera")));
+			bar.show->set_button_icon(get_editor_theme_icon(SNAME("GuiVisibilityVisible")));
 		}
+		_update_layout_pills();
 	}
 }
 
@@ -12331,63 +12363,15 @@ void Node3DEditor::_arrange_chrome() {
 	}
 	toolbar_flow->move_child(header_end, -1);
 
-	// How the view draws, the way other 3D applications offer it: the modes
-	// each viewport's own menu has, for all of this view's viewports at once.
-	HBoxContainer *shading_group = memnew(HBoxContainer);
-	shading_group->set_name("Shading");
-	shading_group->add_theme_constant_override("separation", 0);
-	Ref<ButtonGroup> shading_button_group;
-	shading_button_group.instantiate();
-	const char *shading_names[] = { TTRC("Display Wireframe"), TTRC("Display Unshaded"), TTRC("Display Lighting"), TTRC("Display Normal") };
-	for (int i = 0; i < Node3DEditorChrome::SHADING_MAX; i++) {
-		Button *button = memnew(Button);
-		button->set_toggle_mode(true);
-		button->set_button_group(shading_button_group);
-		button->set_theme_type_variation(SceneStringName(FlatButton));
-		button->set_tooltip_text(shading_names[i]);
-		button->set_accessibility_name(shading_names[i]);
-		button->connect(SceneStringName(pressed), callable_mp(this, &Node3DEditor::_shading_pressed).bind(i));
-		shading_group->add_child(button);
-		shading_buttons[i] = button;
-	}
-	shading_buttons[Node3DEditorChrome::SHADING_NORMAL]->set_pressed_no_signal(true);
-	header_end->add_child(shading_group);
-	header_end->move_child(shading_group, 0);
-
-	overlays_menu = memnew(MenuButton);
-	overlays_menu->set_name("Overlays");
-	overlays_menu->set_flat(false);
-	overlays_menu->set_theme_type_variation("FlatMenuButton");
-	overlays_menu->set_tooltip_text(TTRC("Overlays"));
-	overlays_menu->set_accessibility_name(TTRC("Overlays"));
-	overlays_menu->set_shortcut_context(this);
-	PopupMenu *overlays_popup = overlays_menu->get_popup();
-	overlays_popup->set_hide_on_checkable_item_selection(false);
-	overlays_popup->connect("about_to_popup", callable_mp(this, &Node3DEditor::_overlays_about_to_popup));
-	overlays_popup->connect(SceneStringName(id_pressed), callable_mp(this, &Node3DEditor::_overlays_id_pressed));
-	overlays_gizmos_menu = memnew(PopupMenu);
-	overlays_gizmos_menu->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
-	overlays_gizmos_menu->set_hide_on_checkable_item_selection(false);
-	overlays_gizmos_menu->connect(SceneStringName(id_pressed), callable_mp(this, &Node3DEditor::_overlays_gizmo_pressed));
-	// Owned from the start, whether the menu is ever opened or not.
-	overlays_popup->add_child(overlays_gizmos_menu);
-	header_end->add_child(overlays_menu);
-	header_end->move_child(overlays_menu, 0);
 
 	_build_sidebar(viewport_stack);
 
-	display_menu = memnew(MenuButton);
-	display_menu->set_name("DisplayModes");
-	display_menu->set_flat(false);
-	display_menu->set_theme_type_variation("FlatMenuButton");
-	display_menu->set_tooltip_text(TTRC("All Display Modes"));
-	display_menu->set_accessibility_name(TTRC("All Display Modes"));
-	PopupMenu *display_popup = display_menu->get_popup();
-	display_popup->connect("about_to_popup", callable_mp(this, &Node3DEditor::_display_menu_about_to_popup));
-	display_popup->connect(SceneStringName(id_pressed), callable_mp(this, &Node3DEditor::set_display_everywhere));
-	display_advanced_menu = memnew(PopupMenu);
-	display_advanced_menu->connect(SceneStringName(id_pressed), callable_mp(this, &Node3DEditor::set_display_everywhere));
-	display_popup->add_child(display_advanced_menu);
+	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+		_build_view_bar(i);
+	}
+	// Its items are in the viewports' bars.
+	view_layout_menu->hide();
+	view_bars = true;
 
 	_group_header();
 }
@@ -12416,11 +12400,7 @@ void Node3DEditor::_group_header() {
 	frame(Object::cast_to<HBoxContainer>(transform_menu->get_parent()))->set_name("MenusGroup");
 	frame(Object::cast_to<HBoxContainer>(tool_option_button[TOOL_OPT_LOCAL_COORDS]->get_parent()))->set_name("OptionsGroup");
 
-	// The far end: how the view draws, its preview lighting, the sidebar.
-	HBoxContainer *shading_row = Object::cast_to<HBoxContainer>(shading_buttons[0]->get_parent());
-	EditorViewHeaderGroup *display_group = memnew(EditorViewHeaderGroup);
-	display_group->set_name("DisplayGroup");
-	display_group->take({ overlays_menu, shading_row, display_menu });
+	// The far end: the preview lighting, the sidebar.
 	EditorViewHeaderGroup *lighting_group = memnew(EditorViewHeaderGroup);
 	lighting_group->set_name("LightingGroup");
 	lighting_group->take({ sun_button, environ_button });
@@ -12439,50 +12419,198 @@ void Node3DEditor::_group_header() {
 		}
 	}
 	header_end->add_theme_constant_override("separation", 6 * EDSCALE);
-	header_end->add_child(display_group);
 	header_end->add_child(lighting_group);
 	header_end->add_child(sidebar_group);
 	header_end->move_child(sun_environ_settings, -1);
 	toolbar_flow->add_theme_constant_override("h_separation", 6 * EDSCALE);
 }
 
-void Node3DEditor::_display_menu_about_to_popup() {
-	PopupMenu *popup = display_menu->get_popup();
-	popup->clear(false);
-	const Node3DEditorViewport *viewport = viewports[CLAMP(last_used_viewport, 0, (int)VIEWPORTS_COUNT - 1)];
-	const PopupMenu *source = viewport->view_display_menu->get_popup();
-	const int ids[] = {
-		Node3DEditorViewport::VIEW_DISPLAY_NORMAL,
-		Node3DEditorViewport::VIEW_DISPLAY_WIREFRAME,
-		Node3DEditorViewport::VIEW_DISPLAY_OVERDRAW,
-		Node3DEditorViewport::VIEW_DISPLAY_LIGHTING,
-		Node3DEditorViewport::VIEW_DISPLAY_UNSHADED,
+void Node3DEditor::_build_view_bar(int p_viewport) {
+	Node3DEditorViewport *viewport = viewports[p_viewport];
+	Node3DEditorViewport::ViewBar &bar = viewport->bar;
+	PopupMenu *view = viewport->view_display_menu->get_popup();
+	PopupMenu *layout = view_layout_menu->get_popup();
+	using V = Node3DEditorViewport;
+	const int SEP = EditorViewPill::SEPARATOR;
+	const int REST = EditorViewPill::THE_REST;
+
+	// What the dropdowns take from each menu. Anything else in them was put
+	// there by someone else, and goes with the options.
+	const Vector<int> camera_items = {
+		V::VIEW_TOP, V::VIEW_BOTTOM, V::VIEW_LEFT, V::VIEW_RIGHT, V::VIEW_FRONT, V::VIEW_REAR, SEP,
+		V::VIEW_SWITCH_PERSPECTIVE_ORTHOGONAL, V::VIEW_PERSPECTIVE, V::VIEW_ORTHOGONAL, V::VIEW_AUTO_ORTHOGONAL, SEP,
+		V::VIEW_LOCK_ROTATION, SEP,
+		V::VIEW_CENTER_TO_ORIGIN, V::VIEW_CENTER_TO_SELECTION, V::VIEW_ALIGN_TRANSFORM_WITH_VIEW, V::VIEW_ALIGN_ROTATION_WITH_VIEW, SEP,
+		V::VIEW_CINEMATIC_PREVIEW
 	};
-	for (int id : ids) {
-		const int index = source->get_item_index(id);
-		if (index < 0) {
-			continue;
-		}
-		popup->add_radio_check_item(source->get_item_text(index), id);
-		popup->set_item_checked(popup->get_item_count() - 1, source->is_item_checked(index));
+	const Vector<int> display_items = {
+		V::VIEW_DISPLAY_NORMAL, V::VIEW_DISPLAY_WIREFRAME, V::VIEW_DISPLAY_OVERDRAW, V::VIEW_DISPLAY_LIGHTING, V::VIEW_DISPLAY_UNSHADED, SEP,
+		V::VIEW_DISPLAY_ADVANCED
+	};
+	const Vector<int> option_items = { V::VIEW_HALF_RESOLUTION, SEP, V::VIEW_AUDIO_LISTENER, V::VIEW_AUDIO_DOPPLER, SEP, REST };
+	Vector<int> view_known = camera_items;
+	view_known.append_array(display_items);
+	// The Show dropdown's; see _overlay_items().
+	view_known.append_array({ V::VIEW_ENVIRONMENT, V::VIEW_GIZMOS, V::VIEW_TRANSFORM_GIZMO, V::VIEW_GRID, V::VIEW_INFORMATION, V::VIEW_FRAME_TIME });
+
+	const Vector<int> layout_items = {
+		MENU_VIEW_USE_1_VIEWPORT, MENU_VIEW_USE_2_VIEWPORTS, MENU_VIEW_USE_2_VIEWPORTS_ALT,
+		MENU_VIEW_USE_3_VIEWPORTS, MENU_VIEW_USE_3_VIEWPORTS_ALT, MENU_VIEW_USE_4_VIEWPORTS
+	};
+	Vector<int> layout_known = layout_items;
+	layout_known.append_array({ MENU_VIEW_ORIGIN, MENU_VIEW_GRID });
+
+	auto group = [](const Vector<Control *> &p_controls) {
+		EditorViewHeaderGroup *frame = memnew(EditorViewHeaderGroup(false, true));
+		frame->take(p_controls);
+		return frame;
+	};
+
+	// The top left: the viewport's options, and its camera.
+	viewport->view_display_menu->hide();
+	viewport->set_process_shortcut_input(true);
+	HBoxContainer *top_left = Object::cast_to<HBoxContainer>(viewport->view_display_menu->get_parent());
+	top_left->add_theme_constant_override("separation", 4 * EDSCALE);
+
+	bar.options = memnew(EditorViewPill);
+	bar.options->set_name("ViewOptions");
+	bar.options->set_tooltip_text(TTRC("Viewport Options"));
+	bar.options->set_accessibility_name(TTRC("Viewport Options"));
+	bar.options->add_mirror(view, option_items, view_known);
+	// The gizmos submenu is the Show dropdown's.
+	bar.options->add_mirror(layout, { MENU_VIEW_CAMERA_SNAPSHOT, SEP, REST, SEP, MENU_VIEW_CAMERA_SETTINGS }, layout_known, { gizmos_menu });
+	EditorViewHeaderGroup *options_group = group({ bar.options });
+	top_left->add_child(options_group);
+	top_left->move_child(options_group, 0);
+
+	bar.camera = memnew(EditorViewPill);
+	bar.camera->set_name("ViewCamera");
+	bar.camera->set_tooltip_text(TTRC("Camera: where the viewport looks from, and how."));
+	bar.camera->set_accessibility_name(TTRC("Camera"));
+	bar.camera->set_text(viewport->view_display_menu->get_text());
+	bar.camera->add_mirror(view, camera_items);
+	EditorViewHeaderGroup *camera_group = group({ bar.camera });
+	top_left->add_child(camera_group);
+	top_left->move_child(camera_group, 1);
+
+	// The top right, over the navigation gizmo: what is drawn over the scene,
+	// how the scene is drawn, and how the view is split into viewports.
+	HBoxContainer *top_right = memnew(HBoxContainer);
+	top_right->set_name("ViewBarEnd");
+	top_right->set_h_size_flags(SIZE_SHRINK_END);
+	top_right->add_theme_constant_override("separation", 4 * EDSCALE);
+	viewport->top_right_vbox->add_child(top_right);
+	viewport->top_right_vbox->move_child(top_right, 0);
+
+	bar.show = memnew(EditorViewPill);
+	bar.show->set_name("ViewShow");
+	bar.show->set_tooltip_text(TTRC("Show: what is drawn over the scene in this viewport."));
+	bar.show->set_accessibility_name(TTRC("Show"));
+	PopupMenu *show_popup = bar.show->get_popup();
+	show_popup->connect("about_to_popup", callable_mp(this, &Node3DEditor::_view_bar_show_about_to_popup).bind(p_viewport));
+	show_popup->connect(SceneStringName(id_pressed), callable_mp(this, &Node3DEditor::_view_bar_show_pressed).bind(p_viewport));
+	bar.show_gizmos = memnew(PopupMenu);
+	bar.show_gizmos->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
+	bar.show_gizmos->set_hide_on_checkable_item_selection(false);
+	bar.show_gizmos->connect(SceneStringName(id_pressed), callable_mp(this, &Node3DEditor::_view_bar_gizmo_pressed).bind(p_viewport));
+	// Owned from the start, whether it is ever opened or not.
+	show_popup->add_child(bar.show_gizmos);
+	top_right->add_child(group({ bar.show }));
+
+	// How it draws, the way other 3D applications offer it - four buttons -
+	// and every other way beside them.
+	Vector<Control *> shading;
+	Ref<ButtonGroup> shading_group;
+	shading_group.instantiate();
+	const char *shading_names[] = { TTRC("Wireframe"), TTRC("Unshaded"), TTRC("Lighting"), TTRC("Normal") };
+	for (int i = 0; i < Node3DEditorChrome::SHADING_MAX; i++) {
+		Button *button = memnew(Button);
+		button->set_toggle_mode(true);
+		button->set_button_group(shading_group);
+		button->set_focus_mode(FOCUS_NONE);
+		button->set_tooltip_text(shading_names[i]);
+		button->set_accessibility_name(shading_names[i]);
+		button->connect(SceneStringName(pressed), callable_mp(viewport, &Node3DEditorViewport::set_shading).bind(i));
+		bar.shading[i] = button;
+		shading.push_back(button);
 	}
-	// The advanced ones, as the viewport has them: which the renderer in use
-	// can draw, and which is on.
-	display_advanced_menu->clear();
-	const PopupMenu *advanced = viewport->display_submenu;
-	for (int i = 0; i < advanced->get_item_count(); i++) {
-		if (advanced->is_item_separator(i)) {
-			display_advanced_menu->add_separator();
+	bar.shading[Node3DEditorChrome::SHADING_NORMAL]->set_pressed_no_signal(true);
+	bar.display = memnew(EditorViewPill);
+	bar.display->set_name("ViewDisplay");
+	bar.display->set_tooltip_text(TTRC("All Display Modes"));
+	bar.display->set_accessibility_name(TTRC("All Display Modes"));
+	bar.display->add_mirror(view, display_items);
+	shading.push_back(bar.display);
+	top_right->add_child(group(shading));
+
+	bar.layout = memnew(EditorViewPill);
+	bar.layout->set_name("ViewLayout");
+	bar.layout->set_tooltip_text(TTRC("Viewports: how the view is split."));
+	bar.layout->set_accessibility_name(TTRC("Viewports"));
+	bar.layout->add_mirror(layout, layout_items);
+	top_right->add_child(group({ bar.layout }));
+}
+
+void Node3DEditor::_view_bar_show_about_to_popup(int p_viewport) {
+	ERR_FAIL_INDEX(p_viewport, (int)VIEWPORTS_COUNT);
+	Node3DEditorViewport::ViewBar &bar = viewports[p_viewport]->bar;
+	// Built each time it opens, from the menus that hold the state: those can
+	// change it too, by their own items and shortcuts.
+	PopupMenu *popup = bar.show->get_popup();
+	// Not freeing the gizmos submenu, which is kept.
+	popup->clear(false);
+	int count = 0;
+	const OverlayItem *items = _overlay_items(count);
+	const int order[] = {
+		OVERLAY_ENVIRONMENT, OVERLAY_GRID, OVERLAY_ORIGIN, OVERLAY_GIZMOS, OVERLAY_TRANSFORM_GIZMO, -1,
+		OVERLAY_INFORMATION, OVERLAY_FRAME_TIME, -1,
+		OVERLAY_KEY_HINTS
+	};
+	for (int overlay : order) {
+		if (overlay < 0) {
+			popup->add_separator();
 			continue;
 		}
-		display_advanced_menu->add_radio_check_item(advanced->get_item_text(i), advanced->get_item_id(i));
-		const int index = display_advanced_menu->get_item_count() - 1;
-		display_advanced_menu->set_item_checked(index, advanced->is_item_checked(i));
-		display_advanced_menu->set_item_disabled(index, advanced->is_item_disabled(i));
-		display_advanced_menu->set_item_tooltip(index, advanced->get_item_tooltip(i));
+		popup->add_check_item(TTRGET(items[overlay].name), overlay);
+		popup->set_item_checked(popup->get_item_count() - 1, _overlay_shown_in(overlay, p_viewport));
 	}
 	popup->add_separator();
-	popup->add_submenu_node_item(TTR("Display Advanced..."), display_advanced_menu);
+	_fill_gizmos_menu(bar.show_gizmos);
+	popup->add_submenu_node_item(TTR("Gizmo Types"), bar.show_gizmos);
+}
+
+void Node3DEditor::_view_bar_show_pressed(int p_overlay, int p_viewport) {
+	toggle_overlay_in(p_overlay, p_viewport);
+	_view_bar_show_about_to_popup(p_viewport);
+}
+
+void Node3DEditor::_view_bar_gizmo_pressed(int p_gizmo, int p_viewport) {
+	ERR_FAIL_INDEX(p_viewport, (int)VIEWPORTS_COUNT);
+	// The View menu's Gizmos submenu keeps the state; this one shows it.
+	_menu_gizmo_toggled(p_gizmo);
+	_fill_gizmos_menu(viewports[p_viewport]->bar.show_gizmos);
+}
+
+void Node3DEditor::_update_layout_pills() {
+	if (!view_bars || !is_inside_tree()) {
+		return;
+	}
+	static const char *icons[] = { "Panels1", "Panels2", "Panels2Alt", "Panels3", "Panels3Alt", "Panels4" };
+	const PopupMenu *popup = view_layout_menu->get_popup();
+	int shown = 0;
+	for (int i = 0; i < 6; i++) {
+		const int index = popup->get_item_index(MENU_VIEW_USE_1_VIEWPORT + i);
+		if (index >= 0 && popup->is_item_checked(index)) {
+			shown = i;
+		}
+	}
+	const Ref<Texture2D> icon = get_editor_theme_icon(icons[shown]);
+	for (uint32_t v = 0; v < VIEWPORTS_COUNT; v++) {
+		EditorViewPill *pill = viewports[v]->bar.layout;
+		if (pill && pill->get_button_icon() != icon) {
+			pill->set_button_icon(icon);
+		}
+	}
 }
 
 void Node3DEditor::_build_sidebar(Control *p_over) {
@@ -12561,6 +12689,8 @@ void Node3DEditor::_build_sidebar(Control *p_over) {
 
 void Node3DEditor::_chrome_tick() {
 	_update_hints();
+	// Split by a shortcut, or by a scene's saved state, as well as from a bar.
+	_update_layout_pills();
 	_sync_addon_mirrors();
 }
 
@@ -12728,18 +12858,29 @@ void Node3DEditor::_view_settings_changed() {
 	}
 }
 
-void Node3DEditor::set_shading(int p_shading) {
-	_shading_pressed(p_shading);
-}
-
-void Node3DEditor::set_display_everywhere(int p_display_option) {
-	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
-		viewports[i]->_menu_option(p_display_option);
-	}
-}
-
 void Node3DEditor::toggle_overlay(int p_overlay) {
 	_overlays_id_pressed(p_overlay);
+}
+
+void Node3DEditor::toggle_overlay_in(int p_overlay, int p_viewport) {
+	int count = 0;
+	const OverlayItem *items = _overlay_items(count);
+	ERR_FAIL_INDEX(p_overlay, count);
+	ERR_FAIL_INDEX(p_viewport, (int)VIEWPORTS_COUNT);
+	const OverlayItem &item = items[p_overlay];
+	if (p_overlay == OVERLAY_KEY_HINTS || item.layout_option >= 0) {
+		// The view's own, whichever viewport asks.
+		_overlays_id_pressed(p_overlay);
+		return;
+	}
+	if (p_overlay == OVERLAY_GRID && !grid_enabled) {
+		// Off for the whole view (View Grid, #): shown means both on.
+		_menu_item_activated(MENU_VIEW_GRID);
+		if (_overlay_shown_in(p_overlay, p_viewport)) {
+			return;
+		}
+	}
+	viewports[p_viewport]->_menu_option(item.viewport_option);
 }
 
 void Node3DEditor::toggle_tool_option(int p_option) {
@@ -12754,19 +12895,6 @@ bool Node3DEditor::is_tool_option_on(int p_option) const {
 
 void Node3DEditor::show_snap_settings() {
 	_menu_item_activated(MENU_TRANSFORM_CONFIGURE_SNAP);
-}
-
-void Node3DEditor::_shading_pressed(int p_shading) {
-	ERR_FAIL_INDEX(p_shading, Node3DEditorChrome::SHADING_MAX);
-	static const int shading_display_options[Node3DEditorChrome::SHADING_MAX] = {
-		Node3DEditorViewport::VIEW_DISPLAY_WIREFRAME,
-		Node3DEditorViewport::VIEW_DISPLAY_UNSHADED,
-		Node3DEditorViewport::VIEW_DISPLAY_LIGHTING,
-		Node3DEditorViewport::VIEW_DISPLAY_NORMAL,
-	};
-	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
-		viewports[i]->_menu_option(shading_display_options[p_shading]);
-	}
 }
 
 const Node3DEditor::OverlayItem *Node3DEditor::_overlay_items(int &r_count) {
@@ -12799,6 +12927,10 @@ bool Node3DEditor::_overlay_shown_in(int p_overlay, int p_viewport) const {
 		const PopupMenu *popup = view_layout_menu->get_popup();
 		return popup->is_item_checked(popup->get_item_index(item.layout_option));
 	}
+	if (p_overlay == OVERLAY_GRID && !grid_enabled) {
+		// Switched off for the whole view.
+		return false;
+	}
 	const PopupMenu *popup = viewports[p_viewport]->view_display_menu->get_popup();
 	return popup->is_item_checked(popup->get_item_index(item.viewport_option));
 }
@@ -12810,24 +12942,6 @@ bool Node3DEditor::is_overlay_shown_everywhere(Overlay p_overlay) const {
 		}
 	}
 	return true;
-}
-
-void Node3DEditor::_overlays_about_to_popup() {
-	// Built each time it opens, from the menus that hold the state: those can
-	// change it too, by their own items and shortcuts.
-	PopupMenu *popup = overlays_menu->get_popup();
-	// Not freeing the gizmos submenu, which is kept.
-	popup->clear(false);
-	int count = 0;
-	const OverlayItem *items = _overlay_items(count);
-	const int viewport = CLAMP(last_used_viewport, 0, (int)VIEWPORTS_COUNT - 1);
-	for (int i = 0; i < count; i++) {
-		popup->add_check_item(TTRGET(items[i].name), i);
-		popup->set_item_checked(popup->get_item_index(i), _overlay_shown_in(i, viewport));
-	}
-	popup->add_separator();
-	_fill_gizmos_menu(overlays_gizmos_menu);
-	popup->add_submenu_node_item(TTR("Gizmo Types"), overlays_gizmos_menu);
 }
 
 void Node3DEditor::_overlays_id_pressed(int p_overlay) {
@@ -12846,34 +12960,31 @@ void Node3DEditor::_overlays_id_pressed(int p_overlay) {
 	} else if (item.layout_option >= 0) {
 		_menu_item_activated(item.layout_option);
 	} else {
+		if (p_overlay == OVERLAY_GRID && show && !grid_enabled) {
+			_menu_item_activated(MENU_VIEW_GRID);
+		}
 		// Every viewport of the view ends up the same, whatever each had.
 		for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
-			if (_overlay_shown_in(p_overlay, i) != show) {
+			const PopupMenu *popup = viewports[i]->view_display_menu->get_popup();
+			if (popup->is_item_checked(popup->get_item_index(item.viewport_option)) != show) {
 				viewports[i]->_menu_option(item.viewport_option);
 			}
 		}
 	}
-	if (overlays_menu) {
-		PopupMenu *popup = overlays_menu->get_popup();
-		const int index = popup->get_item_index(p_overlay);
-		if (index >= 0) {
-			popup->set_item_checked(index, _overlay_shown_in(p_overlay, viewport));
-		}
-	}
-}
-
-void Node3DEditor::_overlays_gizmo_pressed(int p_gizmo) {
-	// The View menu's Gizmos submenu keeps the state; this one shows it.
-	_menu_gizmo_toggled(p_gizmo);
-	_fill_gizmos_menu(overlays_gizmos_menu);
 }
 
 void Node3DEditor::update_shading_buttons() {
-	if (!shading_buttons[0]) {
+	if (!view_bars) {
 		return;
 	}
+	for (uint32_t v = 0; v < VIEWPORTS_COUNT; v++) {
+		_update_shading_buttons_of(viewports[v]);
+	}
+}
+
+void Node3DEditor::_update_shading_buttons_of(Node3DEditorViewport *p_viewport) {
 	int shown = -1;
-	switch (viewports[CLAMP(last_used_viewport, 0, (int)VIEWPORTS_COUNT - 1)]->viewport->get_debug_draw()) {
+	switch (p_viewport->viewport->get_debug_draw()) {
 		case Viewport::DEBUG_DRAW_WIREFRAME: {
 			shown = Node3DEditorChrome::SHADING_WIREFRAME;
 		} break;
@@ -12891,7 +13002,7 @@ void Node3DEditor::update_shading_buttons() {
 		} break;
 	}
 	for (int i = 0; i < Node3DEditorChrome::SHADING_MAX; i++) {
-		shading_buttons[i]->set_pressed_no_signal(i == shown);
+		p_viewport->bar.shading[i]->set_pressed_no_signal(i == shown);
 	}
 }
 Node3DEditor::~Node3DEditor() {

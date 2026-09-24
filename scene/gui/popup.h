@@ -34,6 +34,7 @@
 #include "scene/main/window.h"
 
 class Panel;
+class Tween;
 
 class Popup : public Window {
 	GDCLASS(Popup, Window);
@@ -54,6 +55,22 @@ private:
 	void _initialize_visible_parents();
 	void _deinitialize_visible_parents();
 
+	// Opening, it fades in - and, where its window can be see-through, drops
+	// into place from a little above - over open_animation_time. Off unless
+	// someone asks for it for all popups: the editor does.
+	static inline float open_animation_time = 0.0;
+	Ref<Tween> open_tween;
+	struct OpenTarget {
+		ObjectID item;
+		Color modulate;
+	};
+	LocalVector<OpenTarget> open_targets;
+	bool open_slides = false;
+	Transform2D open_canvas;
+	void _start_open_animation();
+	void _set_open_progress(float p_progress);
+	void _stop_open_animation();
+
 protected:
 	void _close_pressed();
 	virtual Rect2i _popup_adjust_rect() const override;
@@ -67,8 +84,16 @@ protected:
 
 	virtual void _post_popup() override;
 
+	// What fades in as it opens. p_whole: the popup's window can be
+	// see-through, and all of it can; otherwise only what is on its
+	// background, as there is nothing behind it to fade from.
+	virtual void _get_open_animation_targets(LocalVector<CanvasItem *> &r_targets, bool p_whole) const;
+
 public:
 	HideReason get_hide_reason() const { return hide_reason; }
+
+	static void set_open_animation_time(float p_seconds) { open_animation_time = MAX(0.0f, p_seconds); }
+	static float get_open_animation_time() { return open_animation_time; }
 
 	Popup();
 	~Popup();
@@ -97,6 +122,7 @@ protected:
 	static void _bind_methods();
 
 	virtual Size2 _get_contents_minimum_size() const override;
+	virtual void _get_open_animation_targets(LocalVector<CanvasItem *> &r_targets, bool p_whole) const override;
 
 public:
 #ifdef TOOLS_ENABLED

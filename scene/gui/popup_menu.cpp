@@ -1383,6 +1383,16 @@ String PopupMenu::_get_accessibility_name() const {
 	}
 }
 
+void PopupMenu::_get_open_animation_targets(LocalVector<CanvasItem *> &r_targets, bool p_whole) const {
+	if (p_whole) {
+		Popup::_get_open_animation_targets(r_targets, p_whole);
+		return;
+	}
+	// Its background stays, when there is nothing behind it to fade from, and
+	// its items fade in on it.
+	r_targets.push_back(scroll_container);
+}
+
 void PopupMenu::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_EXIT_TREE: {

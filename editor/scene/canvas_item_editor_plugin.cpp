@@ -34,6 +34,7 @@
 #include "editor/gui/editor_pie_menu.h"
 #include "editor/gui/editor_view_header_group.h"
 #include "editor/gui/editor_view_hints.h"
+#include "editor/gui/editor_view_pill.h"
 #include "editor/gui/editor_view_sidebar.h"
 #include "editor/scene/canvas_item_editor_chrome.h"
 
@@ -528,6 +529,12 @@ void CanvasItemEditor::shortcut_input(const Ref<InputEvent> &p_ev) {
 	Ref<InputEventKey> k = p_ev;
 
 	if (!is_visible_in_tree()) {
+		return;
+	}
+
+	// Out of sight, the View menu takes no shortcuts; they are the view's.
+	if (view_options_pill && !view_menu->is_visible() && p_ev->is_pressed() && view_menu->get_popup()->activate_item_by_event(p_ev, false)) {
+		accept_event();
 		return;
 	}
 
@@ -4412,13 +4419,14 @@ void CanvasItemEditor::_update_editor_settings() {
 		Button *styled[] = {
 			select_button, move_button, rotate_button, scale_button, pivot_button, pan_button, ruler_button, list_select_button,
 			scene_paint_button, lock_button, unlock_button, group_button, ungroup_button,
-			local_space_button, smart_snap_button, grid_snap_button, sidebar_button
+			local_space_button, smart_snap_button, grid_snap_button, sidebar_button, button_center_view
 		};
 		for (Button *button : styled) {
 			EditorViewHeaderGroup::style_tool_button(button);
 		}
 		EditorViewHeaderGroup::apply_style(context_toolbar_panel);
 		overlays_menu->set_button_icon(get_editor_theme_icon(SNAME("GuiVisibilityVisible")));
+		view_options_pill->set_button_icon(get_editor_theme_icon(SNAME("TripleBar")));
 		sidebar_button->set_button_icon(get_editor_theme_icon(SNAME("Tools")));
 	}
 
@@ -4647,6 +4655,7 @@ void CanvasItemEditor::_update_scrollbars() {
 	Point2 controls_vb_begin = Point2(5, 5);
 	controls_vb_begin += (show_rulers) ? Point2(ruler_width_scaled, ruler_width_scaled) : Point2();
 	controls_vb->set_begin(controls_vb_begin);
+	_place_view_bar();
 
 	Size2 hmin = h_scroll->get_minimum_size();
 	Size2 vmin = v_scroll->get_minimum_size();
@@ -6355,36 +6364,62 @@ void CanvasItemEditor::_arrange_chrome() {
 	viewport_scrollable->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
 	viewport_stack->add_child(viewport_scrollable);
 
-	// Everything drawn over the scene, in one place.
-	overlays_menu = memnew(MenuButton);
-	overlays_menu->set_name("Overlays");
-	overlays_menu->set_flat(false);
-	overlays_menu->set_theme_type_variation("FlatMenuButton");
-	overlays_menu->set_tooltip_text(TTRC("Overlays"));
-	overlays_menu->set_accessibility_name(TTRC("Overlays"));
-	overlays_menu->set_shortcut_context(this);
+	_build_sidebar(viewport_stack);
+
+	// The far end in a frame too: the sidebar.
+	EditorViewHeaderGroup *sidebar_group = memnew(EditorViewHeaderGroup);
+	sidebar_group->set_name("SidebarGroup");
+	sidebar_group->take({ sidebar_button });
+	header_end->add_theme_constant_override("separation", 6 * EDSCALE);
+	header_end->add_child(sidebar_group);
+
+	// The view's bar. At the top left, beside the zoom, the View menu's items
+	// but for what is drawn over the scene.
+	view_menu->hide();
+	PopupMenu *view_popup = view_menu->get_popup();
+	const Vector<int> view_known = { SHOW_HELPERS, SHOW_RULERS, SHOW_GUIDES, SHOW_ORIGIN, SHOW_VIEWPORT };
+	const int SEP = EditorViewPill::SEPARATOR;
+	view_options_pill = memnew(EditorViewPill);
+	view_options_pill->set_name("ViewOptions");
+	view_options_pill->set_tooltip_text(TTRC("View Options"));
+	view_options_pill->set_accessibility_name(TTRC("View Options"));
+	view_options_pill->add_mirror(view_popup, { VIEW_CENTER_TO_SELECTION, VIEW_FRAME_TO_SELECTION, SEP, CLEAR_GUIDES, SEP, AUTO_RESAMPLE_CANVAS_ITEMS, PREVIEW_CANVAS_SCALE, SEP, EditorViewPill::THE_REST }, view_known, { grid_menu, gizmos_menu });
+	HBoxContainer *controls = Object::cast_to<HBoxContainer>(zoom_widget->get_parent());
+	controls->add_theme_constant_override("separation", 4 * EDSCALE);
+	EditorViewHeaderGroup *view_options_group = memnew(EditorViewHeaderGroup(false, true));
+	view_options_group->take({ view_options_pill });
+	controls->add_child(view_options_group);
+	controls->move_child(view_options_group, 0);
+	EditorViewHeaderGroup *zoom_group = memnew(EditorViewHeaderGroup(false, true));
+	zoom_group->take({ button_center_view, zoom_widget });
+	controls->add_child(zoom_group);
+	controls->move_child(zoom_group, 1);
+
+	// At the top right, everything drawn over the scene, in one place.
+	overlays_menu = memnew(EditorViewPill);
+	overlays_menu->set_name("ViewShow");
+	overlays_menu->set_tooltip_text(TTRC("Show: what is drawn over the scene."));
+	overlays_menu->set_accessibility_name(TTRC("Show"));
 	PopupMenu *overlays_popup = overlays_menu->get_popup();
-	overlays_popup->set_hide_on_checkable_item_selection(false);
 	overlays_popup->connect("about_to_popup", callable_mp(this, &CanvasItemEditor::_overlays_about_to_popup));
 	overlays_popup->connect(SceneStringName(id_pressed), callable_mp(this, &CanvasItemEditor::_overlays_id_pressed));
 	overlays_gizmos_menu = memnew(PopupMenu);
 	overlays_gizmos_menu->set_hide_on_checkable_item_selection(false);
 	overlays_gizmos_menu->connect(SceneStringName(id_pressed), callable_mp(this, &CanvasItemEditor::_overlays_gizmo_pressed));
 	overlays_popup->add_child(overlays_gizmos_menu);
-	header_end->add_child(overlays_menu);
-
-	_build_sidebar(viewport_stack);
-
-	// The far end in frames too: what is drawn over the view, the sidebar.
-	EditorViewHeaderGroup *display_group = memnew(EditorViewHeaderGroup);
-	display_group->set_name("DisplayGroup");
-	display_group->take({ overlays_menu });
-	EditorViewHeaderGroup *sidebar_group = memnew(EditorViewHeaderGroup);
-	sidebar_group->set_name("SidebarGroup");
-	sidebar_group->take({ sidebar_button });
-	header_end->add_theme_constant_override("separation", 6 * EDSCALE);
-	header_end->add_child(display_group);
-	header_end->add_child(sidebar_group);
+	overlays_grid_menu = memnew(PopupMenu);
+	overlays_grid_menu->set_hide_on_checkable_item_selection(false);
+	overlays_grid_menu->connect(SceneStringName(id_pressed), callable_mp(this, &CanvasItemEditor::_overlays_grid_pressed));
+	overlays_popup->add_child(overlays_grid_menu);
+	view_bar_end = memnew(HBoxContainer);
+	view_bar_end->set_name("ViewBarEnd");
+	view_bar_end->set_anchors_preset(PRESET_TOP_RIGHT);
+	view_bar_end->set_h_grow_direction(GROW_DIRECTION_BEGIN);
+	view_bar_end->add_theme_constant_override("separation", 4 * EDSCALE);
+	EditorViewHeaderGroup *show_group = memnew(EditorViewHeaderGroup(false, true));
+	show_group->take({ overlays_menu });
+	view_bar_end->add_child(show_group);
+	viewport->add_child(view_bar_end);
 	toolbar_flow->add_theme_constant_override("h_separation", 6 * EDSCALE);
 
 	addon_mirror = memnew(EditorButtonMirror);
@@ -6449,6 +6484,29 @@ void CanvasItemEditor::_sidebar_fitted() {
 	if (sidebar && sidebar_button) {
 		sidebar_button->set_pressed_no_signal(sidebar->is_open());
 	}
+	_place_view_bar();
+}
+
+void CanvasItemEditor::_place_view_bar() {
+	if (!view_bar_end) {
+		return;
+	}
+	// Under the ruler, left of the scroll bar, and out from under the sidebar's
+	// card as it slides in.
+	const Size2 size = view_bar_end->get_combined_minimum_size();
+	const real_t top = 5 + (show_rulers ? ruler_width_scaled : 0);
+	real_t right = 5 + (v_scroll->is_visible() ? v_scroll->get_combined_minimum_size().width : 0);
+	if (sidebar && sidebar->is_visible_in_tree()) {
+		const Rect2 card = sidebar->get_global_rect();
+		const Rect2 area = viewport->get_global_rect();
+		if (card.has_area() && card.position.y < area.position.y + top + size.height + 4 * EDSCALE) {
+			right = MAX(right, area.get_end().x - card.position.x + 6 * EDSCALE);
+		}
+	}
+	view_bar_end->set_offset(SIDE_RIGHT, -right);
+	view_bar_end->set_offset(SIDE_LEFT, -right - size.width);
+	view_bar_end->set_offset(SIDE_TOP, top);
+	view_bar_end->set_offset(SIDE_BOTTOM, top + size.height);
 }
 
 void CanvasItemEditor::_sidebar_page_shown(int p_page) {
@@ -6474,8 +6532,14 @@ void CanvasItemEditor::_overlays_about_to_popup() {
 		int id;
 		bool shown;
 	};
+	// The grid shown, shown only while snapping to it, or hidden.
+	overlays_grid_menu->clear();
+	overlays_grid_menu->add_radio_check_item(TTR("Show"), GRID_VISIBILITY_SHOW);
+	overlays_grid_menu->add_radio_check_item(TTR("Show When Snapping"), GRID_VISIBILITY_SHOW_WHEN_SNAPPING);
+	overlays_grid_menu->add_radio_check_item(TTR("Hide"), GRID_VISIBILITY_HIDE);
+	_overlays_grid_pressed(-1);
+	popup->add_submenu_node_item(TTR("Grid"), overlays_grid_menu);
 	const Item items[] = {
-		{ TTRC("Grid"), OVERLAY_GRID, grid_visibility == GRID_VISIBILITY_SHOW },
 		{ TTRC("Helpers"), SHOW_HELPERS, show_helpers },
 		{ TTRC("Rulers"), SHOW_RULERS, show_rulers },
 		{ TTRC("Guides"), SHOW_GUIDES, show_guides },
@@ -6501,6 +6565,15 @@ void CanvasItemEditor::_overlays_about_to_popup() {
 		overlays_gizmos_menu->set_item_checked(overlays_gizmos_menu->get_item_index(item.id), item.shown);
 	}
 	popup->add_submenu_node_item(TTR("Gizmos"), overlays_gizmos_menu);
+}
+
+void CanvasItemEditor::_overlays_grid_pressed(int p_id) {
+	if (p_id >= 0) {
+		_on_grid_menu_id_pressed(p_id);
+	}
+	for (int i = 0; i < overlays_grid_menu->get_item_count(); i++) {
+		overlays_grid_menu->set_item_checked(i, overlays_grid_menu->get_item_id(i) == grid_visibility);
+	}
 }
 
 void CanvasItemEditor::_overlays_id_pressed(int p_id) {

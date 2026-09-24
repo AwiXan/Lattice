@@ -57,6 +57,7 @@
 #include "editor/gui/editor_spin_slider.h"
 #include "editor/gui/editor_pie_menu.h"
 #include "editor/gui/editor_view_hints.h"
+#include "editor/gui/editor_view_pill.h"
 #include "editor/gui/editor_view_sidebar.h"
 #include "editor/scene/3d/node_3d_editor_chrome.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
@@ -667,40 +668,136 @@ void EditorSelfTest::_view_chrome() {
 
 void EditorSelfTest::_view_shading() {
 	Node3DEditor *view = Node3DEditor::get_singleton();
-	Button *wireframe = view->get_shading_button(0);
-	Button *normal = view->get_shading_button(3);
+	Node3DEditorViewport *viewport = view->get_editor_viewport(0);
+	Button *wireframe = viewport->get_shading_button(0);
+	Button *normal = viewport->get_shading_button(3);
 	if (!wireframe || !normal) {
-		_check(false, "the 3D header has the four shading buttons");
+		_check(false, "a 3D viewport's bar has the four shading buttons");
 		return;
 	}
-	// The header's button reaches every viewport of the view.
+	// A viewport's button reaches that viewport, and no other.
 	wireframe->emit_signal(SceneStringName(pressed));
-	bool all_wireframe = true;
-	for (uint32_t i = 0; i < Node3DEditor::VIEWPORTS_COUNT; i++) {
-		all_wireframe = all_wireframe && view->get_editor_viewport(i)->get_viewport_node()->get_debug_draw() == Viewport::DEBUG_DRAW_WIREFRAME;
-	}
-	_check(all_wireframe && wireframe->is_pressed() && !normal->is_pressed(), "a shading button in the 3D header sets every viewport of the view");
-	// And the view's own menu moves the header's buttons with it.
-	view->get_editor_viewport(0)->get_view_menu()->get_popup()->emit_signal(SceneStringName(id_pressed), Node3DEditorViewport::get_display_normal_id());
-	_check(normal->is_pressed() && !wireframe->is_pressed(), "changing how a viewport draws from its own menu updates the header");
+	const bool drawn = viewport->get_viewport_node()->get_debug_draw() == Viewport::DEBUG_DRAW_WIREFRAME;
+	const bool others_kept = view->get_editor_viewport(1)->get_viewport_node()->get_debug_draw() == Viewport::DEBUG_DRAW_DISABLED;
+	_check(drawn && others_kept && wireframe->is_pressed() && !normal->is_pressed(), "a shading button in a 3D viewport's bar draws that viewport, and no other");
+	// And the viewport's own menu moves its buttons with it.
+	viewport->get_view_menu()->get_popup()->emit_signal(SceneStringName(id_pressed), Node3DEditorViewport::get_display_normal_id());
+	_check(normal->is_pressed() && !wireframe->is_pressed(), "changing how a viewport draws from its own menu updates its buttons");
 }
 
 void EditorSelfTest::_view_overlays() {
 	Node3DEditor *view = Node3DEditor::get_singleton();
-	MenuButton *menu = view->get_overlays_menu();
-	if (!menu) {
-		_check(false, "the 3D header has an Overlays menu");
+	EditorViewPill *show = view->get_editor_viewport(0)->get_show_pill();
+	if (!show) {
+		_check(false, "a 3D viewport's bar has a Show dropdown");
 		return;
 	}
-	PopupMenu *popup = menu->get_popup();
+	PopupMenu *popup = show->get_popup();
 	popup->emit_signal(SNAME("about_to_popup"));
 	const bool listed = popup->get_item_count() > Node3DEditor::OVERLAY_MAX;
-	const bool had = view->is_overlay_shown_everywhere(Node3DEditor::OVERLAY_INFORMATION);
+	const bool had = view->is_overlay_shown_in(Node3DEditor::OVERLAY_INFORMATION, 0);
 	popup->emit_signal(SceneStringName(id_pressed), (int)Node3DEditor::OVERLAY_INFORMATION);
-	const bool shown = view->is_overlay_shown_everywhere(Node3DEditor::OVERLAY_INFORMATION);
+	const bool shown = view->is_overlay_shown_in(Node3DEditor::OVERLAY_INFORMATION, 0) && !view->is_overlay_shown_in(Node3DEditor::OVERLAY_INFORMATION, 1);
 	popup->emit_signal(SceneStringName(id_pressed), (int)Node3DEditor::OVERLAY_INFORMATION);
-	const bool hidden_again = !view->is_overlay_shown_everywhere(Node3DEditor::OVERLAY_INFORMATION);
-	_check(listed && !had && shown && hidden_again, "an overlay switched in the Overlays menu is switched in every viewport of the view");
+	const bool hidden_again = !view->is_overlay_shown_in(Node3DEditor::OVERLAY_INFORMATION, 0);
+	_check(listed && !had && shown && hidden_again, "an overlay switched in a 3D viewport's Show dropdown is switched in that viewport");
+}
+
+static int _item_with_text(PopupMenu *p_menu, const String &p_text) {
+	for (int i = 0; i < p_menu->get_item_count(); i++) {
+		if (p_menu->get_item_text(i) == p_text) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+void EditorSelfTest::_addon_view_item_pressed(int p_id) {
+	addon_view_item_pressed = p_id;
+}
+
+void EditorSelfTest::_view_bar() {
+	Node3DEditor *view = Node3DEditor::get_singleton();
+	Node3DEditorViewport *viewport = view->get_editor_viewport(0);
+	EditorViewPill *camera = viewport->get_camera_pill();
+	if (!camera || !viewport->get_options_pill() || !viewport->get_display_pill() || !viewport->get_layout_pill()) {
+		_check(false, "a 3D viewport has a bar of dropdowns");
+		return;
+	}
+	_check(!viewport->get_view_menu()->is_visible() && !view->get_view_layout_menu()->is_visible(), "the 3D View menus are out of sight, their items spread over the viewports' bars");
+
+	// Every item of the viewport's menu is in one dropdown, once - the Show
+	// dropdown has the rest.
+	PopupMenu *source = viewport->get_view_menu()->get_popup();
+	HashMap<int, int> seen;
+	EditorViewPill *pills[] = { viewport->get_options_pill(), camera, viewport->get_display_pill() };
+	for (EditorViewPill *pill : pills) {
+		PopupMenu *popup = pill->get_popup();
+		popup->emit_signal(SNAME("about_to_popup"));
+		for (int i = 0; i < popup->get_item_count(); i++) {
+			const Array origin = popup->get_item_metadata(i);
+			if (origin.size() == 2 && ObjectID((uint64_t)(int64_t)origin[0]) == source->get_instance_id()) {
+				seen[origin[1]] = seen.has(origin[1]) ? seen[origin[1]] + 1 : 1;
+			}
+		}
+	}
+	int items = 0;
+	bool once = true;
+	for (int i = 0; i < source->get_item_count(); i++) {
+		if (!source->is_item_separator(i)) {
+			items++;
+			once = once && (!seen.has(source->get_item_id(i)) || seen[source->get_item_id(i)] == 1);
+		}
+	}
+	const int in_show = 6; // Environment, gizmos, transform gizmo, grid, information, frame time.
+	_check(once && seen.size() + in_show == items, vformat("each item of a viewport's View menu is in one of its dropdowns, once (%d of %d, and %d shown)", seen.size(), items, in_show));
+
+	// Chosen in a dropdown, chosen in the menu.
+	PopupMenu *camera_popup = camera->get_popup();
+	camera_popup->emit_signal(SNAME("about_to_popup"));
+	const int orthogonal = _item_with_text(camera_popup, "Orthogonal");
+	const int perspective = _item_with_text(camera_popup, "Perspective");
+	if (orthogonal < 0 || perspective < 0) {
+		_check(false, "the camera dropdown offers Perspective and Orthogonal");
+		return;
+	}
+	const int orthogonal_id = ((Array)camera_popup->get_item_metadata(orthogonal))[1];
+	camera_popup->emit_signal(SNAME("index_pressed"), orthogonal);
+	const bool switched = source->is_item_checked(source->get_item_index(orthogonal_id)) && camera_popup->is_item_checked(orthogonal);
+	const bool named = camera->get_text() == viewport->get_view_menu()->get_text();
+	camera_popup->emit_signal(SNAME("index_pressed"), perspective);
+	const bool back = !source->is_item_checked(source->get_item_index(orthogonal_id));
+	_check(switched && named && back, "choosing Orthogonal in the camera dropdown chooses it in the viewport's menu, and the dropdown says so");
+
+	// What an addon added to the menu is not lost with it.
+	source->add_item("Lattice Test Item", 9000);
+	source->connect(SceneStringName(id_pressed), callable_mp(this, &EditorSelfTest::_addon_view_item_pressed));
+	PopupMenu *options = viewport->get_options_pill()->get_popup();
+	options->emit_signal(SNAME("about_to_popup"));
+	const int added = _item_with_text(options, "Lattice Test Item");
+	if (added >= 0) {
+		options->emit_signal(SNAME("index_pressed"), added);
+	}
+	source->disconnect(SceneStringName(id_pressed), callable_mp(this, &EditorSelfTest::_addon_view_item_pressed));
+	source->remove_item(source->get_item_index(9000));
+	_check(added >= 0 && addon_view_item_pressed == 9000, "an item an addon added to a viewport's menu is in its options, and works");
+
+	// The header's View menu, out of sight, still takes its shortcuts.
+	if (view->is_visible_in_tree()) {
+		Ref<InputEventKey> key;
+		key.instantiate();
+		key->set_keycode(Key::KEY_2);
+		key->set_physical_keycode(Key::KEY_2);
+		key->set_command_or_control_autoremap(true);
+		key->set_pressed(true);
+		viewport->get_viewport()->push_input(key);
+		const bool split = view->get_editor_viewport(1)->is_visible_in_tree();
+		key->set_keycode(Key::KEY_1);
+		key->set_physical_keycode(Key::KEY_1);
+		viewport->get_viewport()->push_input(key);
+		const bool whole = !view->get_editor_viewport(1)->is_visible_in_tree();
+		_check(split && whole, "the 3D View menu's shortcuts split the view and put it back while the menu is out of sight");
+	}
 }
 
 void EditorSelfTest::_view_sidebar_open() {
@@ -807,8 +904,8 @@ void EditorSelfTest::_view_hints() {
 	const String text = hints->get_text();
 	_check(hints->is_visible_in_tree() && text.contains(TTR("Orbit")) && text.contains(TTR("Sidebar")), "under the 3D view, a line says what the mouse and keys do: " + text);
 
-	// Switched off from the Overlays menu, and back on.
-	PopupMenu *popup = view->get_overlays_menu()->get_popup();
+	// Switched off from the Show dropdown, and back on.
+	PopupMenu *popup = view->get_editor_viewport(0)->get_show_pill()->get_popup();
 	popup->emit_signal(SNAME("about_to_popup"));
 	popup->emit_signal(SceneStringName(id_pressed), (int)Node3DEditor::OVERLAY_KEY_HINTS);
 	const bool hidden = !hints->is_visible();
@@ -944,7 +1041,45 @@ void EditorSelfTest::_view_2d_check() {
 		popup->emit_signal(SceneStringName(id_pressed), helpers);
 		const bool switched = view->are_helpers_shown() != before;
 		popup->emit_signal(SceneStringName(id_pressed), helpers);
-		_check(helpers >= 0 && switched && view->are_helpers_shown() == before, "an overlay switched in the 2D Overlays menu switches");
+		_check(helpers >= 0 && switched && view->are_helpers_shown() == before, "an overlay switched in the 2D Show dropdown switches");
+	}
+
+	// The View menu out of sight, and every item of it in the view's bar.
+	EditorViewPill *options = view->get_view_options_pill();
+	MenuButton *view_menu = view->get_view_menu();
+	if (!options || !view_menu) {
+		_check(false, "the 2D view has a bar of dropdowns");
+		return;
+	}
+	PopupMenu *source = view_menu->get_popup();
+	PopupMenu *mirrored = options->get_popup();
+	mirrored->emit_signal(SNAME("about_to_popup"));
+	int copies = 0;
+	for (int i = 0; i < mirrored->get_item_count(); i++) {
+		const Array origin = mirrored->get_item_metadata(i);
+		copies += origin.size() == 2 && ObjectID((uint64_t)(int64_t)origin[0]) == source->get_instance_id();
+	}
+	int items = 0;
+	for (int i = 0; i < source->get_item_count(); i++) {
+		items += !source->is_item_separator(i);
+	}
+	// Helpers, rulers, guides, origin, viewport, the grid and the gizmos are shown.
+	const int in_show = 7;
+	_check(!view_menu->is_visible() && copies + in_show == items, vformat("the 2D View menu is out of sight, its items in the view's bar (%d copied, %d shown, of %d)", copies, in_show, items));
+
+	// Its shortcuts still work.
+	if (view->is_visible_in_tree()) {
+		const bool before = view->are_helpers_shown();
+		Ref<InputEventKey> key;
+		key.instantiate();
+		key->set_keycode(Key::H);
+		key->set_physical_keycode(Key::H);
+		key->set_shift_pressed(true);
+		key->set_pressed(true);
+		view->get_viewport()->push_input(key);
+		const bool switched = view->are_helpers_shown() != before;
+		view->get_viewport()->push_input(key);
+		_check(switched && view->are_helpers_shown() == before, "the 2D View menu's shortcuts work while it is out of sight");
 	}
 
 	if (popup && view->get_hints() && !view->get_hints()->is_visible()) {
@@ -1026,13 +1161,9 @@ void EditorSelfTest::_press_key(Control *p_focus, Key p_key, bool p_pressed) {
 	p_focus->get_viewport()->push_input(key);
 }
 
-static bool _all_viewports_draw(Node3DEditor *p_view, Viewport::DebugDraw p_draw) {
-	for (uint32_t i = 0; i < Node3DEditor::VIEWPORTS_COUNT; i++) {
-		if (p_view->get_editor_viewport(i)->get_viewport_node()->get_debug_draw() != p_draw) {
-			return false;
-		}
-	}
-	return true;
+static bool _first_viewport_draws(Node3DEditor *p_view, Viewport::DebugDraw p_draw) {
+	// The pie opens over the first; it draws the one it opens over.
+	return p_view->get_editor_viewport(0)->get_viewport_node()->get_debug_draw() == p_draw;
 }
 
 void EditorSelfTest::_pie_shading() {
@@ -1052,7 +1183,7 @@ void EditorSelfTest::_pie_shading() {
 	// Held, moved towards Wireframe on the left, let go.
 	pie->hover_towards(pie->get_center() + Vector2(-120, 0) * EDSCALE);
 	_press_key(pie, Key::Z, false);
-	_check(!pie->is_open() && _all_viewports_draw(view, Viewport::DEBUG_DRAW_WIREFRAME), "holding Z, moving left and letting go draws the view in wireframe");
+	_check(!pie->is_open() && _first_viewport_draws(view, Viewport::DEBUG_DRAW_WIREFRAME), "holding Z, moving left and letting go draws the view in wireframe");
 }
 
 void EditorSelfTest::_pie_tap() {
@@ -1068,7 +1199,7 @@ void EditorSelfTest::_pie_tap() {
 	_press_key(pie, Key::Z, false);
 	const bool stayed = pie->is_open();
 	_press_key(pie, Key::KEY_6, true);
-	_check(stayed && !pie->is_open() && _all_viewports_draw(view, Viewport::DEBUG_DRAW_DISABLED), "a tap of Z leaves the pie open, and 6 chooses what is on the right");
+	_check(stayed && !pie->is_open() && _first_viewport_draws(view, Viewport::DEBUG_DRAW_DISABLED), "a tap of Z leaves the pie open, and 6 chooses what is on the right");
 }
 
 void EditorSelfTest::_pie_view() {
@@ -1916,6 +2047,7 @@ EditorSelfTest::EditorSelfTest() {
 	_add("view chrome", callable_mp(this, &EditorSelfTest::_view_chrome));
 	_add("view shading", callable_mp(this, &EditorSelfTest::_view_shading));
 	_add("view overlays", callable_mp(this, &EditorSelfTest::_view_overlays));
+	_add("view bar", callable_mp(this, &EditorSelfTest::_view_bar));
 	_add("view sidebar open", callable_mp(this, &EditorSelfTest::_view_sidebar_open));
 	_add("view sidebar check", callable_mp(this, &EditorSelfTest::_view_sidebar_check));
 	_add("sidebar slide open", callable_mp(this, &EditorSelfTest::_sidebar_slide_open));

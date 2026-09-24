@@ -267,6 +267,7 @@ class PopupMenu : public Popup {
 protected:
 	virtual void _pre_popup() override;
 	virtual Rect2i _popup_adjust_rect() const override;
+	virtual void _get_open_animation_targets(LocalVector<CanvasItem *> &r_targets, bool p_whole) const override;
 
 	virtual void add_child_notify(Node *p_child) override;
 	virtual void remove_child_notify(Node *p_child) override;

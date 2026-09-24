@@ -45,6 +45,7 @@ class EditorSelection;
 class EditorButtonMirror;
 class EditorPieMenu;
 class EditorViewHints;
+class EditorViewPill;
 class EditorViewSidebar;
 class EditorZoomWidget;
 class HFlowContainer;
@@ -235,6 +236,16 @@ private:
 	HBoxContainer *header_end = nullptr;
 	MenuButton *overlays_menu = nullptr;
 	PopupMenu *overlays_gizmos_menu = nullptr;
+	PopupMenu *overlays_grid_menu = nullptr;
+	void _overlays_grid_pressed(int p_id);
+	// The view's bar, over its top edge, as each 3D viewport has one (see
+	// Node3DEditor::_build_view_bar()): the View menu's items at the top left,
+	// beside the zoom, and what is drawn over the scene (overlays_menu) at the
+	// top right. The View menu is kept, out of sight: it holds the state,
+	// addons may know it, and its shortcuts go on working.
+	EditorViewPill *view_options_pill = nullptr;
+	HBoxContainer *view_bar_end = nullptr;
+	void _place_view_bar();
 	EditorViewSidebar *sidebar = nullptr;
 	Button *sidebar_button = nullptr;
 	CanvasItemEditorItemPanel *item_panel = nullptr;
@@ -689,6 +700,8 @@ public:
 	HFlowContainer *get_toolbar() const { return toolbar_flow; }
 	HBoxContainer *get_context_toolbar() const { return context_toolbar_hbox; }
 	MenuButton *get_overlays_menu() const { return overlays_menu; }
+	MenuButton *get_view_menu() const { return view_menu; }
+	EditorViewPill *get_view_options_pill() const { return view_options_pill; }
 	EditorViewSidebar *get_sidebar() const { return sidebar; }
 	Button *get_sidebar_button() const { return sidebar_button; }
 	CanvasItemEditorItemPanel *get_item_panel() const { return item_panel; }

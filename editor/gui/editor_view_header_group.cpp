@@ -49,7 +49,7 @@ static const Control *_theme_source(const Control *p_for) {
 	return EditorNode::get_singleton() ? EditorNode::get_singleton()->get_gui_base() : p_for;
 }
 
-Ref<StyleBoxFlat> EditorViewHeaderGroup::make_style(const Control *p_for) {
+Ref<StyleBoxFlat> EditorViewHeaderGroup::make_style(const Control *p_for, bool p_over_view) {
 	Ref<StyleBoxFlat> style;
 	style.instantiate();
 	// A shade lighter than the bar it sits in, and a line lighter still
@@ -67,6 +67,20 @@ Ref<StyleBoxFlat> EditorViewHeaderGroup::make_style(const Control *p_for) {
 	style->set_content_margin(SIDE_RIGHT, 4 * EDSCALE);
 	style->set_content_margin(SIDE_TOP, 2 * EDSCALE);
 	style->set_content_margin(SIDE_BOTTOM, 2 * EDSCALE);
+	if (p_over_view) {
+		// Whatever the scene is - a bright sky, a dark cave - it reads the
+		// same on it.
+		Color bg = base.darkened(0.15);
+		bg.a = 0.88;
+		style->set_bg_color(bg);
+		Color border = mono;
+		border.a = 0.14;
+		style->set_border_color(border);
+		style->set_shadow_color(Color(0, 0, 0, 0.3));
+		style->set_shadow_size(Math::round(5 * EDSCALE));
+		style->set_shadow_offset(Vector2(0, 1) * EDSCALE);
+		style->set_content_margin_all(2 * EDSCALE);
+	}
 	return style;
 }
 
@@ -119,12 +133,13 @@ void EditorViewHeaderGroup::take(const Vector<Control *> &p_controls) {
 void EditorViewHeaderGroup::_notification(int p_what) {
 	if (p_what == NOTIFICATION_THEME_CHANGED && !theming) {
 		theming = true;
-		add_theme_style_override(SceneStringName(panel), make_style(this));
+		add_theme_style_override(SceneStringName(panel), make_style(this, over_view));
 		theming = false;
 	}
 }
 
-EditorViewHeaderGroup::EditorViewHeaderGroup(bool p_vertical) {
+EditorViewHeaderGroup::EditorViewHeaderGroup(bool p_vertical, bool p_over_view) {
+	over_view = p_over_view;
 	if (p_vertical) {
 		box = memnew(VBoxContainer);
 	} else {

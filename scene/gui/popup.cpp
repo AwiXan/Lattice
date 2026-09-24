@@ -32,6 +32,7 @@
 
 #include "core/config/engine.h"
 #include "core/object/callable_mp.h"
+#include "scene/animation/tween.h"
 #include "scene/gui/panel.h"
 #include "scene/resources/style_box_flat.h"
 #include "scene/theme/theme_db.h"
@@ -84,7 +85,11 @@ void Popup::_notification(int p_what) {
 					_initialize_visible_parents();
 					popped_up = true;
 					hide_reason = HIDE_REASON_NONE;
+					if (open_animation_time > 0.0f && is_inside_tree()) {
+						_start_open_animation();
+					}
 				} else {
+					_stop_open_animation();
 					_deinitialize_visible_parents();
 					if (hide_reason == HIDE_REASON_NONE) {
 						hide_reason = HIDE_REASON_CANCELED;
@@ -97,6 +102,7 @@ void Popup::_notification(int p_what) {
 
 		case NOTIFICATION_UNPARENTED:
 		case NOTIFICATION_EXIT_TREE: {
+			_stop_open_animation();
 			if (!is_in_edited_scene_root()) {
 				_deinitialize_visible_parents();
 			}
@@ -120,6 +126,60 @@ void Popup::_notification(int p_what) {
 			}
 		} break;
 	}
+}
+
+void Popup::_get_open_animation_targets(LocalVector<CanvasItem *> &r_targets, bool p_whole) const {
+	for (int i = 0; i < get_child_count(true); i++) {
+		CanvasItem *item = Object::cast_to<CanvasItem>(get_child(i, true));
+		if (item && item->is_visible()) {
+			r_targets.push_back(item);
+		}
+	}
+}
+
+void Popup::_start_open_animation() {
+	_stop_open_animation();
+	const bool whole = is_embedded() || DisplayServer::get_singleton()->is_window_transparency_available();
+	LocalVector<CanvasItem *> targets;
+	_get_open_animation_targets(targets, whole);
+	for (CanvasItem *item : targets) {
+		open_targets.push_back(OpenTarget{ item->get_instance_id(), item->get_modulate() });
+	}
+	open_slides = whole;
+	open_canvas = get_canvas_transform();
+	_set_open_progress(0.0);
+	open_tween = create_tween();
+	open_tween->set_ease(Tween::EASE_OUT);
+	open_tween->set_trans(Tween::TRANS_CUBIC);
+	open_tween->tween_method(callable_mp(this, &Popup::_set_open_progress), 0.0, 1.0, open_animation_time);
+}
+
+void Popup::_set_open_progress(float p_progress) {
+	for (const OpenTarget &target : open_targets) {
+		CanvasItem *item = ObjectDB::get_instance<CanvasItem>(target.item);
+		if (item) {
+			Color modulate = target.modulate;
+			modulate.a *= p_progress;
+			item->set_modulate(modulate);
+		}
+	}
+	if (open_slides) {
+		Transform2D canvas = open_canvas;
+		canvas.columns[2].y -= (1.0f - p_progress) * 5.0f * get_content_scale_factor();
+		set_canvas_transform(canvas);
+	}
+}
+
+void Popup::_stop_open_animation() {
+	if (open_tween.is_valid()) {
+		open_tween->kill();
+		open_tween.unref();
+	}
+	if (!open_targets.is_empty() || open_slides) {
+		_set_open_progress(1.0);
+	}
+	open_targets.clear();
+	open_slides = false;
 }
 
 void Popup::_parent_focused() {
@@ -246,6 +306,16 @@ PackedStringArray PopupPanel::get_configuration_warnings() const {
 	return warnings;
 }
 #endif
+
+void PopupPanel::_get_open_animation_targets(LocalVector<CanvasItem *> &r_targets, bool p_whole) const {
+	for (int i = 0; i < get_child_count(true); i++) {
+		CanvasItem *item = Object::cast_to<CanvasItem>(get_child(i, true));
+		// Its background stays, when there is nothing behind it to fade from.
+		if (item && item->is_visible() && (p_whole || item != panel)) {
+			r_targets.push_back(item);
+		}
+	}
+}
 
 void PopupPanel::_input_from_window(const Ref<InputEvent> &p_event) {
 	if (p_event.is_valid()) {

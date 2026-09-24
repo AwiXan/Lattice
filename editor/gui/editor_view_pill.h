@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_view_header_group.h                                            */
+/*  editor_view_pill.h                                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,42 +30,54 @@
 
 #pragma once
 
-#include "scene/gui/panel_container.h"
+#include "scene/gui/menu_button.h"
 
-class BoxContainer;
-class Button;
-class StyleBoxFlat;
+// A dropdown of a 2D or 3D view, standing over what the view shows the way
+// other editors have theirs: an icon, what it is set to, and a chevron that
+// says it opens. It goes in an EditorViewHeaderGroup made to stand over a
+// view.
+//
+// It can show the items of menus kept elsewhere - a view's own menus, which
+// hold the state and which addons know - as they are each time it opens;
+// choosing one here chooses it there.
+class EditorViewPill : public MenuButton {
+	GDCLASS(EditorViewPill, MenuButton);
 
-// A group of a 2D or 3D view's header - its menus, its transform options,
-// how it draws - set apart in a rounded frame of its own, in the theme's
-// colours, rather than kept apart by separators. The tool column wears the
-// same frame (see apply_style()).
-class EditorViewHeaderGroup : public PanelContainer {
-	GDCLASS(EditorViewHeaderGroup, PanelContainer);
+public:
+	static constexpr int SEPARATOR = -1;
+	// Every item of the source that neither the list nor the ids known to the
+	// owner name: whatever an addon added to that menu.
+	static constexpr int THE_REST = -2;
 
-	BoxContainer *box = nullptr;
-	bool over_view = false;
+private:
+	struct Mirror {
+		ObjectID source;
+		Vector<int> ids;
+		Vector<int> known;
+		Vector<ObjectID> known_submenus;
+	};
+	Vector<Mirror> mirrors;
+	bool chevron = true;
 	bool theming = false;
+
+	void _about_to_popup();
+	void _copy_item(PopupMenu *p_to, PopupMenu *p_from, int p_index);
+	void _copy_pressed(int p_index, ObjectID p_copy);
+	void _sync(PopupMenu *p_copy);
+	static void _end_group(PopupMenu *p_menu);
+	// A submenu added without an id has its index for one, which can be any
+	// other item's id too: an id means the item that is not a submenu first.
+	static int _find(const PopupMenu *p_menu, int p_id);
 
 protected:
 	void _notification(int p_what);
 
 public:
-	BoxContainer *get_box() const { return box; }
-	// Moves p_controls into the group, in order.
-	void take(const Vector<Control *> &p_controls);
+	// Shows p_ids of p_source, in that order, after whatever it shows already.
+	// SEPARATOR and THE_REST may be among them; p_known and p_known_submenus
+	// are what other pills show of the same menu, left out of THE_REST.
+	void add_mirror(PopupMenu *p_source, const Vector<int> &p_ids, const Vector<int> &p_known = Vector<int>(), const Vector<PopupMenu *> &p_known_submenus = Vector<PopupMenu *>());
+	void set_chevron(bool p_chevron);
 
-	// The frame, as a style box for any panel that should look like one. Over
-	// a view it is darker, a little see-through, and lifted off what it is on.
-	static Ref<StyleBoxFlat> make_style(const Control *p_for, bool p_over_view = false);
-	// Puts that frame on p_panel; for its owner to call when the theme changes.
-	static void apply_style(PanelContainer *p_panel);
-	// A tool's button in a frame: square, rounded, filled with the accent
-	// colour while it is the tool in use - or the option that is on - and lit
-	// under the mouse. For its owner to call when the theme changes.
-	static void style_tool_button(Button *p_button);
-
-	// Standing, for the tool column; lying, for the header. Over a view, for
-	// the dropdowns and buttons standing on what it shows.
-	EditorViewHeaderGroup(bool p_vertical = false, bool p_over_view = false);
+	EditorViewPill();
 };

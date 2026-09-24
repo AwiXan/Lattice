@@ -54,6 +54,7 @@ class EditorSpinSlider;
 class EditorButtonMirror;
 class EditorPieMenu;
 class EditorViewHints;
+class EditorViewPill;
 class EditorViewSidebar;
 class HFlowContainer;
 class HSplitContainer;
@@ -266,6 +267,18 @@ private:
 
 	MenuButton *view_display_menu = nullptr;
 	real_t top_right_clearance = 0.0;
+	// The bar over its top edge, unless the classic toolbar is in use:
+	// Node3DEditor::_build_view_bar() builds it and says what is where. The
+	// View menu above is then kept out of sight.
+	struct ViewBar {
+		EditorViewPill *options = nullptr;
+		EditorViewPill *camera = nullptr;
+		EditorViewPill *show = nullptr;
+		PopupMenu *show_gizmos = nullptr;
+		Button *shading[4] = {};
+		EditorViewPill *display = nullptr;
+		EditorViewPill *layout = nullptr;
+	} bar;
 
 	// The pie menus: how the view draws (Z), and where it looks from (`).
 	EditorPieMenu *pie = nullptr;
@@ -583,7 +596,18 @@ public:
 
 	SubViewport *get_viewport_node() { return viewport; }
 	// This viewport's own view menu, and the id "Display Normal" has in it.
+	// With the viewport's bar it is out of sight, and its shortcuts come here.
 	MenuButton *get_view_menu() const { return view_display_menu; }
+	virtual void shortcut_input(const Ref<InputEvent> &p_event) override;
+	// The bar's dropdowns and shading buttons; null with the classic toolbar.
+	EditorViewPill *get_options_pill() const { return bar.options; }
+	EditorViewPill *get_camera_pill() const { return bar.camera; }
+	EditorViewPill *get_show_pill() const { return bar.show; }
+	EditorViewPill *get_display_pill() const { return bar.display; }
+	EditorViewPill *get_layout_pill() const { return bar.layout; }
+	Button *get_shading_button(int p_shading) const { return (p_shading >= 0 && p_shading < 4) ? bar.shading[p_shading] : nullptr; }
+	// Draws it one of the four ways (Node3DEditorChrome::Shading).
+	void set_shading(int p_shading);
 	// How much of this viewport's right edge, at the top, something else is
 	// covering: the navigation gizmo moves left of it.
 	void set_top_right_clearance(real_t p_width);
@@ -927,23 +951,24 @@ private:
 	VBoxContainer *tool_column = nullptr;
 	HBoxContainer *header_end = nullptr;
 	void _arrange_chrome();
-	// Wireframe, unshaded, lighting, normal - for all of this view's
-	// viewports at once. See Node3DEditorChrome::Shading.
-	Button *shading_buttons[4] = {};
-	void _shading_pressed(int p_shading);
-	// Every way a viewport can draw, beside the four buttons: the viewports'
-	// own Display items and their Display Advanced submenu, copied when it
-	// opens so that it is always what those say.
-	MenuButton *display_menu = nullptr;
-	PopupMenu *display_advanced_menu = nullptr;
-	void _display_menu_about_to_popup();
 	// The header's parts in frames of their own; see EditorViewHeaderGroup.
 	void _group_header();
-	// Everything drawn over the scene, in one place, for all of the view's
-	// viewports at once. Each item is an item some existing menu already has -
-	// the View menu, or each viewport's own - and reads its state from there.
-	MenuButton *overlays_menu = nullptr;
-	PopupMenu *overlays_gizmos_menu = nullptr;
+	// Each viewport's bar, over its top edge: its own View menu and the
+	// view's, spread over dropdowns of their own - its options and its camera
+	// at the top left; what is drawn over the scene, how the scene is drawn
+	// and how the view is split at the top right. What changes how the scene
+	// is looked at is in the viewport, what changes the scene in the header.
+	// Both menus are kept, out of sight: they hold the state, addons may know
+	// them, and their shortcuts go on working.
+	bool view_bars = false;
+	void _build_view_bar(int p_viewport);
+	void _view_bar_show_about_to_popup(int p_viewport);
+	void _view_bar_show_pressed(int p_overlay, int p_viewport);
+	void _view_bar_gizmo_pressed(int p_gizmo, int p_viewport);
+	void _update_layout_pills();
+	// What can be drawn over the scene. Each item is an item some existing
+	// menu already has - the View menu, or each viewport's own - and reads its
+	// state from there.
 	struct OverlayItem {
 		const char *name;
 		int layout_option; // In the View menu, or -1.
@@ -951,9 +976,7 @@ private:
 	};
 	static const OverlayItem *_overlay_items(int &r_count);
 	bool _overlay_shown_in(int p_overlay, int p_viewport) const;
-	void _overlays_about_to_popup();
 	void _overlays_id_pressed(int p_overlay);
-	void _overlays_gizmo_pressed(int p_gizmo);
 	// Opened with N, in the top right corner of the viewports. See
 	// EditorViewSidebar. Its View, Snap and Environment pages are the fields
 	// the View Settings and Snap Settings dialogs and the preview sun and
@@ -1265,19 +1288,23 @@ public:
 	HBoxContainer *get_header_end() const { return header_end; }
 	HFlowContainer *get_toolbar() const { return toolbar_flow; }
 	HBoxContainer *get_context_toolbar() const { return context_toolbar_hbox; }
-	// The header's shading buttons say what the viewport last worked in
-	// shows; a viewport calls this whenever it changes how it draws.
+	// The viewports' shading buttons say how each draws; a viewport calls
+	// this whenever it changes how it draws.
 	void update_shading_buttons();
-	// For all of the view's viewports: a shading (Node3DEditorChrome::Shading),
-	// any of a viewport's display options, an overlay switched on or off.
-	void set_shading(int p_shading);
-	void set_display_everywhere(int p_display_option);
+	void _update_shading_buttons_of(Node3DEditorViewport *p_viewport);
+	// An overlay switched on or off in every viewport of the view, or in one.
+	// What belongs to the whole view - the origin, the key hints - is the
+	// view's either way.
 	void toggle_overlay(int p_overlay);
+	void toggle_overlay_in(int p_overlay, int p_viewport);
+	bool is_overlay_shown_in(int p_overlay, int p_viewport) const { return _overlay_shown_in(p_overlay, p_viewport); }
+	// The header's View menu: out of sight with the viewports' bars, which
+	// show its items.
+	MenuButton *get_view_layout_menu() const { return view_layout_menu; }
 	// A transform option (ToolOptions) switched as its button would be.
 	void toggle_tool_option(int p_option);
 	bool is_tool_option_on(int p_option) const;
 	void show_snap_settings();
-	Button *get_shading_button(int p_shading) const { return (p_shading >= 0 && p_shading < 4) ? shading_buttons[p_shading] : nullptr; }
 	enum Overlay {
 		OVERLAY_GRID,
 		OVERLAY_ORIGIN,
@@ -1289,7 +1316,6 @@ public:
 		OVERLAY_KEY_HINTS,
 		OVERLAY_MAX
 	};
-	MenuButton *get_overlays_menu() const { return overlays_menu; }
 	enum SidebarPage {
 		SIDEBAR_ITEM,
 		SIDEBAR_VIEW,

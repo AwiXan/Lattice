@@ -137,6 +137,9 @@ class EditorSelfTest : public Node {
 	void _view_chrome();
 	void _view_shading();
 	void _view_overlays();
+	void _view_bar();
+	int addon_view_item_pressed = -1;
+	void _addon_view_item_pressed(int p_id);
 	void _view_sidebar_open();
 	void _view_sidebar_check();
 	void _view_hints();
