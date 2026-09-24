@@ -239,6 +239,10 @@ void EditorScreenshot::_notification(int p_what) {
 						view_2d->get_sidebar_button()->set_pressed(true);
 					} else if (action.begins_with("sidebar_page_") && view && view->get_sidebar()) {
 						view->get_sidebar()->show_page(action.trim_prefix("sidebar_page_").to_int());
+					} else if (action.begins_with("debug_draw_") && view) {
+						// A Viewport::DebugDraw by number: 16 is the GI cascades,
+						// 17 its probes, 18 the GI buffer, 2 lighting alone.
+						view->get_editor_viewport(0)->get_viewport_node()->set_debug_draw(Viewport::DebugDraw(action.trim_prefix("debug_draw_").to_int()));
 					} else if (action.begins_with("pie_") && view) {
 						// In the middle of the view, pointing left, wherever the
 						// mouse happens to be.

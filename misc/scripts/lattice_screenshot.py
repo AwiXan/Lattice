@@ -136,7 +136,7 @@ def main():
     parser.add_argument("output", help="where to save the picture (.png)")
     parser.add_argument("--scene", choices=["3d", "2d"], default="3d")
     parser.add_argument("--crop", help="x,y,w,h of the window to keep, in pixels")
-    parser.add_argument("--actions", help="what to open first, comma separated: sidebar, sidebar_page_<n>")
+    parser.add_argument("--actions", help="what to open first, comma separated: sidebar, sidebar_page_<n>, debug_draw_<n> (16: GI cascades, 2: lighting)")
     parser.add_argument("--crashed", action="store_true", help="make the last session look crashed, with a long log")
     parser.add_argument("--lit", action="store_true", help="give the 3D scene a sun and an environment of its own")
     parser.add_argument("--camera", action="store_true", help="give the 3D scene a camera looking at the crate")
