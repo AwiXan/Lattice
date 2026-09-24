@@ -268,6 +268,7 @@ void EditorScreenshot::_notification(int p_what) {
 							if (menu && menu->is_visible_in_tree()) {
 								menu->show_popup();
 								print_line("SHOT: opened " + menu->get_text());
+								early_shot_frames = 3;
 								break;
 							}
 						}
@@ -279,6 +280,18 @@ void EditorScreenshot::_notification(int p_what) {
 						// What loading a project shows, held open for the picture.
 						ProgressDialog::get_singleton()->add_task("lattice_shot", TTR("(Re)Importing Assets"), 12);
 						ProgressDialog::get_singleton()->task_step("lattice_shot", "res://textures/rock_albedo.png", 5);
+					}
+				}
+			}
+			if (early_shot_frames > 0 && --early_shot_frames == 0) {
+				TypedArray<Node> windows = EditorNode::get_singleton()->get_gui_base()->find_children("*", "Window", true, false);
+				for (int i = 0; i < windows.size(); i++) {
+					Window *window = Object::cast_to<Window>(windows[i]);
+					if (window && window->is_visible() && !window->is_embedded()) {
+						const String early = OS::get_singleton()->get_environment("LATTICE_SHOT").get_basename() + "_early.png";
+						window->get_texture()->get_image()->save_png(early);
+						print_line("SHOT EARLY: " + early);
+						break;
 					}
 				}
 			}

@@ -55,6 +55,9 @@ class EditorScreenshot : public Node {
 	// LATTICE_STRESS_POPUPS=<seconds>: every dropdown of the editor opened and
 	// closed in turn, frame after frame, before the picture - looking for a
 	// freeze.
+	// Frames until a picture of the window of its own showing is taken as
+	// well - one opening, say - as <shot>_early.png; 0 for none.
+	int early_shot_frames = 0;
 	uint64_t stress_until = 0;
 	int stress_step = 0;
 	Vector<ObjectID> stress_targets;

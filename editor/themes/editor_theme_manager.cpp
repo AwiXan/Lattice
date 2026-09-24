@@ -688,7 +688,7 @@ Ref<EditorTheme> EditorThemeManager::generate_theme(const Ref<EditorTheme> &p_ol
 	OS::get_singleton()->benchmark_begin_measure(get_benchmark_key(), "Generate Theme");
 
 	// Not the theme's, but set with it: every popup of the editor at once.
-	Popup::set_open_animation_time(EDITOR_GET("interface/theme/animate_popups") ? 0.18 : 0.0);
+	Popup::set_open_animation_time(EDITOR_GET("interface/theme/animate_popups") ? 0.22 : 0.0);
 	Popup::set_backdrop_blur(EDITOR_GET("interface/theme/popup_blur"));
 
 	Ref<EditorTheme> theme = _create_base_theme(p_old_theme);

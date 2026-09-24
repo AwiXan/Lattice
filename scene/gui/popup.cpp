@@ -144,7 +144,10 @@ void Popup::_get_open_animation_targets(LocalVector<CanvasItem *> &r_targets, bo
 
 void Popup::_start_open_animation() {
 	_stop_open_animation();
-	const bool whole = is_embedded() || DisplayServer::get_singleton()->is_window_transparency_available();
+	// All of it fades where there is something to fade from: what is really
+	// behind a see-through window, or the copy of it the backdrop is.
+	const bool see_through = is_embedded() || DisplayServer::get_singleton()->is_window_transparency_available();
+	const bool whole = see_through || (backdrop && backdrop->is_visible());
 	LocalVector<CanvasItem *> targets;
 	_get_open_animation_targets(targets, whole);
 	for (CanvasItem *item : targets) {
@@ -152,22 +155,33 @@ void Popup::_start_open_animation() {
 			open_targets.push_back(OpenTarget{ item->get_instance_id(), item->get_modulate() });
 		}
 	}
-	open_slides = whole;
+	// Only a see-through window moves as a whole: the backdrop has to stay
+	// where what it copies is.
+	open_slides = see_through;
 	open_canvas = get_canvas_transform();
 	_set_open_progress(0.0);
 	opening = true;
-	open_started_usec = OS::get_singleton()->get_ticks_usec();
+	// Not yet: the frame a window of its own is made in can take a good part
+	// of the time there is, and would be gone before anything is seen.
+	open_started_usec = 0;
 	SceneTree::get_singleton()->connect(SNAME("process_frame"), callable_mp(this, &Popup::_open_animation_step));
 }
 
 void Popup::_open_animation_step() {
-	const double t = double(OS::get_singleton()->get_ticks_usec() - open_started_usec) / (double(open_animation_time) * 1000000.0);
+	const uint64_t now = OS::get_singleton()->get_ticks_usec();
+	if (open_started_usec == 0) {
+		// The first frame it is drawn in: from here.
+		open_started_usec = now;
+		_set_open_progress(0.0);
+		return;
+	}
+	const double t = double(now - open_started_usec) / (double(open_animation_time) * 1000000.0);
 	if (t >= 1.0) {
 		_stop_open_animation();
 		return;
 	}
-	// Quick at first, settling at the end.
-	_set_open_progress(1.0 - Math::pow(1.0 - t, 3.0));
+	// Quick at first, settling at the end - but not so quick it is gone.
+	_set_open_progress(1.0 - (1.0 - t) * (1.0 - t));
 }
 
 void Popup::_set_open_progress(float p_progress) {
@@ -183,6 +197,13 @@ void Popup::_set_open_progress(float p_progress) {
 		Transform2D canvas = open_canvas;
 		canvas.columns[2].y -= (1.0f - p_progress) * 8.0f * get_content_scale_factor();
 		set_canvas_transform(canvas);
+	}
+	if (backdrop && backdrop->is_visible()) {
+		const float amount = backdrop_blur ? p_progress : 0.0f;
+		if (amount != backdrop_amount) {
+			backdrop_amount = amount;
+			backdrop->queue_redraw();
+		}
 	}
 	_open_progress_changed(p_progress, open_slides);
 }
@@ -208,7 +229,8 @@ void Popup::finish_backdrop() {
 
 void Popup::_update_backdrop() {
 	Window *under = is_inside_tree() ? get_parent_visible_window() : nullptr;
-	const bool wanted = backdrop_blur && under && under != this && !is_embedded();
+	// Wanted blurred, or to open on.
+	const bool wanted = (backdrop_blur || open_animation_time > 0.0f) && under && under != this && !is_embedded();
 	if (!wanted) {
 		if (backdrop) {
 			backdrop->hide();
@@ -218,22 +240,28 @@ void Popup::_update_backdrop() {
 	if (popup_backdrop_material.is_null()) {
 		Ref<Shader> shader;
 		shader.instantiate();
-		// A gaussian blur, wide enough to lose detail and keep colour.
+		// A gaussian blur, wide enough to lose detail and keep colour; how much
+		// of it comes as the colour's alpha, from 0 - a plain copy - to 1.
 		shader->set_code(R"(
 shader_type canvas_item;
 uniform float radius = 14.0;
 void fragment() {
-	vec3 sum = vec3(0.0);
-	float total = 0.0;
-	for (int x = -3; x <= 3; x++) {
-		for (int y = -3; y <= 3; y++) {
-			vec2 offset = vec2(float(x), float(y)) * (radius / 3.0);
-			float weight = exp(-dot(offset, offset) / (radius * radius * 0.5));
-			sum += texture(TEXTURE, UV + offset * TEXTURE_PIXEL_SIZE).rgb * weight;
-			total += weight;
+	float r = radius * COLOR.a;
+	if (r < 0.5) {
+		COLOR = vec4(texture(TEXTURE, UV).rgb, 1.0);
+	} else {
+		vec3 sum = vec3(0.0);
+		float total = 0.0;
+		for (int x = -3; x <= 3; x++) {
+			for (int y = -3; y <= 3; y++) {
+				vec2 offset = vec2(float(x), float(y)) * (r / 3.0);
+				float weight = exp(-dot(offset, offset) / (r * r * 0.5));
+				sum += texture(TEXTURE, UV + offset * TEXTURE_PIXEL_SIZE).rgb * weight;
+				total += weight;
+			}
 		}
+		COLOR = vec4(sum / total, 1.0);
 	}
-	COLOR = vec4(sum / total, 1.0);
 }
 )");
 		popup_backdrop_material.instantiate();
@@ -250,6 +278,7 @@ void fragment() {
 		move_child(backdrop, 0);
 	}
 	backdrop->show();
+	backdrop_amount = backdrop_blur ? 1.0f : 0.0f;
 	backdrop->queue_redraw();
 }
 
@@ -264,7 +293,7 @@ void Popup::_draw_backdrop() {
 	}
 	// Where this window is over the other, in the other's pixels.
 	const Rect2 source(Point2(get_position() - under->get_position()), Size2(get_size()));
-	backdrop->draw_texture_rect_region(texture, Rect2(Point2(), backdrop->get_size()), source);
+	backdrop->draw_texture_rect_region(texture, Rect2(Point2(), backdrop->get_size()), source, Color(1, 1, 1, backdrop_amount));
 }
 
 void Popup::_parent_focused() {

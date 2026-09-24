@@ -77,8 +77,10 @@ private:
 	// Behind what it shows, the window it stands over, blurred, for a
 	// background a little see-through to be on: a window of its own has
 	// nothing behind it otherwise. Off unless someone asks for it: the editor
-	// does.
+	// does. Opening, it is the same copy unblurred at first - the popup is not
+	// there yet, to look at - and all of the popup fades in on it.
 	static inline bool backdrop_blur = false;
+	float backdrop_amount = 1.0f;
 	void _update_backdrop();
 	void _draw_backdrop();
 

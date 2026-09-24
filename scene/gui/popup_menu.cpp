@@ -1401,7 +1401,7 @@ void PopupMenu::_get_open_animation_targets(LocalVector<CanvasItem *> &r_targets
 void PopupMenu::_open_progress_changed(float p_progress, bool p_whole) {
 	// Where the whole window slides, the items go with it; otherwise they come
 	// down into place on its background by themselves.
-	const float slide = p_whole ? 0.0f : (1.0f - p_progress) * -8.0f;
+	const float slide = p_whole ? 0.0f : (1.0f - p_progress) * -10.0f;
 	if (slide != open_slide) {
 		open_slide = slide;
 		control->queue_redraw();
