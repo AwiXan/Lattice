@@ -11232,7 +11232,9 @@ void Node3DEditor::_node_added(Node *p_node) {
 		// what disables the preview - whichever view they belong to.
 		return;
 	}
-	if (get_scene_root()->is_ancestor_of(p_node)) {
+	// No root while the editor shuts down: its documents go before the tree.
+	SubViewport *scene_root = get_scene_root();
+	if (scene_root && scene_root->is_ancestor_of(p_node)) {
 		// Deferred because this fires while the scene root is still adding the
 		// scene's children, and the update parents the preview nodes into it.
 		if (Object::cast_to<WorldEnvironment>(p_node)) {
@@ -11253,7 +11255,8 @@ void Node3DEditor::_node_removed(Node *p_node) {
 	if (_is_preview_node_of_any_view(p_node)) {
 		return;
 	}
-	if (get_scene_root()->is_ancestor_of(p_node)) {
+	SubViewport *scene_root = get_scene_root();
+	if (scene_root && scene_root->is_ancestor_of(p_node)) {
 		if (Object::cast_to<WorldEnvironment>(p_node)) {
 			world_env_count--;
 			if (world_env_count == 0) {
