@@ -55,6 +55,7 @@
 #include "editor/gui/editor_view_sidebar.h"
 #include "editor/scene/3d/node_3d_editor_chrome.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
+#include "editor/scene/canvas_item_editor_plugin.h"
 #include "editor/scene/editor_scene_panel.h"
 #include "editor/script/editor_script_panel.h"
 #include "editor/script/script_editor_base.h"
@@ -97,19 +98,29 @@ void EditorScreenshot::_notification(int p_what) {
 			const uint64_t elapsed = OS::get_singleton()->get_ticks_msec() - started_at;
 			if (!selected && elapsed > 2000) {
 				selected = true;
+				// Something to show selected: the first mesh of a 3D scene, the
+				// first item under the root of a 2D one.
 				Node *root = EditorNode::get_singleton()->get_edited_scene();
-				TypedArray<Node> meshes = root ? root->find_children("*", "MeshInstance3D", true, false) : TypedArray<Node>();
-				if (!meshes.is_empty()) {
+				TypedArray<Node> picks = root ? root->find_children("*", "MeshInstance3D", true, false) : TypedArray<Node>();
+				if (picks.is_empty() && root) {
+					picks = root->find_children("*", "CanvasItem", true, false);
+				}
+				if (!picks.is_empty()) {
 					EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
 					selection->clear();
-					selection->add_node(Object::cast_to<Node>(meshes[0]));
+					selection->add_node(Object::cast_to<Node>(picks[0]));
 				}
 				// What to have open in the picture, comma separated.
 				const PackedStringArray actions = OS::get_singleton()->get_environment("LATTICE_SHOT_ACTIONS").split(",", false);
 				Node3DEditor *view = Node3DEditor::get_singleton();
 				for (const String &action : actions) {
-					if (action == "sidebar" && view && view->get_sidebar_button()) {
+					CanvasItemEditor *view_2d = CanvasItemEditor::get_singleton();
+					if (action == "view_2d") {
+						EditorNode::get_editor_main_screen()->get_pane_tree()->get_first_pane()->show_panel_of_type("view_2d");
+					} else if (action == "sidebar" && view && view->get_sidebar_button()) {
 						view->get_sidebar_button()->set_pressed(true);
+					} else if (action == "sidebar2d" && view_2d && view_2d->get_sidebar_button()) {
+						view_2d->get_sidebar_button()->set_pressed(true);
 					} else if (action.begins_with("sidebar_page_") && view && view->get_sidebar()) {
 						view->get_sidebar()->show_page(action.trim_prefix("sidebar_page_").to_int());
 					}
@@ -696,6 +707,91 @@ void EditorSelfTest::_addon_mirror_check() {
 	if (second) {
 		_tree()->close_pane(second);
 	}
+}
+
+void EditorSelfTest::_view_2d_open() {
+	_tree()->get_first_pane()->show_panel_of_type("view_2d");
+	int index = -1;
+	EditorPane *pane = _pane_showing("view_2d", &index);
+	CanvasItemEditor *view = pane ? Object::cast_to<CanvasItemEditor>(pane->get_panel_at(index)) : nullptr;
+	if (!view) {
+		_check(false, "a 2D view can be shown");
+		return;
+	}
+	pane->set_current_panel(index);
+	view_2d = view->get_instance_id();
+	if (view->get_sidebar_button()) {
+		view->get_sidebar_button()->set_pressed(true);
+	}
+}
+
+void EditorSelfTest::_view_2d_check() {
+	CanvasItemEditor *view = ObjectDB::get_instance<CanvasItemEditor>(view_2d);
+	if (!view) {
+		return;
+	}
+	Control *column = view->get_tool_column();
+	_check(column && column->find_children("*", "Button", true, false).size() >= 13, "the 2D tools are down the side of the view");
+	HFlowContainer *header = view->get_toolbar();
+	const bool menus_first = header && header->get_child_count() > 0 && !header->get_child(0)->find_children("*", "MenuButton", true, false).is_empty();
+	const bool end_last = header && view->get_header_end() && view->get_header_end()->get_index() == header->get_child_count() - 1;
+	_check(menus_first && end_last, "the 2D header has its menus first and the view's own display at the far end");
+
+	EditorViewSidebar *sidebar = view->get_sidebar();
+	Control *over = sidebar ? Object::cast_to<Control>(sidebar->get_parent()) : nullptr;
+	const Rect2 card = sidebar ? sidebar->get_rect() : Rect2();
+	_check(sidebar && over && sidebar->is_visible() && sidebar->get_page_count() == 2 && card.has_area() && card.size.height < over->get_size().height,
+			vformat("N opens the 2D sidebar, only as tall as its page (%s in %s)", card, over ? over->get_size() : Size2()));
+	if (sidebar) {
+		sidebar->show_page(CanvasItemEditor::SIDEBAR_SNAP);
+		_check(sidebar->get_current_page() == CanvasItemEditor::SIDEBAR_SNAP && sidebar->get_page(CanvasItemEditor::SIDEBAR_SNAP)->find_children("*", "SpinBox", true, false).size() >= 9, "the snap settings are a page of the 2D sidebar");
+		view->get_sidebar_button()->set_pressed(false);
+	}
+
+	// An overlay switched from the Overlays menu.
+	PopupMenu *popup = view->get_overlays_menu() ? view->get_overlays_menu()->get_popup() : nullptr;
+	if (popup) {
+		popup->emit_signal(SNAME("about_to_popup"));
+		int helpers = -1;
+		for (int i = 0; i < popup->get_item_count(); i++) {
+			if (popup->get_item_text(i) == TTR("Helpers")) {
+				helpers = popup->get_item_id(i);
+			}
+		}
+		const bool before = view->are_helpers_shown();
+		popup->emit_signal(SceneStringName(id_pressed), helpers);
+		const bool switched = view->are_helpers_shown() != before;
+		popup->emit_signal(SceneStringName(id_pressed), helpers);
+		_check(helpers >= 0 && switched && view->are_helpers_shown() == before, "an overlay switched in the 2D Overlays menu switches");
+	}
+
+	const String hints = view->get_hints() ? view->get_hints()->get_text() : String();
+	_check(hints.contains(TTR("Pan")) && hints.contains(TTR("Zoom")), "under the 2D view, a line says what the mouse and keys do: " + hints);
+
+	// Whatever an addon hands the 2D view goes where it always went.
+	EditorPlugin *plugin = memnew(EditorPlugin);
+	bool placed = true;
+	const EditorPlugin::CustomControlContainer containers[] = {
+		EditorPlugin::CONTAINER_CANVAS_EDITOR_MENU,
+		EditorPlugin::CONTAINER_CANVAS_EDITOR_SIDE_LEFT,
+		EditorPlugin::CONTAINER_CANVAS_EDITOR_SIDE_RIGHT,
+		EditorPlugin::CONTAINER_CANVAS_EDITOR_BOTTOM,
+	};
+	CanvasItemEditor *primary = CanvasItemEditor::get_primary();
+	for (EditorPlugin::CustomControlContainer container : containers) {
+		Button *button = memnew(Button);
+		plugin->add_control_to_container(container, button);
+		placed = placed && primary->is_ancestor_of(button);
+		if (container == EditorPlugin::CONTAINER_CANVAS_EDITOR_MENU) {
+			placed = placed && button->get_parent() == primary->get_context_toolbar();
+		}
+		plugin->remove_control_from_container(container, button);
+		placed = placed && !button->get_parent();
+		memdelete(button);
+	}
+	memdelete(plugin);
+	_check(placed, "an addon's controls go into the 2D view's containers and come back out, as before");
+	_tree()->get_first_pane()->show_panel_of_type("view_3d");
 }
 
 EditorPane *EditorSelfTest::_pane_with_script(const String &p_path, int *r_index) const {
@@ -1452,6 +1548,8 @@ EditorSelfTest::EditorSelfTest() {
 	_add("view hints", callable_mp(this, &EditorSelfTest::_view_hints));
 	_add("addon mirror prepare", callable_mp(this, &EditorSelfTest::_addon_mirror_prepare));
 	_add("addon mirror check", callable_mp(this, &EditorSelfTest::_addon_mirror_check));
+	_add("view 2d open", callable_mp(this, &EditorSelfTest::_view_2d_open));
+	_add("view 2d check", callable_mp(this, &EditorSelfTest::_view_2d_check));
 	_add("script left open", callable_mp(this, &EditorSelfTest::_script_left_open));
 	_add("script stand-in", callable_mp(this, &EditorSelfTest::_script_stand_in));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));

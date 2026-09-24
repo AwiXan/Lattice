@@ -30,6 +30,11 @@
 
 #include "canvas_item_editor_plugin.h"
 
+#include "editor/gui/editor_button_mirror.h"
+#include "editor/gui/editor_view_hints.h"
+#include "editor/gui/editor_view_sidebar.h"
+#include "editor/scene/canvas_item_editor_chrome.h"
+
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/input/input.h"
@@ -4390,6 +4395,11 @@ void CanvasItemEditor::_update_editor_settings() {
 	locked_selection_rectangle_color = EDITOR_GET("editors/2d/locked_selection_rectangle_color");
 
 	context_toolbar_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("ContextualToolbar"), EditorStringName(EditorStyles)));
+	if (tool_column_panel) {
+		tool_column_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("ContextualToolbar"), EditorStringName(EditorStyles)));
+		overlays_menu->set_button_icon(get_editor_theme_icon(SNAME("GuiVisibilityVisible")));
+		sidebar_button->set_button_icon(get_editor_theme_icon(SNAME("Tools")));
+	}
 
 	simple_panning = EDITOR_GET("editors/panning/simple_panning");
 	panner->setup((ViewPanner::ControlScheme)EDITOR_GET("editors/panning/2d_editor_panning_scheme").operator int(), ED_GET_SHORTCUT("canvas_item_editor/pan_view"), simple_panning);
@@ -4957,6 +4967,10 @@ void CanvasItemEditor::_popup_callback(int p_op) {
 			snap_config_menu->get_popup()->set_item_checked(idx, snap_pixel);
 		} break;
 		case SNAP_CONFIGURE: {
+			if (sidebar) {
+				sidebar->toggle_page(SIDEBAR_SNAP);
+				break;
+			}
 			static_cast<SnapDialog *>(snap_dialog)->set_fields(grid_offset, grid_step, primary_grid_step, snap_rotation_offset, snap_rotation_step, snap_scale_step);
 			snap_dialog->popup_centered(Size2(320, 160) * EDSCALE);
 		} break;
@@ -5583,6 +5597,15 @@ void CanvasItemEditor::clear() {
 }
 
 void CanvasItemEditor::add_control_to_menu_panel(Control *p_control) {
+	if (primary_instance && primary_instance != this) {
+		primary_instance->add_control_to_menu_panel(p_control);
+		return;
+	}
+	_add_control_to_own_menu_panel(p_control);
+	_queue_addon_mirror_rebuild();
+}
+
+void CanvasItemEditor::_add_control_to_own_menu_panel(Control *p_control) {
 	ERR_FAIL_NULL(p_control);
 	ERR_FAIL_COND(p_control->get_parent());
 
@@ -5597,6 +5620,11 @@ void CanvasItemEditor::add_control_to_menu_panel(Control *p_control) {
 }
 
 void CanvasItemEditor::remove_control_from_menu_panel(Control *p_control) {
+	if (primary_instance && primary_instance != this) {
+		primary_instance->remove_control_from_menu_panel(p_control);
+		return;
+	}
+	_queue_addon_mirror_rebuild();
 	ERR_FAIL_NULL(p_control);
 	ERR_FAIL_COND(p_control->get_parent() != context_toolbar_hbox);
 
@@ -5633,24 +5661,44 @@ void CanvasItemEditor::_update_context_toolbar() {
 }
 
 void CanvasItemEditor::add_control_to_left_panel(Control *p_control) {
+	if (primary_instance && primary_instance != this) {
+		primary_instance->add_control_to_left_panel(p_control);
+		return;
+	}
 	left_panel_split->add_child(p_control);
 	left_panel_split->move_child(p_control, 0);
 }
 
 void CanvasItemEditor::add_control_to_right_panel(Control *p_control) {
+	if (primary_instance && primary_instance != this) {
+		primary_instance->add_control_to_right_panel(p_control);
+		return;
+	}
 	right_panel_split->add_child(p_control);
 	right_panel_split->move_child(p_control, 1);
 }
 
 void CanvasItemEditor::remove_control_from_left_panel(Control *p_control) {
+	if (primary_instance && primary_instance != this) {
+		primary_instance->remove_control_from_left_panel(p_control);
+		return;
+	}
 	left_panel_split->remove_child(p_control);
 }
 
 void CanvasItemEditor::remove_control_from_right_panel(Control *p_control) {
+	if (primary_instance && primary_instance != this) {
+		primary_instance->remove_control_from_right_panel(p_control);
+		return;
+	}
 	right_panel_split->remove_child(p_control);
 }
 
 VSplitContainer *CanvasItemEditor::get_bottom_split() {
+	// Where addons put their bottom panels: the view that stays.
+	if (primary_instance && primary_instance != this) {
+		return primary_instance->get_bottom_split();
+	}
 	return bottom_split;
 }
 
@@ -5683,6 +5731,7 @@ CanvasItemEditor::CanvasItemEditor() {
 	// A fluid container for all toolbars.
 	HFlowContainer *main_flow = memnew(HFlowContainer);
 	toolbar_margin->add_child(main_flow);
+	toolbar_flow = main_flow;
 
 	// Main toolbars.
 	HBoxContainer *main_menu_hbox = memnew(HBoxContainer);
@@ -6085,7 +6134,7 @@ CanvasItemEditor::CanvasItemEditor() {
 
 	// Animation controls.
 	animation_hb = memnew(HBoxContainer);
-	add_control_to_menu_panel(animation_hb);
+	_add_control_to_own_menu_panel(animation_hb);
 	animation_hb->hide();
 
 	key_loc_button = memnew(Button);
@@ -6188,10 +6237,390 @@ CanvasItemEditor::CanvasItemEditor() {
 	}
 
 	set_process_shortcut_input(true);
+	if (!EDITOR_GET("interface/editor/appearance/classic_viewport_toolbars")) {
+		_arrange_chrome();
+	}
 	clear(); // Make sure values are initialized.
 
 	// Update the menus' checkboxes.
 	callable_mp(this, &CanvasItemEditor::set_state).call_deferred(get_state());
+}
+
+void CanvasItemEditor::_arrange_chrome() {
+	// The same buttons the classic toolbar has, moved; nothing a plugin was
+	// handed is replaced or reparented.
+	HBoxContainer *old_bar = Object::cast_to<HBoxContainer>(select_button->get_parent());
+	ERR_FAIL_NULL(old_bar);
+
+	// The tools, down the left side of the view.
+	tool_column_panel = memnew(PanelContainer);
+	tool_column_panel->set_name("ToolColumn");
+	VBoxContainer *column = memnew(VBoxContainer);
+	column->add_theme_constant_override("separation", 2 * EDSCALE);
+	tool_column_panel->add_child(column);
+	Button *tools[] = {
+		select_button, scene_paint_button, nullptr,
+		move_button, rotate_button, scale_button, nullptr,
+		list_select_button, pivot_button, pan_button, ruler_button, nullptr,
+		lock_button, unlock_button, group_button, ungroup_button
+	};
+	for (Button *tool : tools) {
+		if (!tool) {
+			column->add_child(memnew(HSeparator));
+			continue;
+		}
+		tool->get_parent()->remove_child(tool);
+		tool->set_custom_minimum_size(Size2(28, 28) * EDSCALE);
+		tool->set_icon_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+		column->add_child(tool);
+	}
+
+	// The header: the menus first, then how a transform is done, then what
+	// plugins add, and the view's own display at the far end. The one bar the
+	// classic toolbar had is left with only its separators, and goes.
+	HBoxContainer *menus_group = memnew(HBoxContainer);
+	HBoxContainer *options_group = memnew(HBoxContainer);
+	Control *menus[] = { view_menu, skeleton_menu };
+	for (Control *menu : menus) {
+		menu->get_parent()->remove_child(menu);
+		menus_group->add_child(menu);
+	}
+	menus_group->add_child(memnew(VSeparator));
+	Control *options[] = { local_space_button, smart_snap_button, grid_snap_button, snap_config_menu };
+	for (Control *option : options) {
+		option->get_parent()->remove_child(option);
+		options_group->add_child(option);
+	}
+	options_group->add_child(memnew(VSeparator));
+	toolbar_flow->remove_child(old_bar);
+	memdelete(old_bar);
+	toolbar_flow->add_child(menus_group);
+	toolbar_flow->move_child(menus_group, 0);
+	toolbar_flow->add_child(options_group);
+	toolbar_flow->move_child(options_group, 1);
+	Control *spacer = memnew(Control);
+	spacer->set_h_size_flags(SIZE_EXPAND_FILL);
+	spacer->set_mouse_filter(MOUSE_FILTER_IGNORE);
+	toolbar_flow->add_child(spacer);
+	header_end = memnew(HBoxContainer);
+	header_end->set_name("HeaderEnd");
+	toolbar_flow->add_child(header_end);
+
+	// The view, the tools beside it and room over it for the sidebar.
+	HBoxContainer *viewport_row = memnew(HBoxContainer);
+	viewport_row->set_name("ViewportRow");
+	viewport_row->set_v_size_flags(SIZE_EXPAND_FILL);
+	viewport_row->set_h_size_flags(SIZE_EXPAND_FILL);
+	viewport_row->add_theme_constant_override("separation", 0);
+	const int at = viewport_scrollable->get_index();
+	right_panel_split->remove_child(viewport_scrollable);
+	right_panel_split->add_child(viewport_row);
+	right_panel_split->move_child(viewport_row, at);
+	viewport_row->add_child(tool_column_panel);
+	Control *viewport_stack = memnew(Control);
+	viewport_stack->set_name("ViewportStack");
+	viewport_stack->set_h_size_flags(SIZE_EXPAND_FILL);
+	viewport_stack->set_v_size_flags(SIZE_EXPAND_FILL);
+	viewport_row->add_child(viewport_stack);
+	viewport_scrollable->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+	viewport_stack->add_child(viewport_scrollable);
+
+	// Everything drawn over the scene, in one place.
+	overlays_menu = memnew(MenuButton);
+	overlays_menu->set_name("Overlays");
+	overlays_menu->set_flat(false);
+	overlays_menu->set_theme_type_variation("FlatMenuButton");
+	overlays_menu->set_tooltip_text(TTRC("Overlays"));
+	overlays_menu->set_accessibility_name(TTRC("Overlays"));
+	overlays_menu->set_shortcut_context(this);
+	PopupMenu *overlays_popup = overlays_menu->get_popup();
+	overlays_popup->set_hide_on_checkable_item_selection(false);
+	overlays_popup->connect("about_to_popup", callable_mp(this, &CanvasItemEditor::_overlays_about_to_popup));
+	overlays_popup->connect(SceneStringName(id_pressed), callable_mp(this, &CanvasItemEditor::_overlays_id_pressed));
+	overlays_gizmos_menu = memnew(PopupMenu);
+	overlays_gizmos_menu->set_hide_on_checkable_item_selection(false);
+	overlays_gizmos_menu->connect(SceneStringName(id_pressed), callable_mp(this, &CanvasItemEditor::_overlays_gizmo_pressed));
+	overlays_popup->add_child(overlays_gizmos_menu);
+	header_end->add_child(overlays_menu);
+
+	_build_sidebar(viewport_stack);
+
+	addon_mirror = memnew(EditorButtonMirror);
+	addon_mirror->set_before_press(callable_mp(this, &CanvasItemEditor::_activate_for_user));
+	addon_mirror->set_shortcut_context(this);
+	addon_mirror_box = memnew(HBoxContainer);
+	addon_mirror_box->set_name("AddonCopies");
+	context_toolbar_hbox->add_child(addon_mirror_box);
+
+	hints = memnew(EditorViewHints);
+	hints->set_visible(EditorSettings::get_singleton()->get_project_metadata("2d_editor", "key_hints", true));
+	add_child(hints);
+	// Said as soon as it is on screen, not at the next tick.
+	hints->connect(SceneStringName(visibility_changed), callable_mp(this, &CanvasItemEditor::_update_hints), CONNECT_DEFERRED);
+	Timer *chrome_timer = memnew(Timer);
+	chrome_timer->set_wait_time(0.15);
+	chrome_timer->set_autostart(true);
+	chrome_timer->connect("timeout", callable_mp(this, &CanvasItemEditor::_chrome_tick));
+	add_child(chrome_timer);
+}
+
+void CanvasItemEditor::_build_sidebar(Control *p_over) {
+	sidebar = memnew(EditorViewSidebar);
+	p_over->add_child(sidebar);
+
+	item_panel = memnew(CanvasItemEditorItemPanel);
+	sidebar->add_page(TTR("Item"), item_panel);
+
+	// What the Configure Snap dialog had, applied as it changes.
+	SnapDialog *snap = static_cast<SnapDialog *>(snap_dialog);
+	Control *snap_fields = Object::cast_to<Control>(snap->grid_offset_x->get_parent()->get_parent());
+	snap_fields->get_parent()->remove_child(snap_fields);
+	sidebar->add_page(TTR("Snap"), snap_fields);
+	SpinBox *fields[] = { snap->grid_offset_x, snap->grid_offset_y, snap->grid_step_x, snap->grid_step_y, snap->primary_grid_step_x, snap->primary_grid_step_y, snap->rotation_offset, snap->rotation_step, snap->scale_step };
+	for (SpinBox *field : fields) {
+		field->connect(SceneStringName(value_changed), callable_mp(this, &CanvasItemEditor::_snap_field_changed).unbind(1));
+	}
+	sidebar->connect(SNAME("page_shown"), callable_mp(this, &CanvasItemEditor::_sidebar_page_shown));
+	sidebar->connect(SNAME("fitted"), callable_mp(this, &CanvasItemEditor::_sidebar_fitted));
+
+	sidebar_button = memnew(Button);
+	sidebar_button->set_name("SidebarButton");
+	sidebar_button->set_toggle_mode(true);
+	sidebar_button->set_theme_type_variation(SceneStringName(FlatButton));
+	sidebar_button->set_tooltip_text(TTRC("Sidebar: the selected nodes and snapping."));
+	sidebar_button->set_accessibility_name(TTRC("Toggle Sidebar"));
+	sidebar_button->set_shortcut(ED_SHORTCUT("canvas_item_editor/toggle_sidebar", TTRC("Toggle Sidebar"), Key::N));
+	sidebar_button->set_shortcut_context(this);
+	sidebar_button->connect(SceneStringName(toggled), callable_mp(this, &CanvasItemEditor::_sidebar_button_toggled));
+	header_end->add_child(sidebar_button);
+}
+
+void CanvasItemEditor::_sidebar_button_toggled(bool p_pressed) {
+	if (sidebar && sidebar->is_visible() != p_pressed) {
+		sidebar->toggle();
+	}
+}
+
+void CanvasItemEditor::_sidebar_fitted() {
+	// Shown or hidden some other way - Configure Snap opens it: the button
+	// says so.
+	if (sidebar && sidebar_button) {
+		sidebar_button->set_pressed_no_signal(sidebar->is_visible());
+	}
+}
+
+void CanvasItemEditor::_sidebar_page_shown(int p_page) {
+	if (p_page == SIDEBAR_SNAP) {
+		// The values may have changed since - a grid step doubled with a key.
+		updating_snap_fields = true;
+		static_cast<SnapDialog *>(snap_dialog)->set_fields(grid_offset, grid_step, primary_grid_step, snap_rotation_offset, snap_rotation_step, snap_scale_step);
+		updating_snap_fields = false;
+	}
+}
+
+void CanvasItemEditor::_snap_field_changed() {
+	if (!updating_snap_fields) {
+		_snap_changed();
+	}
+}
+
+void CanvasItemEditor::_overlays_about_to_popup() {
+	PopupMenu *popup = overlays_menu->get_popup();
+	popup->clear(false);
+	struct Item {
+		const char *name;
+		int id;
+		bool shown;
+	};
+	const Item items[] = {
+		{ TTRC("Grid"), OVERLAY_GRID, grid_visibility == GRID_VISIBILITY_SHOW },
+		{ TTRC("Helpers"), SHOW_HELPERS, show_helpers },
+		{ TTRC("Rulers"), SHOW_RULERS, show_rulers },
+		{ TTRC("Guides"), SHOW_GUIDES, show_guides },
+		{ TTRC("Origin"), SHOW_ORIGIN, show_origin },
+		{ TTRC("Viewport"), SHOW_VIEWPORT, show_viewport },
+		{ TTRC("Key Hints"), OVERLAY_KEY_HINTS, hints && hints->is_visible() },
+	};
+	for (const Item &item : items) {
+		popup->add_check_item(TTRGET(item.name), item.id);
+		popup->set_item_checked(popup->get_item_index(item.id), item.shown);
+	}
+	popup->add_separator();
+
+	overlays_gizmos_menu->clear();
+	const Item gizmos[] = {
+		{ TTRC("Position"), SHOW_POSITION_GIZMOS, show_position_gizmos },
+		{ TTRC("Lock"), SHOW_LOCK_GIZMOS, show_lock_gizmos },
+		{ TTRC("Group"), SHOW_GROUP_GIZMOS, show_group_gizmos },
+		{ TTRC("Transformation"), SHOW_TRANSFORMATION_GIZMOS, show_transformation_gizmos },
+	};
+	for (const Item &item : gizmos) {
+		overlays_gizmos_menu->add_check_item(TTRGET(item.name), item.id);
+		overlays_gizmos_menu->set_item_checked(overlays_gizmos_menu->get_item_index(item.id), item.shown);
+	}
+	popup->add_submenu_node_item(TTR("Gizmos"), overlays_gizmos_menu);
+}
+
+void CanvasItemEditor::_overlays_id_pressed(int p_id) {
+	switch (p_id) {
+		case OVERLAY_GRID: {
+			_on_grid_menu_id_pressed(grid_visibility == GRID_VISIBILITY_SHOW ? GRID_VISIBILITY_HIDE : GRID_VISIBILITY_SHOW);
+		} break;
+		case OVERLAY_KEY_HINTS: {
+			if (hints) {
+				hints->set_visible(!hints->is_visible());
+				EditorSettings::get_singleton()->set_project_metadata("2d_editor", "key_hints", hints->is_visible());
+				_update_hints();
+			}
+		} break;
+		default: {
+			// The View menu's own items, which keep the state.
+			_popup_callback(p_id);
+		} break;
+	}
+	_overlays_about_to_popup();
+}
+
+void CanvasItemEditor::_overlays_gizmo_pressed(int p_id) {
+	_popup_callback(p_id);
+	_overlays_about_to_popup();
+}
+
+void CanvasItemEditor::_chrome_tick() {
+	_update_hints();
+	_sync_addon_mirrors();
+	if (sidebar && sidebar_button && sidebar_button->is_pressed() != sidebar->is_visible()) {
+		sidebar_button->set_pressed_no_signal(sidebar->is_visible());
+	}
+	if (sidebar) {
+		// Below the ruler, while there is one.
+		sidebar->set_top_inset(show_rulers ? ruler_width_scaled : 0.0);
+	}
+}
+
+void CanvasItemEditor::_activate_for_user() {
+	make_active();
+	EditorMainScreen *main_screen = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_editor_main_screen() : nullptr;
+	if (main_screen) {
+		main_screen->view_activated(this);
+	}
+}
+
+void CanvasItemEditor::_queue_addon_mirror_rebuild() {
+	if (addon_mirrors_queued) {
+		return;
+	}
+	addon_mirrors_queued = true;
+	callable_mp_static(&CanvasItemEditor::_rebuild_all_addon_mirrors).call_deferred();
+}
+
+void CanvasItemEditor::_rebuild_all_addon_mirrors() {
+	addon_mirrors_queued = false;
+	for (CanvasItemEditor *instance : instances) {
+		instance->_rebuild_addon_mirrors();
+	}
+}
+
+bool CanvasItemEditor::_is_views_own_control(Node *p_node, Control *p_to) {
+	// The primary view's animation keys act on that view; the view copying
+	// its toolbar has keys of its own.
+	return primary_instance && p_node == primary_instance->animation_hb;
+}
+
+void CanvasItemEditor::_rebuild_addon_mirrors() {
+	if (!addon_mirror || !primary_instance || primary_instance == this) {
+		return;
+	}
+	addon_mirror->clear();
+	while (addon_mirror_box->get_child_count() > 0) {
+		Node *copy = addon_mirror_box->get_child(0);
+		addon_mirror_box->remove_child(copy);
+		memdelete(copy);
+	}
+	addon_mirror->mirror_all(primary_instance->context_toolbar_hbox, addon_mirror_box, callable_mp_static(&CanvasItemEditor::_is_views_own_control));
+	_sync_addon_mirrors();
+}
+
+void CanvasItemEditor::_sync_addon_mirrors() {
+	if (!addon_mirror || !primary_instance || primary_instance == this) {
+		return;
+	}
+	addon_mirror->sync();
+	bool any = false;
+	for (int i = 0; i < addon_mirror_box->get_child_count() && !any; i++) {
+		const Control *copy = Object::cast_to<Control>(addon_mirror_box->get_child(i));
+		any = copy && copy->is_visible();
+	}
+	if (any) {
+		context_toolbar_panel->show();
+	} else {
+		_update_context_toolbar();
+	}
+}
+
+void CanvasItemEditor::_update_hints() {
+	if (!hints || !hints->is_visible_in_tree()) {
+		return;
+	}
+	using Hint = EditorViewHints::Hint;
+	Vector<Hint> list;
+	const String lmb = EditorViewHints::mouse_button_name(MouseButton::LEFT);
+	const String shift = keycode_get_string((Key)KeyModifierMask::SHIFT) + "+";
+	const String drag = vformat(TTR("%s drag"), lmb);
+
+	if (drag_type != DRAG_NONE && drag_type != DRAG_BOX_SELECTION) {
+		list.push_back(Hint{ ED_GET_SHORTCUT("canvas_item_editor/cancel_transform")->get_as_text(), TTR("Cancel") });
+		hints->set_hints(list);
+		return;
+	}
+
+	switch (tool) {
+		case TOOL_SELECT: {
+			list.push_back(Hint{ lmb, TTR("Select") });
+			list.push_back(Hint{ shift + lmb, TTR("Add to selection") });
+			list.push_back(Hint{ drag, TTR("Move, or box select") });
+		} break;
+		case TOOL_MOVE: {
+			list.push_back(Hint{ drag, TTR("Move") });
+		} break;
+		case TOOL_ROTATE: {
+			list.push_back(Hint{ drag, TTR("Rotate") });
+		} break;
+		case TOOL_SCALE: {
+			list.push_back(Hint{ drag, TTR("Scale") });
+		} break;
+		case TOOL_EDIT_PIVOT: {
+			list.push_back(Hint{ lmb, TTR("Set the pivot") });
+		} break;
+		case TOOL_PAN: {
+			list.push_back(Hint{ drag, TTR("Pan") });
+		} break;
+		case TOOL_RULER: {
+			list.push_back(Hint{ drag, TTR("Measure") });
+		} break;
+		case TOOL_LIST_SELECT: {
+			list.push_back(Hint{ lmb, TTR("List what is under the cursor") });
+		} break;
+		case TOOL_SCENE_PAINT: {
+			list.push_back(Hint{ lmb, TTR("Paint the scene") });
+		} break;
+		default: {
+		} break;
+	}
+
+	// Getting around, the way the panning settings have it.
+	list.push_back(Hint{ vformat(TTR("%s drag"), EditorViewHints::mouse_button_name(MouseButton::MIDDLE)), TTR("Pan") });
+	const Ref<Shortcut> pan_key = ED_GET_SHORTCUT("canvas_item_editor/pan_view");
+	if (pan_key.is_valid() && !pan_key->get_as_text().is_empty()) {
+		list.push_back(Hint{ pan_key->get_as_text() + "+" + drag, TTR("Pan") });
+	}
+	const bool scroll_pans = int(EDITOR_GET("editors/panning/2d_editor_panning_scheme")) == ViewPanner::SCROLL_PANS;
+	list.push_back(Hint{ scroll_pans ? keycode_get_string((Key)KeyModifierMask::CMD_OR_CTRL) + "+" + TTR("Wheel") : TTR("Wheel"), TTR("Zoom") });
+	list.push_back(Hint{ ED_GET_SHORTCUT("canvas_item_editor/center_selection")->get_as_text(), TTR("Center") });
+	if (sidebar_button) {
+		list.push_back(Hint{ sidebar_button->get_shortcut()->get_as_text(), TTR("Sidebar") });
+	}
+	hints->set_hints(list);
 }
 
 Transform2D CanvasItemEditor::get_item_view_transform(const CanvasItem *p_item) const {
@@ -6262,6 +6691,13 @@ void CanvasItemEditor::set_scene_root(SubViewport *p_scene_root) {
 
 CanvasItemEditor::~CanvasItemEditor() {
 	instances.erase(this);
+	if (primary_instance == this) {
+		primary_instance = nullptr;
+	}
+	if (addon_mirror) {
+		memdelete(addon_mirror);
+		addon_mirror = nullptr;
+	}
 	if (active_instance == this) {
 		// Hand the context to another open space rather than leaving it dangling.
 		active_instance = instances.is_empty() ? nullptr : instances[0];
@@ -6409,6 +6845,7 @@ CanvasItemEditorPlugin::CanvasItemEditorPlugin() {
 	}
 
 	canvas_item_editor = memnew(CanvasItemEditor);
+	canvas_item_editor->make_primary();
 	canvas_item_editor->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	parked_parent = EditorNode::get_singleton()->get_editor_main_screen()->get_control();
 	parked_parent->add_child(canvas_item_editor);

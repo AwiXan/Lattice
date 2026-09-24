@@ -71,6 +71,9 @@ void EditorViewSidebar::_tab_changed(int p_tab) {
 	}
 	scroll->set_v_scroll(0);
 	fit();
+	if (is_visible()) {
+		emit_signal(SNAME("page_shown"), p_tab);
+	}
 }
 
 void EditorViewSidebar::show_page(int p_index) {
@@ -99,6 +102,14 @@ void EditorViewSidebar::_parent_resized() {
 	fit();
 }
 
+void EditorViewSidebar::set_top_inset(real_t p_inset) {
+	if (Math::is_equal_approx(top_inset, p_inset)) {
+		return;
+	}
+	top_inset = p_inset;
+	fit();
+}
+
 void EditorViewSidebar::fit() {
 	Control *parent = Object::cast_to<Control>(get_parent());
 	if (!parent || fitting) {
@@ -106,7 +117,7 @@ void EditorViewSidebar::fit() {
 	}
 	fitting = true;
 	const real_t margin = SIDEBAR_MARGIN * EDSCALE;
-	const Size2 room = parent->get_size() - Size2(margin, margin) * 2;
+	const Size2 room = parent->get_size() - Size2(margin, margin) * 2 - Size2(0, top_inset);
 
 	// As tall as the tabs and the page shown, and no taller than the view.
 	real_t content = tabs->get_combined_minimum_size().height + page_box->get_combined_minimum_size().height;
@@ -127,8 +138,8 @@ void EditorViewSidebar::fit() {
 	set_h_grow_direction(GROW_DIRECTION_BEGIN);
 	set_offset(SIDE_RIGHT, -margin);
 	set_offset(SIDE_LEFT, -margin - width);
-	set_offset(SIDE_TOP, margin);
-	set_offset(SIDE_BOTTOM, margin + height);
+	set_offset(SIDE_TOP, top_inset + margin);
+	set_offset(SIDE_BOTTOM, top_inset + margin + height);
 	fitting = false;
 	emit_signal(SNAME("fitted"));
 }
@@ -179,6 +190,7 @@ void EditorViewSidebar::_notification(int p_what) {
 		case NOTIFICATION_VISIBILITY_CHANGED: {
 			if (is_visible()) {
 				fit();
+				emit_signal(SNAME("page_shown"), get_current_page());
 			} else {
 				emit_signal(SNAME("fitted"));
 			}
@@ -190,6 +202,9 @@ void EditorViewSidebar::_bind_methods() {
 	// Placed or sized again, shown or hidden: whatever keeps clear of it - the
 	// view's own controls in the corner - moves with it.
 	ADD_SIGNAL(MethodInfo("fitted"));
+	// A page coming into sight - the card opened on it, or its tab chosen -
+	// for whatever it shows to be brought up to date.
+	ADD_SIGNAL(MethodInfo("page_shown", PropertyInfo(Variant::INT, "page")));
 }
 
 EditorViewSidebar::EditorViewSidebar() {

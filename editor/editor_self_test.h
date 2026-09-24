@@ -135,6 +135,9 @@ class EditorSelfTest : public Node {
 	void _view_hints();
 	void _addon_mirror_prepare();
 	void _addon_mirror_check();
+	void _view_2d_open();
+	void _view_2d_check();
+	ObjectID view_2d;
 	void _addon_button_pressed() { addon_presses++; }
 	int addon_presses = 0;
 	ObjectID addon_pane;

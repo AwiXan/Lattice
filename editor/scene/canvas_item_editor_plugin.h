@@ -37,11 +37,16 @@
 class AcceptDialog;
 class Button;
 class ButtonGroup;
+class CanvasItemEditorItemPanel;
 class CanvasItemEditorViewport;
 class ConfirmationDialog;
 class EditorData;
 class EditorSelection;
+class EditorButtonMirror;
+class EditorViewHints;
+class EditorViewSidebar;
 class EditorZoomWidget;
+class HFlowContainer;
 class HScrollBar;
 class HSplitContainer;
 class MenuButton;
@@ -217,6 +222,47 @@ private:
 	HashMap<Control *, VSeparator *> context_toolbar_separators;
 
 	void _update_context_toolbar();
+	// What the view puts in its own context toolbar - the animation keys - as
+	// opposed to what plugins hand it, which goes to the primary view.
+	void _add_control_to_own_menu_panel(Control *p_control);
+
+	// The view's own layout, as the 3D view has it (see
+	// Node3DEditor::_arrange_chrome()), unless interface/editor/appearance/
+	// classic_viewport_toolbars asks for the one toolbar.
+	HFlowContainer *toolbar_flow = nullptr;
+	PanelContainer *tool_column_panel = nullptr;
+	HBoxContainer *header_end = nullptr;
+	MenuButton *overlays_menu = nullptr;
+	PopupMenu *overlays_gizmos_menu = nullptr;
+	EditorViewSidebar *sidebar = nullptr;
+	Button *sidebar_button = nullptr;
+	CanvasItemEditorItemPanel *item_panel = nullptr;
+	EditorViewHints *hints = nullptr;
+	bool updating_snap_fields = false;
+	void _arrange_chrome();
+	void _build_sidebar(Control *p_over);
+	void _overlays_about_to_popup();
+	void _overlays_id_pressed(int p_id);
+	void _overlays_gizmo_pressed(int p_id);
+	void _sidebar_button_toggled(bool p_pressed);
+	void _sidebar_page_shown(int p_page);
+	void _sidebar_fitted();
+	void _snap_field_changed();
+	void _chrome_tick();
+	void _update_hints();
+
+	// As in the 3D view: what plugins and addons hand the 2D editor goes into
+	// the view its plugin made, which lasts; the others show copies.
+	static inline CanvasItemEditor *primary_instance = nullptr;
+	EditorButtonMirror *addon_mirror = nullptr;
+	HBoxContainer *addon_mirror_box = nullptr;
+	static inline bool addon_mirrors_queued = false;
+	static void _queue_addon_mirror_rebuild();
+	static void _rebuild_all_addon_mirrors();
+	void _rebuild_addon_mirrors();
+	void _sync_addon_mirrors();
+	void _activate_for_user();
+	static bool _is_views_own_control(Node *p_node, Control *p_to);
 
 	Transform2D transform;
 	GridVisibility grid_visibility = GRID_VISIBILITY_SHOW_WHEN_SNAPPING;
@@ -621,6 +667,28 @@ public:
 
 	void make_active() { active_instance = this; }
 	bool is_active() const { return active_instance == this; }
+	static CanvasItemEditor *get_primary() { return primary_instance ? primary_instance : active_instance; }
+	void make_primary() { primary_instance = this; }
+
+	// The chrome, for checking it; null with the classic toolbar.
+	enum Overlay {
+		OVERLAY_GRID = 1000,
+		OVERLAY_KEY_HINTS,
+	};
+	enum SidebarPage {
+		SIDEBAR_ITEM,
+		SIDEBAR_SNAP,
+	};
+	PanelContainer *get_tool_column() const { return tool_column_panel; }
+	HBoxContainer *get_header_end() const { return header_end; }
+	HFlowContainer *get_toolbar() const { return toolbar_flow; }
+	HBoxContainer *get_context_toolbar() const { return context_toolbar_hbox; }
+	MenuButton *get_overlays_menu() const { return overlays_menu; }
+	EditorViewSidebar *get_sidebar() const { return sidebar; }
+	Button *get_sidebar_button() const { return sidebar_button; }
+	CanvasItemEditorItemPanel *get_item_panel() const { return item_panel; }
+	EditorViewHints *get_hints() const { return hints; }
+	bool are_helpers_shown() const { return show_helpers; }
 
 	// Points this view at the document whose 2D world it should render. Call
 	// once, before the view is shown.

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_view_sidebar.h                                                 */
+/*  canvas_item_editor_chrome.h                                           */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,52 +30,50 @@
 
 #pragma once
 
-#include "scene/gui/panel_container.h"
+#include "scene/gui/box_container.h"
 
-class ScrollContainer;
-class TabBar;
-class VBoxContainer;
+class CanvasItem;
+class EditorSpinSlider;
+class Label;
 
-// The sidebar a 2D or 3D view opens with N: a card of pages in the top right
-// corner of the view, over the scene rather than beside it, and only as tall
-// as the page it shows - so it covers no more of the view than it needs to.
-// A page taller than the view scrolls.
-//
-// It lays itself out in its parent, which should be a plain Control covering
-// the view. What goes on the pages is the view's business.
-class EditorViewSidebar : public PanelContainer {
-	GDCLASS(EditorViewSidebar, PanelContainer);
+// The 2D view's sidebar Item page: the selected Node2Ds' and Controls'
+// position, rotation and scale - and a Control's size - as numbers to type
+// in, next to where they are being placed. As in the 3D view's (see
+// Node3DEditorItemPanel), a value typed in goes to every selected node, on
+// that axis alone.
+class CanvasItemEditorItemPanel : public VBoxContainer {
+	GDCLASS(CanvasItemEditorItemPanel, VBoxContainer);
 
-	TabBar *tabs = nullptr;
-	ScrollContainer *scroll = nullptr;
-	VBoxContainer *page_box = nullptr;
-	LocalVector<Control *> pages;
-	bool fitting = false;
-	bool theming = false;
-	real_t top_inset = 0.0;
+public:
+	enum Row {
+		ROW_POSITION,
+		ROW_ROTATION,
+		ROW_SCALE,
+		ROW_SIZE,
+		ROW_MAX
+	};
 
-	void _tab_changed(int p_tab);
-	void _parent_resized();
+private:
+	Label *title = nullptr;
+	Label *type = nullptr;
+	Label *nothing = nullptr;
+	VBoxContainer *rows_box = nullptr;
+	Control *row_boxes[ROW_MAX] = {};
+	EditorSpinSlider *fields[ROW_MAX][2] = {};
+	double since_refresh = 0.0;
+
+	Vector<CanvasItem *> _edited_items() const;
+	void _field_changed(double p_value, int p_row, int p_axis);
+	static bool _has_row(const CanvasItem *p_item, int p_row);
+	static Vector2 _read(const CanvasItem *p_item, int p_row);
+	static const char *_setter(int p_row);
 
 protected:
 	void _notification(int p_what);
-	static void _bind_methods();
 
 public:
-	int add_page(const String &p_title, Control *p_page);
-	int get_page_count() const { return pages.size(); }
-	Control *get_page(int p_index) const;
-	int get_current_page() const;
-	// Shows the card too.
-	void show_page(int p_index);
-	// With the card shown on another page, shows this one; on this one, hides it.
-	void toggle_page(int p_index);
-	void toggle();
+	void refresh();
+	EditorSpinSlider *get_field(Row p_row, int p_axis) const;
 
-	// Where it is and how big, from its parent's size and the page's.
-	void fit();
-	// Room to leave at the top of the view - the 2D view's ruler.
-	void set_top_inset(real_t p_inset);
-
-	EditorViewSidebar();
+	CanvasItemEditorItemPanel();
 };
