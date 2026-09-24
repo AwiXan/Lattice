@@ -82,6 +82,8 @@ def main():
     project = tempfile.mkdtemp(prefix="lattice-shot-")
     with open(os.path.join(project, "project.godot"), "w", encoding="utf-8", newline="\n") as f:
         f.write('config_version=5\n\n[application]\n\nconfig/name="Lattice screenshot"\n')
+    with open(os.path.join(project, "probe.gd"), "w", encoding="utf-8", newline="\n") as f:
+        f.write("extends Node\n")
     scene = "scene_3d.tscn" if args.scene == "3d" else "scene_2d.tscn"
     with open(os.path.join(project, scene), "w", encoding="utf-8", newline="\n") as f:
         f.write(SCENE_3D if args.scene == "3d" else SCENE_2D)

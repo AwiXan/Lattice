@@ -10517,7 +10517,25 @@ void Node3DEditor::_update_theme() {
 
 	context_toolbar_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("ContextualToolbar"), EditorStringName(EditorStyles)));
 	if (tool_column_panel) {
-		EditorViewHeaderGroup::apply_style(tool_column_panel);
+		// The column is only room for its frames.
+		Ref<StyleBoxEmpty> room;
+		room.instantiate();
+		room->set_content_margin_all(3 * EDSCALE);
+		tool_column_panel->add_theme_style_override(SceneStringName(panel), room);
+		for (int i = 0; i < TOOL_MAX; i++) {
+			EditorViewHeaderGroup::style_tool_button(tool_button[i]);
+		}
+		for (int i = 0; i < TOOL_OPT_MAX; i++) {
+			EditorViewHeaderGroup::style_tool_button(tool_option_button[i]);
+		}
+		for (int i = 0; i < 4; i++) {
+			EditorViewHeaderGroup::style_tool_button(shading_buttons[i]);
+		}
+		EditorViewHeaderGroup::style_tool_button(sun_button);
+		EditorViewHeaderGroup::style_tool_button(environ_button);
+		EditorViewHeaderGroup::style_tool_button(sidebar_button);
+		// What plugins add is a group of the header like the rest.
+		EditorViewHeaderGroup::apply_style(context_toolbar_panel);
 	}
 	if (display_menu) {
 		display_menu->set_button_icon(get_theme_icon(SNAME("arrow"), SNAME("OptionButton")));
@@ -12231,26 +12249,41 @@ void Node3DEditor::_arrange_chrome() {
 	HBoxContainer *menus_group = Object::cast_to<HBoxContainer>(transform_menu->get_parent());
 	ERR_FAIL_COND(!tools_group || !selection_group || !options_group || !preview_group || !menus_group);
 
-	// The tools, down the left side of the viewports.
+	// The tools, down the left side of the viewports: what a click in the
+	// view does, in frames by kind - selecting and the manipulators, then
+	// measuring and picking from a list - and at the foot of the column,
+	// apart, what is done to the selected nodes.
 	tool_column_panel = memnew(PanelContainer);
 	tool_column_panel->set_name("ToolColumn");
 	tool_column = memnew(VBoxContainer);
+	tool_column->add_theme_constant_override("separation", 6 * EDSCALE);
 	tool_column_panel->add_child(tool_column);
 	const ToolMode column[] = {
-		TOOL_MODE_TRANSFORM, TOOL_MODE_MOVE, TOOL_MODE_ROTATE, TOOL_MODE_SCALE, TOOL_MODE_SELECT, TOOL_MAX,
-		TOOL_MODE_LIST_SELECT, TOOL_RULER, TOOL_MAX,
+		TOOL_MODE_SELECT, TOOL_MODE_TRANSFORM, TOOL_MODE_MOVE, TOOL_MODE_ROTATE, TOOL_MODE_SCALE, TOOL_MAX,
+		TOOL_RULER, TOOL_MODE_LIST_SELECT, TOOL_MAX,
 		TOOL_LOCK_SELECTED, TOOL_UNLOCK_SELECTED, TOOL_GROUP_SELECTED, TOOL_UNGROUP_SELECTED
 	};
-	tool_column->add_theme_constant_override("separation", 2 * EDSCALE);
+	EditorViewHeaderGroup *card = nullptr;
+	int cards = 0;
 	for (ToolMode tool : column) {
 		if (tool == TOOL_MAX) {
-			tool_column->add_child(memnew(HSeparator));
+			card = nullptr;
 			continue;
 		}
+		if (!card) {
+			if (++cards == 3) {
+				Control *foot = memnew(Control);
+				foot->set_v_size_flags(SIZE_EXPAND_FILL);
+				foot->set_mouse_filter(MOUSE_FILTER_IGNORE);
+				tool_column->add_child(foot);
+			}
+			card = memnew(EditorViewHeaderGroup(true));
+			tool_column->add_child(card);
+		}
 		tool_button[tool]->get_parent()->remove_child(tool_button[tool]);
-		tool_button[tool]->set_custom_minimum_size(Size2(28, 28) * EDSCALE);
+		tool_button[tool]->set_custom_minimum_size(Size2(30, 30) * EDSCALE);
 		tool_button[tool]->set_icon_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-		tool_column->add_child(tool_button[tool]);
+		card->take({ tool_button[tool] });
 	}
 	// Only their separators are left.
 	toolbar_flow->remove_child(tools_group);

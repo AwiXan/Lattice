@@ -32,7 +32,8 @@
 
 #include "scene/gui/panel_container.h"
 
-class HBoxContainer;
+class BoxContainer;
+class Button;
 class StyleBoxFlat;
 
 // A group of a 2D or 3D view's header - its menus, its transform options,
@@ -42,14 +43,14 @@ class StyleBoxFlat;
 class EditorViewHeaderGroup : public PanelContainer {
 	GDCLASS(EditorViewHeaderGroup, PanelContainer);
 
-	HBoxContainer *box = nullptr;
+	BoxContainer *box = nullptr;
 	bool theming = false;
 
 protected:
 	void _notification(int p_what);
 
 public:
-	HBoxContainer *get_box() const { return box; }
+	BoxContainer *get_box() const { return box; }
 	// Moves p_controls into the group, in order.
 	void take(const Vector<Control *> &p_controls);
 
@@ -57,6 +58,11 @@ public:
 	static Ref<StyleBoxFlat> make_style(const Control *p_for);
 	// Puts that frame on p_panel; for its owner to call when the theme changes.
 	static void apply_style(PanelContainer *p_panel);
+	// A tool's button in a frame: square, rounded, filled with the accent
+	// colour while it is the tool in use - or the option that is on - and lit
+	// under the mouse. For its owner to call when the theme changes.
+	static void style_tool_button(Button *p_button);
 
-	EditorViewHeaderGroup();
+	// Standing, for the tool column; lying, for the header.
+	EditorViewHeaderGroup(bool p_vertical = false);
 };

@@ -32,6 +32,7 @@
 
 #include "editor/settings/editor_settings.h"
 #include "core/config/project_settings.h"
+#include "core/input/input.h"
 #include "core/input/input_event.h"
 #include "core/io/config_file.h"
 #include "core/io/file_access.h"
@@ -125,7 +126,14 @@ void EditorScreenshot::_notification(int p_what) {
 				Node3DEditor *view = Node3DEditor::get_singleton();
 				for (const String &action : actions) {
 					CanvasItemEditor *view_2d = CanvasItemEditor::get_singleton();
-					if (action == "view_2d") {
+					if (action == "script_beside_3d") {
+						EditorPaneTree *tree = EditorNode::get_editor_main_screen()->get_pane_tree();
+						EditorPane *first = tree->get_first_pane();
+						EditorPane *second = tree->split_pane(first, false, false, false);
+						second->add_panel("view_3d");
+						const Ref<Resource> script = ResourceLoader::load("res://probe.gd");
+						EditorNode::get_singleton()->edit_resource(script);
+					} else if (action == "view_2d") {
 						EditorNode::get_editor_main_screen()->get_pane_tree()->get_first_pane()->show_panel_of_type("view_2d");
 					} else if (action == "sidebar" && view && view->get_sidebar_button()) {
 						view->get_sidebar_button()->set_pressed(true);
@@ -159,6 +167,21 @@ void EditorScreenshot::_notification(int p_what) {
 					} else if (action == "later:sidebar2d_close" && CanvasItemEditor::get_singleton() && CanvasItemEditor::get_singleton()->get_sidebar_button()) {
 						print_line("SHOT: closing the 2D sidebar");
 						CanvasItemEditor::get_singleton()->get_sidebar_button()->set_pressed(false);
+					} else if (action == "later:script_drag") {
+						ScriptEditor *script_editor = ScriptEditor::get_singleton();
+						Control *list = script_editor->get_script_list();
+						Label *preview = memnew(Label);
+						preview->set_text("probe.gd");
+						list->force_drag(script_editor->get_current_script_drag_data(), preview);
+						const Vector<EditorPane *> panes = EditorNode::get_editor_main_screen()->get_pane_tree()->get_panes();
+						const Vector2 at = panes[panes.size() - 1]->get_global_rect().get_center();
+						Input::get_singleton()->warp_mouse(at);
+						Ref<InputEventMouseMotion> motion;
+						motion.instantiate();
+						motion->set_position(at);
+						motion->set_global_position(at);
+						list->get_viewport()->push_input(motion);
+						print_line(vformat("SHOT: dragging %s over %s", list->get_viewport()->gui_get_drag_data(), at));
 					} else if (action == "later:float_twice") {
 						// Out of the main window into one, and out of that one into another.
 						EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();

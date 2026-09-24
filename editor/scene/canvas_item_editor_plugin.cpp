@@ -4405,7 +4405,19 @@ void CanvasItemEditor::_update_editor_settings() {
 
 	context_toolbar_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("ContextualToolbar"), EditorStringName(EditorStyles)));
 	if (tool_column_panel) {
-		EditorViewHeaderGroup::apply_style(tool_column_panel);
+		Ref<StyleBoxEmpty> room;
+		room.instantiate();
+		room->set_content_margin_all(3 * EDSCALE);
+		tool_column_panel->add_theme_style_override(SceneStringName(panel), room);
+		Button *styled[] = {
+			select_button, move_button, rotate_button, scale_button, pivot_button, pan_button, ruler_button, list_select_button,
+			scene_paint_button, lock_button, unlock_button, group_button, ungroup_button,
+			local_space_button, smart_snap_button, grid_snap_button, sidebar_button
+		};
+		for (Button *button : styled) {
+			EditorViewHeaderGroup::style_tool_button(button);
+		}
+		EditorViewHeaderGroup::apply_style(context_toolbar_panel);
 		overlays_menu->set_button_icon(get_editor_theme_icon(SNAME("GuiVisibilityVisible")));
 		sidebar_button->set_button_icon(get_editor_theme_icon(SNAME("Tools")));
 	}
@@ -6262,27 +6274,42 @@ void CanvasItemEditor::_arrange_chrome() {
 	HBoxContainer *old_bar = Object::cast_to<HBoxContainer>(select_button->get_parent());
 	ERR_FAIL_NULL(old_bar);
 
-	// The tools, down the left side of the view.
+	// The tools, down the left side of the view, in frames by kind -
+	// selecting and the manipulators; the pivot, panning, measuring and
+	// picking from a list; painting with a scene - and at the foot, apart,
+	// what is done to the selected nodes.
 	tool_column_panel = memnew(PanelContainer);
 	tool_column_panel->set_name("ToolColumn");
 	VBoxContainer *column = memnew(VBoxContainer);
-	column->add_theme_constant_override("separation", 2 * EDSCALE);
+	column->add_theme_constant_override("separation", 6 * EDSCALE);
 	tool_column_panel->add_child(column);
 	Button *tools[] = {
-		select_button, scene_paint_button, nullptr,
-		move_button, rotate_button, scale_button, nullptr,
-		list_select_button, pivot_button, pan_button, ruler_button, nullptr,
+		select_button, move_button, rotate_button, scale_button, nullptr,
+		pivot_button, pan_button, ruler_button, list_select_button, nullptr,
+		scene_paint_button, nullptr,
 		lock_button, unlock_button, group_button, ungroup_button
 	};
+	EditorViewHeaderGroup *card = nullptr;
+	int cards = 0;
 	for (Button *tool : tools) {
 		if (!tool) {
-			column->add_child(memnew(HSeparator));
+			card = nullptr;
 			continue;
 		}
+		if (!card) {
+			if (++cards == 4) {
+				Control *foot = memnew(Control);
+				foot->set_v_size_flags(SIZE_EXPAND_FILL);
+				foot->set_mouse_filter(MOUSE_FILTER_IGNORE);
+				column->add_child(foot);
+			}
+			card = memnew(EditorViewHeaderGroup(true));
+			column->add_child(card);
+		}
 		tool->get_parent()->remove_child(tool);
-		tool->set_custom_minimum_size(Size2(28, 28) * EDSCALE);
+		tool->set_custom_minimum_size(Size2(30, 30) * EDSCALE);
 		tool->set_icon_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-		column->add_child(tool);
+		card->take({ tool });
 	}
 
 	// The header: the menus first, then how a transform is done, then what

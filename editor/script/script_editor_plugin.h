@@ -424,6 +424,7 @@ public:
 	bool is_editor_lent(const Control *p_editor) const;
 	// What dragging the current script out of the list carries.
 	Dictionary get_current_script_drag_data() const;
+	Control *get_script_list() const { return (Control *)script_list; }
 	// Shows the script being edited: in its own panel, or - a help page, a
 	// script never saved - here.
 	void show_current_in_panel();
