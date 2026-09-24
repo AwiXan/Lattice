@@ -38,6 +38,29 @@
 class EditorPane;
 class EditorPaneTree;
 
+// A picture of the editor, for checking how something looks without sitting
+// in front of it: LATTICE_SHOT=<png path> opens LATTICE_SHOT_SCENE if given,
+// selects its first 3D node, waits for things to settle, saves the window to
+// the file and quits. misc/scripts/lattice_screenshot.py sets it all up. Needs
+// a real window: headless draws nothing.
+class EditorScreenshot : public Node {
+	GDCLASS(EditorScreenshot, Node);
+
+	uint64_t started_at = 0;
+	bool selected = false;
+	bool taken = false;
+
+	void _open_scene();
+
+protected:
+	void _notification(int p_what);
+
+public:
+	static bool is_requested();
+
+	EditorScreenshot();
+};
+
 // The editor checking itself: split, close, move, open and reopen things the
 // way a user would, and say what did not come out as it should.
 //
@@ -104,6 +127,9 @@ class EditorSelfTest : public Node {
 	void _script_follows_the_move();
 	void _script_pane_gone();
 	void _script_with_the_others();
+	void _view_chrome();
+	void _view_shading();
+	void _view_overlays();
 	void _script_left_open();
 	void _script_stand_in();
 	EditorPane *_script_pane(int *r_index = nullptr) const;

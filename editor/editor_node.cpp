@@ -1041,6 +1041,9 @@ void EditorNode::_notification(int p_what) {
 				// Checking itself rather than being used: see EditorSelfTest.
 				add_child(memnew(EditorSelfTest));
 			}
+			if (EditorScreenshot::is_requested()) {
+				add_child(memnew(EditorScreenshot));
+			}
 
 			// Store the default order of bottom docks. It can only be determined dynamically.
 			PackedStringArray bottom_docks;

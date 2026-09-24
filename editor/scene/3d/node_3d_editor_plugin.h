@@ -51,6 +51,7 @@ class DirectionalLight3D;
 class EditorData;
 class EditorSelection;
 class EditorSpinSlider;
+class HFlowContainer;
 class HSplitContainer;
 class LineEdit;
 class MenuButton;
@@ -566,6 +567,9 @@ public:
 			AcceptDialog *p_accept);
 
 	SubViewport *get_viewport_node() { return viewport; }
+	// This viewport's own view menu, and the id "Display Normal" has in it.
+	MenuButton *get_view_menu() const { return view_display_menu; }
+	static int get_display_normal_id() { return VIEW_DISPLAY_NORMAL; }
 	Camera3D *get_camera_3d() { return camera; } // return the default camera object.
 	Control *get_surface() { return surface; }
 
@@ -888,10 +892,41 @@ private:
 
 	void _update_context_toolbar();
 
+	// The view's own layout, unless interface/editor/appearance/
+	// classic_viewport_toolbars asks for the one toolbar it had: the tools down
+	// the left side, and a header of what acts on the view - its menus first,
+	// what plugins add for the node being edited in the middle, and the
+	// display and lighting of the view at the far end (header_end).
+	HFlowContainer *toolbar_flow = nullptr;
+	PanelContainer *tool_column_panel = nullptr;
+	VBoxContainer *tool_column = nullptr;
+	HBoxContainer *header_end = nullptr;
+	void _arrange_chrome();
+	// Wireframe, unshaded, lighting, normal - for all of this view's
+	// viewports at once. See Node3DEditorChrome::Shading.
+	Button *shading_buttons[4] = {};
+	void _shading_pressed(int p_shading);
+	// Everything drawn over the scene, in one place, for all of the view's
+	// viewports at once. Each item is an item some existing menu already has -
+	// the View menu, or each viewport's own - and reads its state from there.
+	MenuButton *overlays_menu = nullptr;
+	PopupMenu *overlays_gizmos_menu = nullptr;
+	struct OverlayItem {
+		const char *name;
+		int layout_option; // In the View menu, or -1.
+		int viewport_option; // In each viewport's menu, or -1.
+	};
+	static const OverlayItem *_overlay_items(int &r_count);
+	bool _overlay_shown_in(int p_overlay, int p_viewport) const;
+	void _overlays_about_to_popup();
+	void _overlays_id_pressed(int p_overlay);
+	void _overlays_gizmo_pressed(int p_gizmo);
+
 	void _generate_selection_boxes();
 
 	void _init_indicators();
 	void _update_gizmos_menu();
+	void _fill_gizmos_menu(PopupMenu *p_menu);
 	void _update_gizmos_menu_theme();
 	static void _update_all_gizmos_menus();
 	void _finish_indicators();
@@ -1161,6 +1196,28 @@ public:
 	void move_control_to_right_panel(Control *p_control);
 
 	VSplitContainer *get_shader_split();
+	// Null with the classic toolbar.
+	PanelContainer *get_tool_column() const { return tool_column_panel; }
+	HBoxContainer *get_header_end() const { return header_end; }
+	HFlowContainer *get_toolbar() const { return toolbar_flow; }
+	HBoxContainer *get_context_toolbar() const { return context_toolbar_hbox; }
+	// The header's shading buttons say what the viewport last worked in
+	// shows; a viewport calls this whenever it changes how it draws.
+	void update_shading_buttons();
+	Button *get_shading_button(int p_shading) const { return (p_shading >= 0 && p_shading < 4) ? shading_buttons[p_shading] : nullptr; }
+	enum Overlay {
+		OVERLAY_GRID,
+		OVERLAY_ORIGIN,
+		OVERLAY_GIZMOS,
+		OVERLAY_TRANSFORM_GIZMO,
+		OVERLAY_INFORMATION,
+		OVERLAY_FRAME_TIME,
+		OVERLAY_ENVIRONMENT,
+		OVERLAY_MAX
+	};
+	MenuButton *get_overlays_menu() const { return overlays_menu; }
+	// Whether every viewport of the view shows it.
+	bool is_overlay_shown_everywhere(Overlay p_overlay) const;
 
 	Node3D *get_single_selected_node() { return selected; }
 	bool is_current_selected_gizmo(const EditorNode3DGizmo *p_gizmo);

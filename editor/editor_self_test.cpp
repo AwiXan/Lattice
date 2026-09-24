@@ -34,6 +34,7 @@
 #include "core/input/input_event.h"
 #include "core/io/config_file.h"
 #include "core/io/file_access.h"
+#include "core/io/image.h"
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
@@ -60,12 +61,73 @@
 #include "editor/themes/editor_scale.h"
 #include "scene/animation/animation_player.h"
 #include "scene/gui/button.h"
+#include "scene/gui/flow_container.h"
+#include "scene/gui/menu_button.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/tab_bar.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/window.h"
+
+bool EditorScreenshot::is_requested() {
+	return OS::get_singleton()->has_environment("LATTICE_SHOT");
+}
+
+void EditorScreenshot::_open_scene() {
+	const String scene = OS::get_singleton()->get_environment("LATTICE_SHOT_SCENE");
+	if (!scene.is_empty()) {
+		EditorNode::get_singleton()->load_scene(scene);
+	}
+}
+
+void EditorScreenshot::_notification(int p_what) {
+	switch (p_what) {
+		case NOTIFICATION_READY: {
+			started_at = OS::get_singleton()->get_ticks_msec();
+			set_process(true);
+			callable_mp(this, &EditorScreenshot::_open_scene).call_deferred();
+		} break;
+
+		case NOTIFICATION_PROCESS: {
+			const uint64_t elapsed = OS::get_singleton()->get_ticks_msec() - started_at;
+			if (!selected && elapsed > 2000) {
+				selected = true;
+				Node *root = EditorNode::get_singleton()->get_edited_scene();
+				TypedArray<Node> meshes = root ? root->find_children("*", "MeshInstance3D", true, false) : TypedArray<Node>();
+				if (!meshes.is_empty()) {
+					EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
+					selection->clear();
+					selection->add_node(Object::cast_to<Node>(meshes[0]));
+				}
+			}
+			if (!taken && elapsed > 4500) {
+				taken = true;
+				Ref<Image> image = get_tree()->get_root()->get_texture()->get_image();
+				const String path = OS::get_singleton()->get_environment("LATTICE_SHOT");
+				// Part of it only, to look at something small up close.
+				const PackedStringArray crop = OS::get_singleton()->get_environment("LATTICE_SHOT_CROP").split(",");
+				if (image.is_valid() && crop.size() == 4) {
+					const Rect2i region = Rect2i(crop[0].to_int(), crop[1].to_int(), crop[2].to_int(), crop[3].to_int()).intersection(Rect2i(Point2i(), image->get_size()));
+					if (region.has_area()) {
+						image = image->get_region(region);
+					}
+				}
+				if (image.is_valid()) {
+					image->save_png(path);
+					print_line("SHOT SAVED: " + path);
+				} else {
+					print_line("SHOT FAILED: nothing drawn");
+				}
+				get_tree()->quit(image.is_valid() ? 0 : 1);
+			}
+		} break;
+	}
+}
+
+EditorScreenshot::EditorScreenshot() {
+	set_name("EditorScreenshot");
+}
 
 bool EditorSelfTest::is_requested() {
 	return OS::get_singleton()->has_environment("LATTICE_SELFTEST");
@@ -394,6 +456,78 @@ void EditorSelfTest::_second_script_check(ObjectID p_first_pane) {
 		}
 	}
 	_check(second && second->get_instance_id() == p_first_pane, "a second script gets its own panel, stacked with the first");
+}
+
+void EditorSelfTest::_view_chrome() {
+	Node3DEditor *view = Node3DEditor::get_singleton();
+	Control *column = view->get_tool_column();
+	_check(column && column->find_children("*", "Button", true, false).size() >= 11, "the 3D tools are down the side of the view");
+	HFlowContainer *header = view->get_toolbar();
+	const bool menus_first = header && header->get_child_count() > 0 && !header->get_child(0)->find_children("*", "MenuButton", true, false).is_empty();
+	const bool end_last = header && view->get_header_end() && view->get_header_end()->get_index() == header->get_child_count() - 1;
+	_check(menus_first && end_last, "the 3D header has its menus first and the view's display at the far end");
+
+	// Whatever an addon hands the 3D view goes where it always went, and
+	// comes back out again.
+	EditorPlugin *plugin = memnew(EditorPlugin);
+	bool placed = true;
+	const EditorPlugin::CustomControlContainer containers[] = {
+		EditorPlugin::CONTAINER_SPATIAL_EDITOR_MENU,
+		EditorPlugin::CONTAINER_SPATIAL_EDITOR_SIDE_LEFT,
+		EditorPlugin::CONTAINER_SPATIAL_EDITOR_SIDE_RIGHT,
+		EditorPlugin::CONTAINER_SPATIAL_EDITOR_BOTTOM,
+	};
+	for (EditorPlugin::CustomControlContainer container : containers) {
+		Button *button = memnew(Button);
+		plugin->add_control_to_container(container, button);
+		placed = placed && view->is_ancestor_of(button);
+		if (container == EditorPlugin::CONTAINER_SPATIAL_EDITOR_MENU) {
+			placed = placed && button->get_parent() == view->get_context_toolbar();
+		}
+		plugin->remove_control_from_container(container, button);
+		placed = placed && !button->get_parent();
+		memdelete(button);
+	}
+	memdelete(plugin);
+	_check(placed, "an addon's controls go into the 3D view's containers and come back out, as before");
+}
+
+void EditorSelfTest::_view_shading() {
+	Node3DEditor *view = Node3DEditor::get_singleton();
+	Button *wireframe = view->get_shading_button(0);
+	Button *normal = view->get_shading_button(3);
+	if (!wireframe || !normal) {
+		_check(false, "the 3D header has the four shading buttons");
+		return;
+	}
+	// The header's button reaches every viewport of the view.
+	wireframe->emit_signal(SceneStringName(pressed));
+	bool all_wireframe = true;
+	for (uint32_t i = 0; i < Node3DEditor::VIEWPORTS_COUNT; i++) {
+		all_wireframe = all_wireframe && view->get_editor_viewport(i)->get_viewport_node()->get_debug_draw() == Viewport::DEBUG_DRAW_WIREFRAME;
+	}
+	_check(all_wireframe && wireframe->is_pressed() && !normal->is_pressed(), "a shading button in the 3D header sets every viewport of the view");
+	// And the view's own menu moves the header's buttons with it.
+	view->get_editor_viewport(0)->get_view_menu()->get_popup()->emit_signal(SceneStringName(id_pressed), Node3DEditorViewport::get_display_normal_id());
+	_check(normal->is_pressed() && !wireframe->is_pressed(), "changing how a viewport draws from its own menu updates the header");
+}
+
+void EditorSelfTest::_view_overlays() {
+	Node3DEditor *view = Node3DEditor::get_singleton();
+	MenuButton *menu = view->get_overlays_menu();
+	if (!menu) {
+		_check(false, "the 3D header has an Overlays menu");
+		return;
+	}
+	PopupMenu *popup = menu->get_popup();
+	popup->emit_signal(SNAME("about_to_popup"));
+	const bool listed = popup->get_item_count() > Node3DEditor::OVERLAY_MAX;
+	const bool had = view->is_overlay_shown_everywhere(Node3DEditor::OVERLAY_INFORMATION);
+	popup->emit_signal(SceneStringName(id_pressed), (int)Node3DEditor::OVERLAY_INFORMATION);
+	const bool shown = view->is_overlay_shown_everywhere(Node3DEditor::OVERLAY_INFORMATION);
+	popup->emit_signal(SceneStringName(id_pressed), (int)Node3DEditor::OVERLAY_INFORMATION);
+	const bool hidden_again = !view->is_overlay_shown_everywhere(Node3DEditor::OVERLAY_INFORMATION);
+	_check(listed && !had && shown && hidden_again, "an overlay switched in the Overlays menu is switched in every viewport of the view");
 }
 
 EditorPane *EditorSelfTest::_pane_with_script(const String &p_path, int *r_index) const {
@@ -1142,6 +1276,9 @@ EditorSelfTest::EditorSelfTest() {
 	_add("worlds check", callable_mp(this, &EditorSelfTest::_worlds_check));
 	_add("worlds after camera moved", callable_mp(this, &EditorSelfTest::_worlds_after_camera_moved));
 	_add("worlds one view closed", callable_mp(this, &EditorSelfTest::_worlds_one_view_closed));
+	_add("view chrome", callable_mp(this, &EditorSelfTest::_view_chrome));
+	_add("view shading", callable_mp(this, &EditorSelfTest::_view_shading));
+	_add("view overlays", callable_mp(this, &EditorSelfTest::_view_overlays));
 	_add("script left open", callable_mp(this, &EditorSelfTest::_script_left_open));
 	_add("script stand-in", callable_mp(this, &EditorSelfTest::_script_stand_in));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
