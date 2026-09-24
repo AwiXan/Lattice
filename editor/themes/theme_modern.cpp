@@ -1305,7 +1305,8 @@ void ThemeModern::populate_standard_styles(const Ref<EditorTheme> &p_theme, Edit
 	}
 
 	Ref<StyleBoxFlat> progress_fill_style = progress_bar_style->duplicate();
-	progress_fill_style->set_bg_color(p_config.button_normal_color);
+	// How far along, in the theme's own colour.
+	progress_fill_style->set_bg_color(p_config.accent_color);
 	if (p_config.draw_extra_borders) {
 		progress_fill_style->set_border_color(p_config.extra_border_color_1);
 	}
@@ -1324,7 +1325,7 @@ void ThemeModern::populate_standard_styles(const Ref<EditorTheme> &p_theme, Edit
 	popup_progress_bar_style->set_bg_color(_get_base_color(p_config, 0.4, 0.9));
 
 	Ref<StyleBoxFlat> popup_progress_fill_style = progress_fill_style->duplicate();
-	popup_progress_fill_style->set_bg_color(_get_base_color(p_config, -1.6, 0.9));
+	popup_progress_fill_style->set_bg_color(p_config.accent_color);
 	if (p_config.draw_extra_borders) {
 		popup_progress_fill_style->set_border_color(p_config.extra_border_color_1);
 	}

@@ -215,6 +215,14 @@ static bool accessibility_mode_set = false;
 static bool single_window = false;
 static bool editor = false;
 static bool project_manager = false;
+#ifdef TOOLS_ENABLED
+// Until the editor draws its first frame, its splash is all there is on
+// screen, and that can take a while: see Main::set_boot_progress().
+static Ref<Image> boot_progress_splash;
+static Color boot_progress_bg;
+static Color boot_progress_accent = Color(0.44, 0.73, 0.98);
+static float boot_progress_shown = -1.0f;
+#endif
 static bool cmdline_tool = false;
 static String locale;
 static String log_file;
@@ -3093,6 +3101,8 @@ Error Main::setup2(bool p_show_boot_logo) {
 					bool tablet_found = false;
 
 					bool ac_found = false;
+					// For the bar under the splash, in the theme's own colour.
+					bool accent_found = false;
 
 					if (editor) {
 						screen_property = "interface/editor/appearance/editor_screen";
@@ -3108,7 +3118,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 						prefer_wayland_found = true;
 					}
 
-					while (!screen_found || !init_expand_to_title_found || !init_display_scale_found || !init_custom_scale_found || !prefer_wayland_found || !tablet_found || !ac_found) {
+					while (!screen_found || !init_expand_to_title_found || !init_display_scale_found || !init_custom_scale_found || !prefer_wayland_found || !tablet_found || !ac_found || !accent_found) {
 						assign = Variant();
 						next_tag.fields.clear();
 						next_tag.name = String();
@@ -3119,6 +3129,10 @@ Error Main::setup2(bool p_show_boot_logo) {
 						}
 
 						if (err == OK && !assign.is_empty()) {
+							if (!accent_found && assign == "interface/theme/accent_color") {
+								boot_progress_accent = value;
+								accent_found = true;
+							}
 							if (!screen_found && assign == screen_property) {
 								init_screen = value;
 								screen_found = true;
@@ -3773,6 +3787,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 		}
 
 		OS::get_singleton()->benchmark_end_measure("Startup", "Text Server");
+		set_boot_progress(0.12);
 	}
 
 	MAIN_PRINT("Main: Load Scene Types");
@@ -3827,6 +3842,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 	GLOBAL_DEF_NOVAL(PropertyInfo(Variant::PACKED_STRING_ARRAY, "editor/script/search_in_file_extensions"), extensions); // Note: should be defined after Scene level modules init to see .NET.
 
 	OS::get_singleton()->benchmark_end_measure("Startup", "Scene");
+	set_boot_progress(0.22);
 
 #ifdef TOOLS_ENABLED
 	ClassDB::set_current_api(ClassDB::API_EDITOR);
@@ -3847,6 +3863,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 
 	MAIN_PRINT("Main: Load Platforms");
 
+	set_boot_progress(0.3);
 	OS::get_singleton()->benchmark_begin_measure("Startup", "Platforms");
 
 	register_platform_apis();
@@ -3931,6 +3948,51 @@ Error Main::setup2(bool p_show_boot_logo) {
 	return OK;
 }
 
+void Main::set_boot_progress(float p_fraction, const Color &p_accent) {
+#ifdef TOOLS_ENABLED
+	if (p_accent.a > 0) {
+		boot_progress_accent = p_accent;
+	}
+	p_fraction = CLAMP(p_fraction, 0.0f, 1.0f);
+	if (boot_progress_splash.is_null() || !RenderingServer::get_singleton() || p_fraction <= boot_progress_shown) {
+		return;
+	}
+	boot_progress_shown = p_fraction;
+
+	// A thin rounded bar under the logo: a track a shade off the background,
+	// filled with the accent colour as far as starting up has come.
+	Ref<Image> image = boot_progress_splash->duplicate();
+	const int bar_width = MIN(image->get_width() - 40, 240);
+	const int bar_height = 4;
+	const int x = (image->get_width() - bar_width) / 2;
+	const int y = MIN(image->get_height() - 24, 486);
+	Color track = boot_progress_bg.lerp(Color(1, 1, 1), 0.1);
+	track.a = 1.0;
+	Color fill = boot_progress_accent;
+	fill.a = 1.0;
+	auto bar = [&](int p_x, int p_width, const Color &p_color, const Color &p_under) {
+		if (p_width <= 0) {
+			return;
+		}
+		image->fill_rect(Rect2i(p_x, y, p_width, bar_height), p_color);
+		// Its ends rounded off, half blended into what is under them.
+		const Color corner = p_under.blend(Color(p_color.r, p_color.g, p_color.b, 0.35));
+		const int ends[] = { p_x, p_x + p_width - 1 };
+		for (int end : ends) {
+			image->set_pixel(end, y, corner);
+			image->set_pixel(end, y + bar_height - 1, corner);
+		}
+	};
+	bar(x, bar_width, track, boot_progress_bg);
+	bar(x, (int)Math::round(bar_width * p_fraction), fill, track);
+	RenderingServer::get_singleton()->set_boot_image_with_stretch(image, boot_progress_bg, RSE::SPLASH_STRETCH_MODE_DISABLED);
+
+	if (p_fraction >= 1.0f) {
+		boot_progress_splash.unref();
+	}
+#endif
+}
+
 void Main::setup_boot_logo() {
 	GodotProfileZone("setup_boot_logo");
 	MAIN_PRINT("Main: Load Boot Image");
@@ -3999,6 +4061,14 @@ void Main::setup_boot_logo() {
 			RenderingServer::get_singleton()->set_default_clear_color(boot_bg_color);
 			MAIN_PRINT("Main: Image");
 			RenderingServer::get_singleton()->set_boot_image_with_stretch(splash, boot_bg_color, RSE::SPLASH_STRETCH_MODE_DISABLED);
+#ifdef TOOLS_ENABLED
+			if (editor) {
+				boot_progress_splash = splash->duplicate();
+				boot_progress_splash->convert(Image::FORMAT_RGBA8);
+				boot_progress_bg = boot_bg_color;
+				set_boot_progress(0.04);
+			}
+#endif
 #endif
 		}
 
@@ -4620,8 +4690,11 @@ int Main::start() {
 				translation_server->get_editor_domain()->set_pseudolocalization_enabled(true);
 			}
 
+			set_boot_progress(0.34);
 			editor_node = memnew(EditorNode);
 			sml->get_root()->add_child(editor_node);
+			// Its first frame is next.
+			set_boot_progress(1.0);
 
 			if (!_export_preset.is_empty()) {
 				editor_node->export_preset(_export_preset, positional_arg, export_debug, export_pack_only, install_android_build_template, export_patch, patches);

@@ -70,8 +70,14 @@ class ProgressDialog : public CenterContainer {
 		VBoxContainer *vb = nullptr;
 		ProgressBar *progress = nullptr;
 		Label *state = nullptr;
+		// How far along, as a percentage beside the title and as steps
+		// beside the state.
+		Label *percent = nullptr;
+		Label *count = nullptr;
 		uint64_t last_progress_tick = 0;
 	};
+	void _show_progress(Task &p_task);
+	void _style_bar(ProgressBar *p_bar) const;
 	HBoxContainer *cancel_hb = nullptr;
 	Button *cancel = nullptr;
 

@@ -33,11 +33,16 @@
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
 #include "editor/editor_node.h"
+#include "editor/editor_string_names.h"
 #include "editor/themes/editor_scale.h"
 #include "main/main.h"
+#include "scene/gui/box_container.h"
+#include "scene/gui/label.h"
 #include "scene/gui/panel_container.h"
+#include "scene/gui/progress_bar.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/window.h"
+#include "scene/resources/style_box_flat.h"
 #include "servers/display/display_server.h"
 
 void BackgroundProgress::_add_task(const String &p_task, const String &p_label, int p_steps) {
@@ -141,8 +146,44 @@ void ProgressDialog::_notification(int p_what) {
 			main->set_offset(SIDE_BOTTOM, -style->get_margin(SIDE_BOTTOM));
 
 			center_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SceneStringName(panel), "PopupPanel"));
+			main->add_theme_constant_override("separation", 14 * EDSCALE);
+			for (KeyValue<String, Task> &E : tasks) {
+				_style_bar(E.value.progress);
+			}
+		} break;
+
+		case NOTIFICATION_DRAW: {
+			// The editor behind it dimmed: it waits.
+			draw_rect(Rect2(Point2(), get_size()), Color(0, 0, 0, 0.35));
 		} break;
 	}
+}
+
+void ProgressDialog::_style_bar(ProgressBar *p_bar) const {
+	// Thin and rounded, the part done in the theme's accent colour.
+	const Control *theme = EditorNode::get_singleton() && EditorNode::get_singleton()->get_gui_base() ? EditorNode::get_singleton()->get_gui_base() : this;
+	const Color accent = theme->get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
+	Color track = theme->get_theme_color(SNAME("mono_color"), EditorStringName(Editor));
+	track.a = 0.12;
+	const int radius = Math::round(3 * EDSCALE);
+	Ref<StyleBoxFlat> background;
+	background.instantiate();
+	background->set_bg_color(track);
+	background->set_corner_radius_all(radius);
+	background->set_content_margin_all(0);
+	Ref<StyleBoxFlat> fill = background->duplicate();
+	fill->set_bg_color(accent);
+	p_bar->add_theme_style_override("background", background);
+	p_bar->add_theme_style_override("fill", fill);
+	p_bar->set_show_percentage(false);
+	p_bar->set_custom_minimum_size(Size2(0, 6 * EDSCALE));
+}
+
+void ProgressDialog::_show_progress(Task &p_task) {
+	const double max = MAX(1.0, p_task.progress->get_max());
+	const double value = CLAMP(p_task.progress->get_value(), 0.0, max);
+	p_task.percent->set_text(itos(int(Math::round(value / max * 100.0))) + "%");
+	p_task.count->set_text(vformat("%d / %d", int(value), int(max)));
 }
 
 void ProgressDialog::_update_ui() {
@@ -198,18 +239,38 @@ void ProgressDialog::add_task(const String &p_task, const String &p_label, int p
 	}
 
 	ERR_FAIL_COND_MSG(tasks.has(p_task), "Task '" + p_task + "' already exists.");
+	// What is being done and how far along it is, over a thin bar in the
+	// theme's colour; under it, the step it is on.
 	ProgressDialog::Task t;
 	t.vb = memnew(VBoxContainer);
-	VBoxContainer *vb2 = memnew(VBoxContainer);
-	t.vb->add_margin_child(p_label, vb2);
+	t.vb->add_theme_constant_override("separation", 6 * EDSCALE);
+	HBoxContainer *head = memnew(HBoxContainer);
+	t.vb->add_child(head);
+	Label *title = memnew(Label(p_label));
+	title->set_theme_type_variation("HeaderSmall");
+	title->set_h_size_flags(SIZE_EXPAND_FILL);
+	title->set_clip_text(true);
+	head->add_child(title);
+	t.percent = memnew(Label);
+	t.percent->set_theme_type_variation("HeaderSmall");
+	head->add_child(t.percent);
 	t.progress = memnew(ProgressBar);
 	t.progress->set_theme_type_variation("PopupProgressBar");
+	_style_bar(t.progress);
 	t.progress->set_max(p_steps);
-	t.progress->set_value(p_steps);
-	vb2->add_child(t.progress);
+	t.progress->set_value(0);
+	t.vb->add_child(t.progress);
+	HBoxContainer *foot = memnew(HBoxContainer);
+	t.vb->add_child(foot);
 	t.state = memnew(Label);
 	t.state->set_clip_text(true);
-	vb2->add_child(t.state);
+	t.state->set_h_size_flags(SIZE_EXPAND_FILL);
+	t.state->set_modulate(Color(1, 1, 1, 0.7));
+	foot->add_child(t.state);
+	t.count = memnew(Label);
+	t.count->set_modulate(Color(1, 1, 1, 0.55));
+	foot->add_child(t.count);
+	_show_progress(t);
 	main->add_child(t.vb);
 
 	tasks[p_task] = t;
@@ -244,6 +305,7 @@ bool ProgressDialog::task_step(const String &p_task, const String &p_state, int 
 	}
 
 	t.state->set_text(p_state);
+	_show_progress(t);
 	t.last_progress_tick = OS::get_singleton()->get_ticks_usec();
 	_update_ui();
 

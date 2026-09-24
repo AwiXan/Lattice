@@ -58,6 +58,7 @@
 #include "editor/gui/editor_pie_menu.h"
 #include "editor/gui/editor_view_hints.h"
 #include "editor/gui/editor_view_pill.h"
+#include "editor/gui/progress_dialog.h"
 #include "editor/gui/editor_view_sidebar.h"
 #include "editor/scene/3d/node_3d_editor_chrome.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
@@ -208,6 +209,10 @@ void EditorScreenshot::_notification(int p_what) {
 							key->set_pressed(pressed == 1);
 							surface->get_viewport()->push_input(key);
 						}
+					} else if (action == "later:progress" && ProgressDialog::get_singleton()) {
+						// What loading a project shows, held open for the picture.
+						ProgressDialog::get_singleton()->add_task("lattice_shot", TTR("(Re)Importing Assets"), 12);
+						ProgressDialog::get_singleton()->task_step("lattice_shot", "res://textures/rock_albedo.png", 5);
 					}
 				}
 			}

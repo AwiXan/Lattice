@@ -8826,6 +8826,7 @@ EditorNode::EditorNode() {
 	EditorThemeManager::initialize();
 	theme = EditorThemeManager::generate_theme();
 	DisplayServer::set_early_window_clear_color_override(true, theme->get_color(SNAME("background"), EditorStringName(Editor)));
+	Main::set_boot_progress(0.5, theme->get_color(SNAME("accent_color"), EditorStringName(Editor)));
 
 	EDITOR_DEF("_export_preset_advanced_mode", false); // Could be accessed in EditorExportPreset.
 
@@ -9427,6 +9428,7 @@ EditorNode::EditorNode() {
 	memnew(ImportDock);
 	editor_dock_manager->add_dock(ImportDock::get_singleton());
 
+	Main::set_boot_progress(0.62);
 	FileSystemDock *filesystem_dock = memnew(FileSystemDock);
 	filesystem_dock->connect("inherit", callable_mp(this, &EditorNode::_inherit_request));
 	filesystem_dock->connect("instantiate", callable_mp(this, &EditorNode::_instantiate_request));
@@ -9648,6 +9650,7 @@ EditorNode::EditorNode() {
 
 	add_editor_plugin(memnew(CanvasItemEditorPlugin));
 	add_editor_plugin(memnew(Node3DEditorPlugin));
+	Main::set_boot_progress(0.74);
 	add_editor_plugin(memnew(ScriptEditorPlugin));
 
 	if (!Engine::get_singleton()->is_recovery_mode_hint()) {
@@ -9885,6 +9888,7 @@ EditorNode::EditorNode() {
 
 	follow_system_theme = EDITOR_GET("interface/theme/follow_system_theme");
 	use_system_accent_color = EDITOR_GET("interface/theme/use_system_accent_color");
+	Main::set_boot_progress(0.88);
 }
 
 EditorNode::~EditorNode() {

@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/math/color.h"
 #include "core/os/thread.h"
 #include "core/typedefs.h"
 
@@ -73,6 +74,9 @@ public:
 	static Error setup2(bool p_show_boot_logo = true); // The thread calling setup2() will effectively become the main thread.
 	static String get_locale_override();
 	static void setup_boot_logo();
+	// The editor's splash has a bar under it that fills as the editor starts,
+	// drawn in p_accent once that is known. At 1 it is done, and forgotten.
+	static void set_boot_progress(float p_fraction, const Color &p_accent = Color(0, 0, 0, 0));
 	static Error test_setup();
 	static void test_cleanup();
 	static int start();
