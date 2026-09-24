@@ -6353,7 +6353,7 @@ void CanvasItemEditor::_arrange_chrome() {
 	context_toolbar_hbox->add_child(addon_mirror_box);
 
 	hints = memnew(EditorViewHints);
-	hints->set_visible(EditorSettings::get_singleton()->get_project_metadata("2d_editor", "key_hints", true));
+	hints->set_visible(EditorSettings::get_singleton()->get_project_metadata("2d_editor", "key_hints", false));
 	add_child(hints);
 	// Said as soon as it is on screen, not at the next tick.
 	hints->connect(SceneStringName(visibility_changed), callable_mp(this, &CanvasItemEditor::_update_hints), CONNECT_DEFERRED);

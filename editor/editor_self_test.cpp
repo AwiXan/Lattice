@@ -30,6 +30,7 @@
 
 #include "editor_self_test.h"
 
+#include "editor/settings/editor_settings.h"
 #include "core/config/project_settings.h"
 #include "core/input/input_event.h"
 #include "core/io/config_file.h"
@@ -636,6 +637,9 @@ void EditorSelfTest::_view_hints() {
 		_check(false, "the 3D view has a line of key hints");
 		return;
 	}
+	if (!hints->is_visible()) {
+		view->toggle_overlay(Node3DEditor::OVERLAY_KEY_HINTS);
+	}
 	const String text = hints->get_text();
 	_check(hints->is_visible_in_tree() && text.contains(TTR("Orbit")) && text.contains(TTR("Sidebar")), "under the 3D view, a line says what the mouse and keys do: " + text);
 
@@ -776,6 +780,9 @@ void EditorSelfTest::_view_2d_check() {
 		_check(helpers >= 0 && switched && view->are_helpers_shown() == before, "an overlay switched in the 2D Overlays menu switches");
 	}
 
+	if (popup && view->get_hints() && !view->get_hints()->is_visible()) {
+		popup->emit_signal(SceneStringName(id_pressed), (int)CanvasItemEditor::OVERLAY_KEY_HINTS);
+	}
 	const String hints = view->get_hints() ? view->get_hints()->get_text() : String();
 	_check(hints.contains(TTR("Pan")) && hints.contains(TTR("Zoom")), "under the 2D view, a line says what the mouse and keys do: " + hints);
 
@@ -1555,6 +1562,8 @@ void EditorSelfTest::_notification(int p_what) {
 
 EditorSelfTest::EditorSelfTest() {
 	set_name("EditorSelfTest");
+	// Off by default; what is checked here is what they do when on.
+	EditorSettings::get_singleton()->set("text_editor/behavior/files/open_scripts_in_own_panels", true);
 	error_handler.errfunc = _error_handler;
 	error_handler.userdata = this;
 	add_error_handler(&error_handler);

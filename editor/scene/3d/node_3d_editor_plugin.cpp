@@ -12348,7 +12348,7 @@ void Node3DEditor::_build_sidebar(Control *p_over) {
 	addon_mirror->set_shortcut_context(this);
 
 	hints = memnew(EditorViewHints);
-	hints->set_visible(EditorSettings::get_singleton()->get_project_metadata("3d_editor", "key_hints", true));
+	hints->set_visible(EditorSettings::get_singleton()->get_project_metadata("3d_editor", "key_hints", false));
 	add_child(hints);
 	// Said as soon as it is on screen, not at the next tick.
 	hints->connect(SceneStringName(visibility_changed), callable_mp(this, &Node3DEditor::_update_hints), CONNECT_DEFERRED);

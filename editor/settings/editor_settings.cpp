@@ -860,7 +860,7 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	_initial_set("text_editor/behavior/files/autosave_interval_secs", 0);
 	// Opening a script gives it a panel of its own, to be put in any pane or
 	// window and stacked with others, rather than a tab in the script editor.
-	_initial_set("text_editor/behavior/files/open_scripts_in_own_panels", true, true);
+	_initial_set("text_editor/behavior/files/open_scripts_in_own_panels", false, true);
 	_initial_set("text_editor/behavior/files/restore_scripts_on_load", true);
 	_initial_set("text_editor/behavior/files/convert_indent_on_save", true);
 	_initial_set("text_editor/behavior/files/auto_reload_scripts_on_external_change", true);

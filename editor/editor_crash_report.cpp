@@ -30,6 +30,7 @@
 
 #include "editor_crash_report.h"
 
+#include "scene/main/scene_tree.h"
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -145,7 +146,15 @@ void EditorCrashReport::popup_if_needed() {
 	const int recoverable = EditorSceneRecovery::get_previous_count();
 	restore_button->set_visible(recoverable > 0);
 	restore_button->set_text(vformat(TTRN("Restore %d Unsaved Scene", "Restore %d Unsaved Scenes", recoverable), recoverable));
-	popup_centered_clamped(Size2(760, 420) * EDSCALE, 0.8);
+	// Never taller than three quarters of the editor's window: the log's own
+	// box gives way, and scrolls.
+	const real_t max_height = get_tree()->get_root()->get_size().height * 0.75;
+	text->set_custom_minimum_size(Size2(0, MIN(240 * EDSCALE, max_height * 0.4)));
+	popup_centered_clamped(Size2(760, 420) * EDSCALE, 0.75);
+	if (get_size().height > max_height) {
+		set_size(Size2i(get_size().width, max_height));
+		move_to_center();
+	}
 }
 
 void EditorCrashReport::_notification(int p_what) {
