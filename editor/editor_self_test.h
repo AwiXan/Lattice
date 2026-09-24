@@ -130,6 +130,11 @@ class EditorSelfTest : public Node {
 	void _view_chrome();
 	void _view_shading();
 	void _view_overlays();
+	void _view_sidebar_open();
+	void _view_sidebar_check();
+	ObjectID sidebar_view;
+	ObjectID sidebar_node;
+	real_t sidebar_node_x = 0.0;
 	void _script_left_open();
 	void _script_stand_in();
 	EditorPane *_script_pane(int *r_index = nullptr) const;

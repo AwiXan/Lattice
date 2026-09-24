@@ -50,6 +50,9 @@
 #include "editor/file_system/editor_file_system.h"
 #include "editor/gui/editor_pane.h"
 #include "editor/gui/editor_pane_tree.h"
+#include "editor/gui/editor_spin_slider.h"
+#include "editor/gui/editor_view_sidebar.h"
+#include "editor/scene/3d/node_3d_editor_chrome.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/scene/editor_scene_panel.h"
 #include "editor/script/editor_script_panel.h"
@@ -99,6 +102,16 @@ void EditorScreenshot::_notification(int p_what) {
 					EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
 					selection->clear();
 					selection->add_node(Object::cast_to<Node>(meshes[0]));
+				}
+				// What to have open in the picture, comma separated.
+				const PackedStringArray actions = OS::get_singleton()->get_environment("LATTICE_SHOT_ACTIONS").split(",", false);
+				Node3DEditor *view = Node3DEditor::get_singleton();
+				for (const String &action : actions) {
+					if (action == "sidebar" && view && view->get_sidebar_button()) {
+						view->get_sidebar_button()->set_pressed(true);
+					} else if (action.begins_with("sidebar_page_") && view && view->get_sidebar()) {
+						view->get_sidebar()->show_page(action.trim_prefix("sidebar_page_").to_int());
+					}
 				}
 			}
 			if (!taken && elapsed > 4500) {
@@ -528,6 +541,69 @@ void EditorSelfTest::_view_overlays() {
 	popup->emit_signal(SceneStringName(id_pressed), (int)Node3DEditor::OVERLAY_INFORMATION);
 	const bool hidden_again = !view->is_overlay_shown_everywhere(Node3DEditor::OVERLAY_INFORMATION);
 	_check(listed && !had && shown && hidden_again, "an overlay switched in the Overlays menu is switched in every viewport of the view");
+}
+
+void EditorSelfTest::_view_sidebar_open() {
+	// A 3D view in front, as one is when N is pressed in it.
+	int index = -1;
+	EditorPane *pane = _pane_showing("view_3d", &index);
+	if (!pane) {
+		pane = _tree()->get_first_pane();
+		pane->show_panel_of_type("view_3d");
+		pane = _pane_showing("view_3d", &index);
+	}
+	Node3DEditor *view = pane ? Object::cast_to<Node3DEditor>(pane->get_panel_at(index)) : nullptr;
+	if (view) {
+		pane->set_current_panel(index);
+		sidebar_view = view->get_instance_id();
+	}
+	if (!view || !view->get_sidebar()) {
+		_check(false, "the 3D view has a sidebar");
+		return;
+	}
+	// Something to show on its Item page.
+	Node *root = EditorNode::get_singleton()->get_edited_scene();
+	TypedArray<Node> meshes = root ? root->find_children("*", "MeshInstance3D", true, false) : TypedArray<Node>();
+	Node3D *mesh = meshes.is_empty() ? nullptr : Object::cast_to<Node3D>(meshes[0]);
+	if (!mesh) {
+		_check(false, "the 3D scene has a node for the sidebar to show");
+		return;
+	}
+	sidebar_node = mesh->get_instance_id();
+	sidebar_node_x = mesh->get_position().x;
+	EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
+	selection->clear();
+	selection->add_node(mesh);
+	// Pressed, as N presses it.
+	view->get_sidebar_button()->set_pressed(true);
+}
+
+void EditorSelfTest::_view_sidebar_check() {
+	Node3DEditor *view = ObjectDB::get_instance<Node3DEditor>(sidebar_view);
+	EditorViewSidebar *sidebar = view ? view->get_sidebar() : nullptr;
+	Control *over = sidebar ? Object::cast_to<Control>(sidebar->get_parent()) : nullptr;
+	if (!sidebar || !over) {
+		return;
+	}
+	const Rect2 card = sidebar->get_rect();
+	_check(sidebar->is_visible() && card.has_area() && card.size.height < over->get_size().height && card.get_end().x <= over->get_size().width,
+			vformat("N opens the sidebar in the view's corner, only as tall as its page (%s in %s)", card, over->get_size()));
+
+	// A number typed in moves the node, and undo puts it back.
+	Node3D *mesh = ObjectDB::get_instance<Node3D>(sidebar_node);
+	EditorSpinSlider *x = view->get_item_panel()->get_field(Node3DEditorItemPanel::ROW_POSITION, 0);
+	x->set_value(sidebar_node_x + 2.5);
+	const bool moved = mesh && Math::is_equal_approx(mesh->get_position().x, sidebar_node_x + 2.5f);
+	EditorUndoRedoManager::get_singleton()->undo();
+	const bool back = mesh && Math::is_equal_approx(mesh->get_position().x, sidebar_node_x);
+	_check(moved && back, "a position typed into the sidebar moves the node, and undo puts it back");
+
+	Node3DEditorViewport *first = view->get_editor_viewport(0);
+	_check(first->get_top_right_clearance() > 0, vformat("the navigation gizmo moves out from under the sidebar (viewport %s, shown %s, card %s)", first->get_global_rect(), first->is_visible_in_tree(), sidebar->get_global_rect()));
+
+	// The snap settings are a page of it now, not a dialog.
+	view->get_sidebar_button()->set_pressed(false);
+	_check(!sidebar->is_visible() && Math::is_zero_approx(view->get_editor_viewport(0)->get_top_right_clearance()), "pressed again, it closes and the gizmo goes back");
 }
 
 EditorPane *EditorSelfTest::_pane_with_script(const String &p_path, int *r_index) const {
@@ -1279,6 +1355,8 @@ EditorSelfTest::EditorSelfTest() {
 	_add("view chrome", callable_mp(this, &EditorSelfTest::_view_chrome));
 	_add("view shading", callable_mp(this, &EditorSelfTest::_view_shading));
 	_add("view overlays", callable_mp(this, &EditorSelfTest::_view_overlays));
+	_add("view sidebar open", callable_mp(this, &EditorSelfTest::_view_sidebar_open));
+	_add("view sidebar check", callable_mp(this, &EditorSelfTest::_view_sidebar_check));
 	_add("script left open", callable_mp(this, &EditorSelfTest::_script_left_open));
 	_add("script stand-in", callable_mp(this, &EditorSelfTest::_script_stand_in));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));

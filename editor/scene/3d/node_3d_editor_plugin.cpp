@@ -87,6 +87,7 @@
 #include "editor/scene/3d/gizmos/two_bone_ik_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/visible_on_screen_notifier_3d_gizmo_plugin.h"
 #include "editor/scene/3d/gizmos/voxel_gi_gizmo_plugin.h"
+#include "editor/gui/editor_view_sidebar.h"
 #include "editor/scene/3d/node_3d_editor_chrome.h"
 #include "editor/scene/3d/node_3d_editor_gizmos.h"
 #include "editor/settings/editor_settings.h"
@@ -564,6 +565,16 @@ void Node3DEditorViewport::_view_settings_confirmed(real_t p_interp_delta) {
 	view_3d_controller->cursor.fov_scale = 1.0;
 
 	view_3d_controller->update_camera(p_interp_delta);
+}
+
+void Node3DEditorViewport::set_top_right_clearance(real_t p_width) {
+	if (Math::is_equal_approx(top_right_clearance, p_width)) {
+		return;
+	}
+	top_right_clearance = p_width;
+	const real_t right = -10.0 * EDSCALE - p_width;
+	top_right_vbox->set_offset(SIDE_RIGHT, right);
+	top_right_vbox->set_offset(SIDE_LEFT, right - top_right_vbox->get_combined_minimum_size().width);
 }
 
 void Node3DEditorViewport::_update_navigation_controls_visibility() {
@@ -8503,6 +8514,10 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 			}
 		} break;
 		case MENU_TRANSFORM_CONFIGURE_SNAP: {
+			if (sidebar) {
+				sidebar->toggle_page(SIDEBAR_SNAP);
+				break;
+			}
 			snap_dialog->popup_centered(Size2(200, 180));
 		} break;
 		case MENU_VERTEX_SNAP_BASE_VERTEX: {
@@ -8693,6 +8708,10 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 			}
 		} break;
 		case MENU_VIEW_CAMERA_SETTINGS: {
+			if (sidebar) {
+				sidebar->toggle_page(SIDEBAR_VIEW);
+				break;
+			}
 			settings_dialog->popup_centered(settings_vbc->get_combined_minimum_size() + Size2(50, 50));
 		} break;
 		case MENU_SNAP_TO_FLOOR: {
@@ -10179,6 +10198,10 @@ void Node3DEditor::shortcut_input(const Ref<InputEvent> &p_event) {
 }
 
 void Node3DEditor::_sun_environ_settings_pressed() {
+	if (sidebar) {
+		sidebar->toggle_page(SIDEBAR_ENVIRONMENT);
+		return;
+	}
 	Vector2 pos = sun_environ_settings->get_screen_position() + sun_environ_settings->get_size();
 	sun_environ_popup->set_position(pos - Vector2(sun_environ_popup->get_contents_minimum_size().width / 2, 0));
 	sun_environ_popup->reset_size();
@@ -10297,6 +10320,9 @@ void Node3DEditor::_update_theme() {
 	}
 	if (overlays_menu) {
 		overlays_menu->set_button_icon(get_editor_theme_icon(SNAME("GuiVisibilityVisible")));
+	}
+	if (sidebar_button) {
+		sidebar_button->set_button_icon(get_editor_theme_icon(SNAME("Tools")));
 	}
 	if (shading_buttons[0]) {
 		// Drawn rather than loaded, in the theme's own colors.
@@ -11996,8 +12022,14 @@ void Node3DEditor::_arrange_chrome() {
 	shader_split->add_child(viewport_row);
 	shader_split->move_child(viewport_row, at);
 	viewport_row->add_child(tool_column_panel);
-	viewport_base->set_h_size_flags(SIZE_EXPAND_FILL);
-	viewport_row->add_child(viewport_base);
+	// The viewports, with room over them for the sidebar.
+	Control *viewport_stack = memnew(Control);
+	viewport_stack->set_name("ViewportStack");
+	viewport_stack->set_h_size_flags(SIZE_EXPAND_FILL);
+	viewport_stack->set_v_size_flags(SIZE_EXPAND_FILL);
+	viewport_row->add_child(viewport_stack);
+	viewport_base->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
+	viewport_stack->add_child(viewport_base);
 
 	// The header: the menus first, then how a transform is done, then what
 	// plugins add, and the view's display and lighting at the far end.
@@ -12062,9 +12094,98 @@ void Node3DEditor::_arrange_chrome() {
 	overlays_popup->add_child(overlays_gizmos_menu);
 	header_end->add_child(overlays_menu);
 	header_end->move_child(overlays_menu, 0);
+
+	_build_sidebar(viewport_stack);
 	VSeparator *after_shading = memnew(VSeparator);
 	header_end->add_child(after_shading);
 	header_end->move_child(after_shading, 1);
+}
+
+void Node3DEditor::_build_sidebar(Control *p_over) {
+	sidebar = memnew(EditorViewSidebar);
+	p_over->add_child(sidebar);
+
+	item_panel = memnew(Node3DEditorItemPanel);
+	sidebar->add_page(TTR("Item"), item_panel);
+
+	// What the View Settings dialog had, applied as it changes.
+	settings_vbc->get_parent()->remove_child(settings_vbc);
+	settings_vbc->set_custom_minimum_size(Size2());
+	sidebar->add_page(TTR("View"), settings_vbc);
+	settings_fov->connect(SceneStringName(value_changed), callable_mp(this, &Node3DEditor::_view_settings_changed).unbind(1));
+	settings_znear->connect(SceneStringName(value_changed), callable_mp(this, &Node3DEditor::_view_settings_changed).unbind(1));
+	settings_zfar->connect(SceneStringName(value_changed), callable_mp(this, &Node3DEditor::_view_settings_changed).unbind(1));
+
+	// What the Snap Settings dialog had, the same way.
+	Control *snap_fields = Object::cast_to<Control>(snap_translate->get_parent()->get_parent());
+	snap_fields->get_parent()->remove_child(snap_fields);
+	sidebar->add_page(TTR("Snap"), snap_fields);
+	snap_translate->connect(SceneStringName(value_changed), callable_mp(this, &Node3DEditor::_snap_changed).unbind(1));
+	snap_rotate->connect(SceneStringName(value_changed), callable_mp(this, &Node3DEditor::_snap_changed).unbind(1));
+	snap_scale->connect(SceneStringName(value_changed), callable_mp(this, &Node3DEditor::_snap_changed).unbind(1));
+
+	// The preview sun and environment, one above the other rather than side
+	// by side as in their popup.
+	VBoxContainer *environment_page = memnew(VBoxContainer);
+	Control *environment_parts[] = { sun_vb, sun_state, environ_vb, environ_state };
+	for (Control *part : environment_parts) {
+		part->get_parent()->remove_child(part);
+		environment_page->add_child(part);
+	}
+	sun_state->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	environ_state->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	environment_page->add_child(memnew(HSeparator));
+	environment_page->move_child(environment_page->get_child(environment_page->get_child_count() - 1), 2);
+	sidebar->add_page(TTR("Environment"), environment_page);
+
+	sidebar->connect(SNAME("fitted"), callable_mp(this, &Node3DEditor::_sidebar_fitted));
+	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+		viewports[i]->connect(SceneStringName(resized), callable_mp(this, &Node3DEditor::_sidebar_fitted));
+		viewports[i]->connect(SceneStringName(visibility_changed), callable_mp(this, &Node3DEditor::_sidebar_fitted));
+	}
+
+	sidebar_button = memnew(Button);
+	sidebar_button->set_name("SidebarButton");
+	sidebar_button->set_toggle_mode(true);
+	sidebar_button->set_theme_type_variation(SceneStringName(FlatButton));
+	sidebar_button->set_tooltip_text(TTRC("Sidebar: the selected nodes, the view, snapping and the preview lighting."));
+	sidebar_button->set_accessibility_name(TTRC("Toggle Sidebar"));
+	sidebar_button->set_shortcut(ED_SHORTCUT("spatial_editor/toggle_sidebar", TTRC("Toggle Sidebar"), Key::N));
+	sidebar_button->set_shortcut_context(this);
+	sidebar_button->connect(SceneStringName(toggled), callable_mp(this, &Node3DEditor::_sidebar_button_toggled));
+	header_end->add_child(sidebar_button);
+}
+
+void Node3DEditor::_sidebar_button_toggled(bool p_pressed) {
+	if (sidebar->is_visible() != p_pressed) {
+		sidebar->toggle();
+	}
+}
+
+void Node3DEditor::_sidebar_fitted() {
+	if (!sidebar) {
+		return;
+	}
+	sidebar_button->set_pressed_no_signal(sidebar->is_visible());
+	// The navigation gizmo of a viewport the card covers the corner of moves
+	// out from under it.
+	const Rect2 card = sidebar->is_visible_in_tree() ? sidebar->get_global_rect() : Rect2();
+	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+		real_t clearance = 0.0;
+		if (card.has_area() && viewports[i]->is_visible_in_tree()) {
+			const Rect2 area = viewports[i]->get_global_rect();
+			if (area.intersects(card) && card.position.y < area.position.y + 200 * EDSCALE) {
+				clearance = MAX((real_t)0.0, area.get_end().x - card.position.x);
+			}
+		}
+		viewports[i]->set_top_right_clearance(clearance);
+	}
+}
+
+void Node3DEditor::_view_settings_changed() {
+	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+		viewports[i]->_view_settings_confirmed(0.0);
+	}
 }
 
 void Node3DEditor::_shading_pressed(int p_shading) {

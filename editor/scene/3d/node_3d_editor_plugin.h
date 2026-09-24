@@ -51,6 +51,7 @@ class DirectionalLight3D;
 class EditorData;
 class EditorSelection;
 class EditorSpinSlider;
+class EditorViewSidebar;
 class HFlowContainer;
 class HSplitContainer;
 class LineEdit;
@@ -69,6 +70,7 @@ class VSplitContainer;
 class ViewportNavigationControl;
 class WorldEnvironment;
 class MeshInstance3D;
+class Node3DEditorItemPanel;
 
 class ViewportRotationControl : public Control {
 	GDCLASS(ViewportRotationControl, Control);
@@ -260,6 +262,7 @@ private:
 	SubViewportContainer *subviewport_container = nullptr;
 
 	MenuButton *view_display_menu = nullptr;
+	real_t top_right_clearance = 0.0;
 	PopupMenu *display_submenu = nullptr;
 
 	Control *surface = nullptr;
@@ -569,6 +572,10 @@ public:
 	SubViewport *get_viewport_node() { return viewport; }
 	// This viewport's own view menu, and the id "Display Normal" has in it.
 	MenuButton *get_view_menu() const { return view_display_menu; }
+	// How much of this viewport's right edge, at the top, something else is
+	// covering: the navigation gizmo moves left of it.
+	void set_top_right_clearance(real_t p_width);
+	real_t get_top_right_clearance() const { return top_right_clearance; }
 	static int get_display_normal_id() { return VIEW_DISPLAY_NORMAL; }
 	Camera3D *get_camera_3d() { return camera; } // return the default camera object.
 	Control *get_surface() { return surface; }
@@ -921,6 +928,17 @@ private:
 	void _overlays_about_to_popup();
 	void _overlays_id_pressed(int p_overlay);
 	void _overlays_gizmo_pressed(int p_gizmo);
+	// Opened with N, in the top right corner of the viewports. See
+	// EditorViewSidebar. Its View, Snap and Environment pages are the fields
+	// the View Settings and Snap Settings dialogs and the preview sun and
+	// environment popup had, moved, and applied as they change.
+	EditorViewSidebar *sidebar = nullptr;
+	Button *sidebar_button = nullptr;
+	Node3DEditorItemPanel *item_panel = nullptr;
+	void _build_sidebar(Control *p_over);
+	void _sidebar_fitted();
+	void _sidebar_button_toggled(bool p_pressed);
+	void _view_settings_changed();
 
 	void _generate_selection_boxes();
 
@@ -1216,6 +1234,15 @@ public:
 		OVERLAY_MAX
 	};
 	MenuButton *get_overlays_menu() const { return overlays_menu; }
+	enum SidebarPage {
+		SIDEBAR_ITEM,
+		SIDEBAR_VIEW,
+		SIDEBAR_SNAP,
+		SIDEBAR_ENVIRONMENT,
+	};
+	EditorViewSidebar *get_sidebar() const { return sidebar; }
+	Button *get_sidebar_button() const { return sidebar_button; }
+	Node3DEditorItemPanel *get_item_panel() const { return item_panel; }
 	// Whether every viewport of the view shows it.
 	bool is_overlay_shown_everywhere(Overlay p_overlay) const;
 

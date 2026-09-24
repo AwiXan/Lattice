@@ -67,6 +67,7 @@ def main():
     parser.add_argument("output", help="where to save the picture (.png)")
     parser.add_argument("--scene", choices=["3d", "2d"], default="3d")
     parser.add_argument("--crop", help="x,y,w,h of the window to keep, in pixels")
+    parser.add_argument("--actions", help="what to open first, comma separated: sidebar, sidebar_page_<n>")
     parser.add_argument("--editor", help="editor binary to run (default: the newest one in bin/)")
     args = parser.parse_args()
 
@@ -86,6 +87,8 @@ def main():
     env = dict(os.environ, LATTICE_SHOT=output, LATTICE_SHOT_SCENE="res://" + scene)
     if args.crop:
         env["LATTICE_SHOT_CROP"] = args.crop
+    if args.actions:
+        env["LATTICE_SHOT_ACTIONS"] = args.actions
     # Imports first, or the scene opens before its resources are known.
     subprocess.run([editor, "--path", project, "--editor", "--headless", "--quit-after", "200"], env=dict(os.environ),
                    capture_output=True, timeout=300)

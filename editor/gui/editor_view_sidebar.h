@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  node_3d_editor_chrome.h                                               */
+/*  editor_view_sidebar.h                                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,73 +30,49 @@
 
 #pragma once
 
-#include "scene/gui/box_container.h"
-#include "scene/resources/texture.h"
+#include "scene/gui/panel_container.h"
 
-class EditorSpinSlider;
-class Label;
-class Node3D;
+class ScrollContainer;
+class TabBar;
+class VBoxContainer;
 
-// Pieces of the 3D view's own layout (see Node3DEditor::_arrange_chrome())
-// that need nothing from the view itself.
-class Node3DEditorChrome {
-public:
-	// How the view draws, from the least to the most of it: the four the
-	// header offers, drawn as spheres the way other 3D applications do.
-	enum Shading {
-		SHADING_WIREFRAME,
-		SHADING_UNSHADED,
-		SHADING_LIGHTING,
-		SHADING_NORMAL,
-		SHADING_MAX
-	};
-
-	// p_ink is what the theme draws icons in; p_accent colors the one sphere
-	// that shows the scene as it will look.
-	static Ref<Texture2D> make_shading_icon(Shading p_shading, int p_size, const Color &p_ink, const Color &p_accent);
-};
-
-// The sidebar's Item page: where the selected 3D nodes are, how they are
-// turned and scaled, and how big they are, as numbers to type in. The
-// Inspector has the same, among everything else a node has; this is the part
-// that matters while placing things, next to where they are being placed.
+// The sidebar a 2D or 3D view opens with N: a card of pages in the top right
+// corner of the view, over the scene rather than beside it, and only as tall
+// as the page it shows - so it covers no more of the view than it needs to.
+// A page taller than the view scrolls.
 //
-// It edits every selected node: a value typed in goes to each of them, on
-// that axis alone, the way the Inspector edits several nodes at once.
-class Node3DEditorItemPanel : public VBoxContainer {
-	GDCLASS(Node3DEditorItemPanel, VBoxContainer);
+// It lays itself out in its parent, which should be a plain Control covering
+// the view. What goes on the pages is the view's business.
+class EditorViewSidebar : public PanelContainer {
+	GDCLASS(EditorViewSidebar, PanelContainer);
 
-public:
-	enum Row {
-		ROW_POSITION,
-		ROW_ROTATION,
-		ROW_SCALE,
-		// The size of what a visual node draws, scale included. Typing one in
-		// changes the scale.
-		ROW_SIZE,
-		ROW_MAX
-	};
+	TabBar *tabs = nullptr;
+	ScrollContainer *scroll = nullptr;
+	VBoxContainer *page_box = nullptr;
+	LocalVector<Control *> pages;
+	bool fitting = false;
+	bool theming = false;
 
-private:
-	Label *title = nullptr;
-	Label *type = nullptr;
-	Label *nothing = nullptr;
-	VBoxContainer *rows_box = nullptr;
-	Control *row_boxes[ROW_MAX] = {};
-	EditorSpinSlider *fields[ROW_MAX][3] = {};
-	double since_refresh = 0.0;
-
-	Vector<Node3D *> _edited_nodes() const;
-	void _field_changed(double p_value, int p_row, int p_axis);
-	static Vector3 _read(const Node3D *p_node, int p_row);
+	void _tab_changed(int p_tab);
+	void _parent_resized();
 
 protected:
 	void _notification(int p_what);
+	static void _bind_methods();
 
 public:
-	// Shows the selection as it is now.
-	void refresh();
-	EditorSpinSlider *get_field(Row p_row, int p_axis) const;
+	int add_page(const String &p_title, Control *p_page);
+	int get_page_count() const { return pages.size(); }
+	Control *get_page(int p_index) const;
+	int get_current_page() const;
+	// Shows the card too.
+	void show_page(int p_index);
+	// With the card shown on another page, shows this one; on this one, hides it.
+	void toggle_page(int p_index);
+	void toggle();
 
-	Node3DEditorItemPanel();
+	// Where it is and how big, from its parent's size and the page's.
+	void fit();
+
+	EditorViewSidebar();
 };
