@@ -181,6 +181,7 @@ def main():
     parser.add_argument("--crashed", action="store_true", help="make the last session look crashed, with a long log")
     parser.add_argument("--lit", action="store_true", help="give the 3D scene a sun and an environment of its own")
     parser.add_argument("--camera", action="store_true", help="give the 3D scene a camera looking at the crate")
+    parser.add_argument("--far", type=float, help="with --camera, its far distance (1e9: as good as unbounded)")
     parser.add_argument("--gi", action="store_true", help="give the 3D scene a sun, a sky, a red wall and real-time GI (SDFGI, or what replaced it)")
     parser.add_argument("--fog", action="store_true", help="with --gi, volumetric fog as well")
     parser.add_argument("--features", nargs="?", const="all", help="the second batch's features in the scene (implies --gi --textured): all, or some of " + ",".join(FEATURES))
@@ -189,6 +190,8 @@ def main():
     parser.add_argument("--textured", action="store_true", help="put a checker texture on the 3D scene's crate and floor")
     parser.add_argument("--renderer", choices=["forward_plus", "mobile", "gl_compatibility"], help="the project's rendering method")
     parser.add_argument("--driver", choices=["vulkan", "d3d12"], help="the project's rendering device on Windows (default: vulkan)")
+    parser.add_argument("--patch", action="append", default=[], help="'old=>new': a change to the scene's text before it is written, for trying one thing at a time (repeatable)")
+    parser.add_argument("--editor-args", help="more arguments for the editor, in one string (say --accurate-breadcrumbs)")
     parser.add_argument("--debug", action="store_true", help="run the editor under cdb (Windows SDK) and print the stack if it crashes")
     parser.add_argument("--project", help="an existing project to open instead - a copy: the editor saves its state in it")
     parser.add_argument("--open", help="with --project, the scene to open (res://...)")
@@ -264,6 +267,20 @@ def main():
                 # Up and to the side, looking down at the crate.
                 f.write('\n[node name="Camera" type="Camera3D" parent="."]\n')
                 f.write('transform = Transform3D(0.8, -0.26, 0.54, 0, 0.9, 0.43, -0.6, -0.35, 0.72, 3, 2.5, 4)\n')
+                if args.far:
+                    f.write('far = %s\n' % repr(args.far))
+
+    if args.patch and not args.project:
+        scene_file = os.path.join(project, scene)
+        with open(scene_file, encoding="utf-8") as f:
+            text = f.read()
+        for change in args.patch:
+            old, new = change.split("=>", 1)
+            if old not in text:
+                print("PATCH NOT FOUND:", old)
+            text = text.replace(old.replace("\\n", "\n"), new.replace("\\n", "\n"))
+        with open(scene_file, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
 
     if args.crashed:
         editor_data = os.path.join(project, ".godot", "editor")
@@ -290,7 +307,7 @@ def main():
     # Imports first, or the scene opens before its resources are known.
     subprocess.run([editor, "--path", project, "--editor", "--headless", "--quit-after", "200"], env=dict(os.environ),
                    capture_output=True, timeout=300)
-    command = [editor, "--path", project, "--editor"]
+    command = [editor, "--path", project, "--editor"] + (args.editor_args.split() if args.editor_args else [])
     if args.debug:
         # Under cdb, which prints the stack of a crash the engine's own handler
         # misses (one at exit, say). The editor itself, not its console wrapper,
