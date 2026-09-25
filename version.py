@@ -1,9 +1,9 @@
-short_name = "godot-jnvc"
-name = "Godot Engine Jenova Compatible"
+short_name = "lattice"
+name = "Awidot"
 major = 4
 minor = 7
 patch = 2
 status = "stable"
 module_config = ""
-website = "https://jenova-framework.github.io"
+website = "https://godotengine.org"
 docs = "latest"
