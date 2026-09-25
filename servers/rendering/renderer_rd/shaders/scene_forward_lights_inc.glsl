@@ -309,6 +309,19 @@ float quick_hash(vec2 pos) {
 	return fract(magic.z * fract(dot(pos, magic.xy)));
 }
 
+// Turns the soft shadow sampling disk per pixel (and per TAA frame) to trade
+// banding for noise, unless rendering/lights_and_shadows/soft_shadow_use_dithering
+// is off.
+mat2 shadow_disk_rotation(float taa_frame_count) {
+	if (bool(scene_data_block.data.flags & SCENE_DATA_FLAGS_NO_SHADOW_DITHER)) {
+		return mat2(1.0);
+	}
+	float r = quick_hash(gl_FragCoord.xy + vec2(taa_frame_count * 5.588238)) * 2.0 * M_PI;
+	float sr = sin(r);
+	float cr = cos(r);
+	return mat2(vec2(cr, -sr), vec2(sr, cr));
+}
+
 half sample_directional_pcf_shadow(texture2D shadow, vec2 shadow_pixel_size, vec4 coord, float taa_frame_count) {
 	vec2 pos = coord.xy;
 	float depth = coord.z;
@@ -318,13 +331,7 @@ half sample_directional_pcf_shadow(texture2D shadow, vec2 shadow_pixel_size, vec
 		return half(textureProj(sampler2DShadow(shadow, shadow_sampler), vec4(pos, depth, 1.0)));
 	}
 
-	mat2 disk_rotation;
-	{
-		float r = quick_hash(gl_FragCoord.xy + vec2(taa_frame_count * 5.588238)) * 2.0 * M_PI;
-		float sr = sin(r);
-		float cr = cos(r);
-		disk_rotation = mat2(vec2(cr, -sr), vec2(sr, cr));
-	}
+	mat2 disk_rotation = shadow_disk_rotation(taa_frame_count);
 
 	float avg = 0.0;
 
@@ -345,13 +352,7 @@ half sample_pcf_shadow(texture2D shadow, vec2 shadow_pixel_size, vec3 coord, flo
 		return half(textureProj(sampler2DShadow(shadow, shadow_sampler), vec4(pos, depth, 1.0)));
 	}
 
-	mat2 disk_rotation;
-	{
-		float r = quick_hash(gl_FragCoord.xy + vec2(taa_frame_count * 5.588238)) * 2.0 * M_PI;
-		float sr = sin(r);
-		float cr = cos(r);
-		disk_rotation = mat2(vec2(cr, -sr), vec2(sr, cr));
-	}
+	mat2 disk_rotation = shadow_disk_rotation(taa_frame_count);
 
 	float avg = 0.0;
 
@@ -371,13 +372,7 @@ half sample_omni_pcf_shadow(texture2D shadow, float blur_scale, vec2 coord, vec4
 		return half(textureProj(sampler2DShadow(shadow, shadow_sampler), vec4(pos, depth, 1.0)));
 	}
 
-	mat2 disk_rotation;
-	{
-		float r = quick_hash(gl_FragCoord.xy + vec2(taa_frame_count * 5.588238)) * 2.0 * M_PI;
-		float sr = sin(r);
-		float cr = cos(r);
-		disk_rotation = mat2(vec2(cr, -sr), vec2(sr, cr));
-	}
+	mat2 disk_rotation = shadow_disk_rotation(taa_frame_count);
 
 	float avg = 0.0;
 	vec2 offset_scale = blur_scale * 2.0 * scene_data_block.data.shadow_atlas_pixel_size / uv_rect.zw;
@@ -412,13 +407,7 @@ half sample_directional_soft_shadow(texture2D shadow, vec3 pssm_coord, vec2 tex_
 	float blocker_count = 0.0;
 	float blocker_average = 0.0;
 
-	mat2 disk_rotation;
-	{
-		float r = quick_hash(gl_FragCoord.xy + vec2(taa_frame_count * 5.588238)) * 2.0 * M_PI;
-		float sr = sin(r);
-		float cr = cos(r);
-		disk_rotation = mat2(vec2(cr, -sr), vec2(sr, cr));
-	}
+	mat2 disk_rotation = shadow_disk_rotation(taa_frame_count);
 
 	SPEC_CONSTANT_LOOP_ANNOTATION
 	for (uint i = 0; i < sc_directional_penumbra_shadow_samples(); i++) {
@@ -525,13 +514,7 @@ void light_process_omni(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 			float blocker_count = 0.0;
 			float blocker_average = 0.0;
 
-			mat2 disk_rotation;
-			{
-				float r = quick_hash(gl_FragCoord.xy + vec2(taa_frame_count * 5.588238)) * 2.0 * M_PI;
-				float sr = sin(r);
-				float cr = cos(r);
-				disk_rotation = mat2(vec2(cr, -sr), vec2(sr, cr));
-			}
+			mat2 disk_rotation = shadow_disk_rotation(taa_frame_count);
 
 			vec3 basis_normal = shadow_dir;
 			vec3 v0 = abs(basis_normal.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
@@ -830,13 +813,7 @@ void light_process_spot(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 			float blocker_count = 0.0;
 			float blocker_average = 0.0;
 
-			mat2 disk_rotation;
-			{
-				float r = quick_hash(gl_FragCoord.xy + vec2(taa_frame_count * 5.588238)) * 2.0 * M_PI;
-				float sr = sin(r);
-				float cr = cos(r);
-				disk_rotation = mat2(vec2(cr, -sr), vec2(sr, cr));
-			}
+			mat2 disk_rotation = shadow_disk_rotation(taa_frame_count);
 
 			float uv_size = spot_lights.data[idx].soft_shadow_size * z_norm * spot_lights.data[idx].soft_shadow_scale;
 			vec2 clamp_max = spot_lights.data[idx].atlas_rect.xy + spot_lights.data[idx].atlas_rect.zw;
@@ -1032,13 +1009,7 @@ void light_process_area(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 			float blocker_count = 0.0;
 			float blocker_average = 0.0;
 
-			mat2 disk_rotation;
-			{
-				float r = quick_hash(gl_FragCoord.xy + vec2(taa_frame_count * 5.588238)) * 2.0 * M_PI;
-				float sr = sin(r);
-				float cr = cos(r);
-				disk_rotation = mat2(vec2(cr, -sr), vec2(sr, cr));
-			}
+			mat2 disk_rotation = shadow_disk_rotation(taa_frame_count);
 
 			vec3 basis_normal = shadow_dir;
 			vec3 v0 = abs(basis_normal.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);

@@ -114,7 +114,7 @@
 			Used to adjust shadow appearance. Too small a value results in self-shadowing ("shadow acne"), while too large a value causes shadows to separate from casters ("peter-panning"). Adjust as needed.
 		</member>
 		<member name="shadow_blur" type="float" setter="set_param" getter="get_param" default="1.0">
-			Blurs the edges of the shadow. Can be used to hide pixel artifacts in low-resolution shadow maps. A high value can impact performance, make shadows appear grainy and can cause other unwanted artifacts. Try to keep as near default as possible.
+			Blurs the edges of the shadow. Can be used to hide pixel artifacts in low-resolution shadow maps. A high value can impact performance, make shadows appear grainy (if [member ProjectSettings.rendering/lights_and_shadows/soft_shadow_use_dithering] is [code]true[/code]) and can cause other unwanted artifacts. Try to keep as near default as possible.
 		</member>
 		<member name="shadow_caster_mask" type="int" setter="set_shadow_caster_mask" getter="get_shadow_caster_mask" default="4294967295">
 			The light will only cast shadows using objects in the selected layers.

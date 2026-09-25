@@ -135,6 +135,7 @@ private:
 	/* Shadow atlas */
 	RSE::ShadowQuality shadows_quality = RSE::SHADOW_QUALITY_MAX; //So it always updates when first set
 	RSE::ShadowQuality directional_shadow_quality = RSE::SHADOW_QUALITY_MAX;
+	bool shadows_dither = true;
 	float shadows_quality_radius = 1.0;
 	float directional_shadow_quality_radius = 1.0;
 
@@ -271,6 +272,7 @@ public:
 
 	virtual void positional_soft_shadow_filter_set_quality(RSE::ShadowQuality p_quality) override;
 	virtual void directional_soft_shadow_filter_set_quality(RSE::ShadowQuality p_quality) override;
+	virtual void soft_shadow_set_use_dithering(bool p_dither) override;
 
 	virtual void decals_set_filter(RSE::DecalFilter p_filter) override;
 	virtual void light_projectors_set_filter(RSE::LightProjectorFilter p_filter) override;
@@ -317,6 +319,9 @@ public:
 	}
 	_FORCE_INLINE_ int soft_shadow_samples_get() const {
 		return soft_shadow_samples;
+	}
+	_FORCE_INLINE_ bool soft_shadow_is_using_dither() const {
+		return shadows_dither;
 	}
 
 	_FORCE_INLINE_ RSE::LightProjectorFilter light_projectors_get_filter() const {

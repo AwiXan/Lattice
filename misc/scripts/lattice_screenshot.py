@@ -117,15 +117,17 @@ environment = SubResource("gi_environment")
 # shadows, PCF25 in Compatibility), minfov (the sun's minimum shadow FOV),
 # compose (a sphere whose shader has compose()), lods (a SphereMesh with LODs
 # and a shadow mesh), parallax (a deep-parallax tile), projector (a projector
-# spot light without shadows), customcam (--camera with a custom projection).
+# spot light without shadows), customcam (--camera with a custom projection),
+# nodither (soft shadows without dithering).
 FEATURES = ("contact", "micro", "bounce", "decal", "probe", "line", "blur",
-            "ultra", "minfov", "compose", "lods", "parallax", "projector", "customcam")
+            "ultra", "minfov", "compose", "lods", "parallax", "projector", "customcam", "nodither")
 
 FEATURE_SETTINGS = {
     "contact": "lights_and_shadows/contact_shadow/enabled=true\n",
     "micro": "lights_and_shadows/micro_shadows/enabled=true\n",
     "bounce": "lights_and_shadows/multi_bounce_occlusion/enabled=true\n",
     "ultra": "lights_and_shadows/directional_shadow/soft_shadow_filter_quality=5\nlights_and_shadows/positional_shadow/soft_shadow_filter_quality=5\n",
+    "nodither": "lights_and_shadows/soft_shadow_use_dithering=false\n",
 }
 
 FEATURE_RESOURCES = {

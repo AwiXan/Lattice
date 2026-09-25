@@ -903,6 +903,7 @@ public:
 
 	FUNC1(positional_soft_shadow_filter_set_quality, RSE::ShadowQuality);
 	FUNC1(directional_soft_shadow_filter_set_quality, RSE::ShadowQuality);
+	FUNC1(soft_shadow_set_use_dithering, bool);
 	FUNC1(decals_set_filter, RSE::DecalFilter);
 	FUNC1(light_projectors_set_filter, RSE::LightProjectorFilter);
 	FUNC1(lightmaps_set_bicubic_filter, bool);

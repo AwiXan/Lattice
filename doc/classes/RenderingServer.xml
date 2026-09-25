@@ -3844,6 +3844,13 @@
 				Sets the [param radiance_size] of the sky specified by the [param sky] RID (in pixels). Equivalent to [member Sky.radiance_size].
 			</description>
 		</method>
+		<method name="soft_shadow_set_use_dithering">
+			<return type="void" />
+			<param index="0" name="dither" type="bool" />
+			<description>
+				If [param dither] is [code]true[/code], soft shadows turn their sampling pattern per pixel, trading banding for grain. See [member ProjectSettings.rendering/lights_and_shadows/soft_shadow_use_dithering]. This parameter is global and cannot be set on a per-viewport basis.
+			</description>
+		</method>
 		<method name="spot_light_create">
 			<return type="RID" />
 			<description>

@@ -3205,6 +3205,11 @@
 		<member name="rendering/lights_and_shadows/positional_shadow/soft_shadow_filter_quality.mobile" type="int" setter="" getter="" default="0">
 			Lower-end override for [member rendering/lights_and_shadows/positional_shadow/soft_shadow_filter_quality] on mobile devices, due to performance concerns or driver support.
 		</member>
+		<member name="rendering/lights_and_shadows/soft_shadow_use_dithering" type="bool" setter="" getter="" default="true">
+			If [code]true[/code], soft shadows turn their sampling pattern per pixel (dithering). This hides the banding of low sample counts behind grain, which is noticeable on large flat-colored areas and fades with busier textures, higher resolutions, TAA or FXAA. Affects [DirectionalLight3D] and positional light shadows in the Forward+ and Mobile rendering methods. See also [method RenderingServer.soft_shadow_set_use_dithering].
+			With dithering off, shadows may show undersampling artifacts instead. Raise [member Light3D.shadow_blur] or [member rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality] and [member rendering/lights_and_shadows/positional_shadow/soft_shadow_filter_quality] to alleviate them.
+			[b]Note:[/b] Only has an effect when a soft shadow filter quality is Soft Very Low or higher. With dithering off, Soft Very Low looks the same as Hard.
+		</member>
 		<member name="rendering/lights_and_shadows/tighter_shadow_caster_culling" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], items that cannot cast shadows into the view frustum will not be rendered into shadow maps.
 			This can increase performance.
