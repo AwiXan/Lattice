@@ -318,6 +318,50 @@ static int _capture_stalled_stack(HANDLE p_thread, DWORD64 *r_frames) {
 #endif
 }
 
+// Two stalls are nobody's fault, and say so rather than alarm whoever reads
+// the log: Windows keeping the main thread in its own handling of a window,
+// and shaders compiling.
+static const char *_stall_likely_cause(HANDLE p_process, const DWORD64 *p_frames, const std::vector<std::string> &p_names) {
+	MODULEINFO engine;
+	if (!GetModuleInformation(p_process, GetModuleHandle(nullptr), &engine, sizeof(engine))) {
+		return nullptr;
+	}
+	const DWORD64 engine_begin = (DWORD64)engine.lpBaseOfDll;
+	const DWORD64 engine_end = engine_begin + engine.SizeOfImage;
+	const int count = (int)p_names.size();
+
+	// The innermost frame of the editor's own: when that is where it hands a
+	// window's message to Windows, Windows has kept it since - a button held on
+	// a title bar, a system menu open, a move or resize not yet begun (once
+	// begun, the editor draws on through a timer).
+	for (int i = 0; i < count; i++) {
+		if (p_frames[i] >= engine_begin && p_frames[i] < engine_end) {
+			if (i > 0 && p_names[i].find("WndProc") != std::string::npos) {
+				return "Lattice: this is Windows handling an editor window, not the editor: a mouse button held on the title bar or its buttons, the window's menu open, or the like. The editor goes on when that ends.";
+			}
+			if (p_names[i].find("ShaderGLES3::") != std::string::npos) {
+				return "Lattice: the graphics driver is compiling shaders. Slow the first time after the engine or its shaders change; cached for the next time.";
+			}
+			break;
+		}
+	}
+
+	// Waiting on the worker threads compiling shaders or pipelines, to draw.
+	for (int i = 0; i < count; i++) {
+		if (p_names[i].find("wait_for_task_completion") == std::string::npos && p_names[i].find("wait_for_group_task_completion") == std::string::npos) {
+			continue;
+		}
+		for (int j = i + 1; j < MIN(count, i + 4); j++) {
+			const std::string &name = p_names[j];
+			if (name.find("ShaderRD::") != std::string::npos || name.find("get_pipeline") != std::string::npos || name.find("_render_list_template") != std::string::npos || name.find("_render_batch") != std::string::npos) {
+				return "Lattice: the editor is waiting for shaders to compile. Slow the first time after the engine or its shaders change; cached for the next time.";
+			}
+		}
+		break;
+	}
+	return nullptr;
+}
+
 static void _print_stalled_stack(uint64_t p_msec) {
 	DWORD64 frames[STALL_MAX_FRAMES];
 	const int count = _capture_stalled_stack(stall_main_thread, frames);
@@ -338,27 +382,35 @@ static void _print_stalled_stack(uint64_t p_msec) {
 		stall_symbols_ready = true;
 	}
 
-	print_error("\n================================================================");
-	print_error(vformat("Lattice: the editor has not gone round its main loop for %d s. Its main thread is here:", int(p_msec / 1000)));
-	IMAGEHLP_LINE64 line;
-	memset(&line, 0, sizeof(line));
-	line.SizeOfStruct = sizeof(line);
+	std::vector<std::string> names(count);
 	for (int i = 0; i < count; i++) {
-		std::string name = symbol(process, frames[i]).undecorated_name();
-		if (name.front() == '<') {
+		names[i] = symbol(process, frames[i]).undecorated_name();
+		if (names[i].front() == '<') {
 			// Somewhere with no symbols: in which module, at least.
 			IMAGEHLP_MODULE64 module_info;
 			memset(&module_info, 0, sizeof(module_info));
 			module_info.SizeOfStruct = sizeof(module_info);
 			if (SymGetModuleInfo64(process, frames[i], &module_info)) {
-				name = std::string(module_info.ModuleName) + "+" + std::to_string(frames[i] - module_info.BaseOfImage);
+				names[i] = std::string(module_info.ModuleName) + "+" + std::to_string(frames[i] - module_info.BaseOfImage);
 			}
 		}
+	}
+
+	print_error("\n================================================================");
+	print_error(vformat("Lattice: the editor has not gone round its main loop for %d s. Its main thread is here:", int(p_msec / 1000)));
+	const char *likely = _stall_likely_cause(process, frames, names);
+	if (likely) {
+		print_error(likely);
+	}
+	IMAGEHLP_LINE64 line;
+	memset(&line, 0, sizeof(line));
+	line.SizeOfStruct = sizeof(line);
+	for (int i = 0; i < count; i++) {
 		DWORD offset_from_symbol = 0;
 		if (SymGetLineFromAddr64(process, frames[i], &offset_from_symbol, &line)) {
-			print_error(vformat("[%d] %s (%s:%d)", i, name.c_str(), String((const char *)line.FileName).get_file(), (int)line.LineNumber));
+			print_error(vformat("[%d] %s (%s:%d)", i, names[i].c_str(), String((const char *)line.FileName).get_file(), (int)line.LineNumber));
 		} else {
-			print_error(vformat("[%d] %s", i, name.c_str()));
+			print_error(vformat("[%d] %s", i, names[i].c_str()));
 		}
 	}
 	print_error("-- END OF THE STALLED MAIN THREAD --");
