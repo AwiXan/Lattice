@@ -31,6 +31,7 @@
 #include "gi.h"
 
 #include "core/config/project_settings.h"
+#include "core/math/frustum.h"
 #include "core/math/geometry_3d.h"
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
@@ -942,7 +943,15 @@ void GI::HDDAGI::update_probes(RID p_env, SkyRD::Sky *p_sky, uint32_t p_view_cou
 			local_xform.scale(Vector3(1, y_mult, 1) * cascade_to_cell);
 
 			for (uint32_t j = 0; j < p_view_count; j++) {
-				Vector<Plane> planes = p_projections[j].get_projection_planes(local_xform);
+				// The camera's frustum only as far as this cascade reaches: beyond
+				// it there are no probes to see, and with a very large z-far (see
+				// Frustum) the whole projection has no usable far corners.
+				// The far plane is set outright: the one a projection this deep
+				// yields is degenerate.
+				Frustum view_frustum(p_projections[j].get_projection_planes(Transform3D()));
+				const real_t reach = cascades[i].cell_size * MAX(cascade_size.x, MAX(cascade_size.y, cascade_size.z)) * 2.0;
+				view_frustum.planes[Projection::PLANE_FAR] = Plane(Vector3(0, 0, -1), MIN((real_t)p_projections[j].get_z_far(), reach));
+				Vector<Plane> planes = view_frustum.get_projection_planes(local_xform);
 				HDDAGIShader::IntegrateCameraUBO camera_ubo;
 				for (int k = 0; k < planes.size(); k++) {
 					Plane plane = planes[k];
@@ -952,7 +961,7 @@ void GI::HDDAGI::update_probes(RID p_env, SkyRD::Sky *p_sky, uint32_t p_view_cou
 					camera_ubo.planes[k * 4 + 3] = plane.d;
 				}
 				Vector3 endpoints[8];
-				p_projections[j].get_endpoints(local_xform, endpoints);
+				view_frustum.get_endpoints(local_xform, endpoints);
 				for (int k = 0; k < 8; k++) {
 					Vector3 p = endpoints[k];
 					camera_ubo.points[k * 4 + 0] = p.x;
@@ -3517,10 +3526,37 @@ void GI::RenderBuffersGI::free_data() {
 	}
 }
 
-void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_normal_roughness_slices, RID p_voxel_gi_buffer, RID p_environment, uint32_t p_view_count, const Projection *p_projections, const Vector3 *p_eye_offsets, const Transform3D &p_cam_transform, const PagedArray<RID> &p_voxel_gi_instances) {
+// p_projection with its far plane no further than p_z_far; its near plane and
+// its sides, symmetric or not, are left as they are.
+static Projection _with_z_far_at_most(const Projection &p_projection, real_t p_z_far) {
+	const real_t z_near = p_projection.get_z_near();
+	if (p_projection.get_z_far() <= p_z_far || p_z_far <= z_near) {
+		return p_projection;
+	}
+	Projection clamped = p_projection;
+	if (p_projection.is_orthogonal()) {
+		clamped.columns[2][2] = -2.0 / (p_z_far - z_near);
+		clamped.columns[3][2] = -(p_z_far + z_near) / (p_z_far - z_near);
+	} else {
+		clamped.columns[2][2] = -(p_z_far + z_near) / (p_z_far - z_near);
+		clamped.columns[3][2] = -(2.0 * p_z_far * z_near) / (p_z_far - z_near);
+	}
+	return clamped;
+}
+
+void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_normal_roughness_slices, RID p_voxel_gi_buffer, RID p_environment, uint32_t p_view_count, const Projection *p_view_projections, const Vector3 *p_eye_offsets, const Transform3D &p_cam_transform, const PagedArray<RID> &p_voxel_gi_instances) {
 	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
 
 	ERR_FAIL_COND_MSG(p_view_count > 2, "Maximum of 2 views supported for Processing GI.");
+
+	// No deeper than any cascade reaches: a camera made to see as good as
+	// forever (see Frustum) reads its sky back from infinity, which GI then
+	// traced - and the GPU was lost. Closer in, depth reads back all but the
+	// same (reverse Z).
+	Projection projections[2];
+	for (uint32_t v = 0; v < p_view_count; v++) {
+		projections[v] = _with_z_far_at_most(p_view_projections[v], 100000.0);
+	}
 
 	RD::get_singleton()->draw_command_begin_label("GI Render");
 
@@ -3590,7 +3626,7 @@ void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_nor
 		correction.set_depth_correction(true);
 
 		for (uint32_t v = 0; v < p_view_count; v++) {
-			Projection temp = correction * p_projections[v];
+			Projection temp = correction * projections[v];
 
 			RendererRD::MaterialStorage::store_camera(temp.inverse(), scene_data.inv_projection[v]);
 			scene_data.eye_offset[v][0] = p_eye_offsets[v].x;
@@ -3622,15 +3658,15 @@ void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_nor
 	push_constant.high_quality_vct = voxel_gi_quality == RSE::VOXEL_GI_QUALITY_HIGH;
 
 	// these should be the same for all views
-	push_constant.orthogonal = p_projections[0].is_orthogonal();
-	push_constant.z_near = p_projections[0].get_z_near();
-	push_constant.z_far = p_projections[0].get_z_far();
+	push_constant.orthogonal = projections[0].is_orthogonal();
+	push_constant.z_near = projections[0].get_z_near();
+	push_constant.z_far = projections[0].get_z_far();
 
 	// these are only used if we have 1 view, else we use the projections in our scene data
-	push_constant.proj_info[0] = -2.0f / (internal_size.x * p_projections[0].columns[0][0]);
-	push_constant.proj_info[1] = -2.0f / (internal_size.y * p_projections[0].columns[1][1]);
-	push_constant.proj_info[2] = (1.0f - p_projections[0].columns[2][0]) / p_projections[0].columns[0][0];
-	push_constant.proj_info[3] = (1.0f + p_projections[0].columns[2][1]) / p_projections[0].columns[1][1];
+	push_constant.proj_info[0] = -2.0f / (internal_size.x * projections[0].columns[0][0]);
+	push_constant.proj_info[1] = -2.0f / (internal_size.y * projections[0].columns[1][1]);
+	push_constant.proj_info[2] = (1.0f - projections[0].columns[2][0]) / projections[0].columns[0][0];
+	push_constant.proj_info[3] = (1.0f + projections[0].columns[2][1]) / projections[0].columns[1][1];
 
 	bool use_hddagi = p_render_buffers->has_custom_data(RB_SCOPE_HDDAGI);
 	bool use_voxel_gi_instances = push_constant.max_voxel_gi_instances > 0;
@@ -3640,11 +3676,17 @@ void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_nor
 		hddagi = p_render_buffers->get_custom_data(RB_SCOPE_HDDAGI);
 	}
 
+	// Depth back to a position through the inverse projection, not near and
+	// far: with a far distance this many times the near one (see Frustum), the
+	// formula cancels to 0 for the sky in 32 bits, and the GI traces from
+	// infinity - which lost the GPU.
+	const bool use_full_projection_matrix = p_view_count > 1 || p_view_projections[0].get_z_far() > p_view_projections[0].get_z_near() * 1e6;
+
 	uint32_t pipeline_specialization = 0;
 	if (rbgi->using_half_size_gi) {
 		pipeline_specialization |= SHADER_SPECIALIZATION_HALF_RES;
 	}
-	if (p_view_count > 1) {
+	if (use_full_projection_matrix) {
 		pipeline_specialization |= SHADER_SPECIALIZATION_USE_FULL_PROJECTION_MATRIX;
 	}
 	bool has_vrs_texture = p_render_buffers->has_texture(RB_SCOPE_VRS, RB_TEXTURE);
@@ -3732,7 +3774,7 @@ void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_nor
 		if (rbgi->using_half_size_gi) {
 			filter_pipeline_specialization |= FILTER_SHADER_SPECIALIZATION_HALF_RES;
 		}
-		if (p_view_count > 1) {
+		if (use_full_projection_matrix) {
 			filter_pipeline_specialization |= FILTER_SHADER_SPECIALIZATION_USE_FULL_PROJECTION_MATRIX;
 		}
 
