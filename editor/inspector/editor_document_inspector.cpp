@@ -113,6 +113,14 @@ void EditorDocumentInspector::_resource_selected(const Ref<Resource> &p_resource
 	EditorNode::get_singleton()->push_item(p_resource.ptr(), p_property);
 }
 
+void EditorDocumentInspector::_object_id_selected(ObjectID p_id) {
+	// An object known only by its id - a sub-resource of an object in the
+	// running game, shown from the remote tree - is fetched by whoever listens
+	// to the dock's inspector (the debugger): passed on there.
+	_activate();
+	InspectorDock::get_inspector_singleton()->emit_signal(SNAME("object_id_selected"), p_id);
+}
+
 bool EditorDocumentInspector::_replace_in_toolbar(Node *p_original, Control *p_to) {
 	if (Object::cast_to<EditorInspector>(p_original)) {
 		// Never the inside of an inspector: its buttons are its properties.
@@ -234,6 +242,7 @@ EditorDocumentInspector::EditorDocumentInspector() {
 	inspector = EditorInspector::create_default_inspector(filter);
 	inspector->set_v_size_flags(SIZE_EXPAND_FILL);
 	inspector->connect("resource_selected", callable_mp(this, &EditorDocumentInspector::_resource_selected));
+	inspector->connect("object_id_selected", callable_mp(this, &EditorDocumentInspector::_object_id_selected));
 	add_child(inspector);
 
 	set_process(true);

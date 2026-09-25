@@ -136,6 +136,8 @@ class EditorSelfTest : public Node {
 	void _inspector_shows_again();
 	ObjectID inspector_node;
 	bool inspector_added = false;
+	ObjectID heard_object_id;
+	void _heard_object_id(ObjectID p_id) { heard_object_id = p_id; }
 	void _script_open();
 	void _script_opened();
 	void _script_edited();
