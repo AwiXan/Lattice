@@ -113,13 +113,59 @@ environment = SubResource("gi_environment")
 # it, or some (comma separated): contact (contact shadows from the sun), micro
 # (microshadows), bounce (multi-bounce AO), decal (the checker, so with
 # --textured), probe (a box-projected reflection probe), line (a Line3D), blur
-# (motion blur in the camera attributes).
-FEATURES = ("contact", "micro", "bounce", "decal", "probe", "line", "blur")
+# (motion blur in the camera attributes). The third batch's: ultra (Ultra soft
+# shadows, PCF25 in Compatibility), minfov (the sun's minimum shadow FOV),
+# compose (a sphere whose shader has compose()), lods (a SphereMesh with LODs
+# and a shadow mesh), parallax (a deep-parallax tile), projector (a projector
+# spot light without shadows), customcam (--camera with a custom projection).
+FEATURES = ("contact", "micro", "bounce", "decal", "probe", "line", "blur",
+            "ultra", "minfov", "compose", "lods", "parallax", "projector", "customcam")
 
 FEATURE_SETTINGS = {
     "contact": "lights_and_shadows/contact_shadow/enabled=true\n",
     "micro": "lights_and_shadows/micro_shadows/enabled=true\n",
     "bounce": "lights_and_shadows/multi_bounce_occlusion/enabled=true\n",
+    "ultra": "lights_and_shadows/directional_shadow/soft_shadow_filter_quality=5\nlights_and_shadows/positional_shadow/soft_shadow_filter_quality=5\n",
+}
+
+FEATURE_RESOURCES = {
+    "compose": """[sub_resource type="Shader" id="composing"]
+code = "shader_type spatial;
+void fragment() { ALBEDO = vec3(0.2, 0.6, 0.9); }
+void compose() { DIFFUSE_COLOR = vec3(1.0, 0.0, 1.0) * (0.3 + DIFFUSE_LIGHT); SPECULAR_COLOR = SPECULAR_LIGHT; }
+"
+
+[sub_resource type="ShaderMaterial" id="composed"]
+shader = SubResource("composing")
+
+[sub_resource type="SphereMesh" id="composed_sphere"]
+material = SubResource("composed")
+
+""",
+    "lods": """[sub_resource type="SphereMesh" id="lod_sphere"]
+radius = 0.4
+height = 0.8
+radial_segments = 128
+rings = 64
+generate_lods = true
+generate_shadow_mesh = true
+
+""",
+    "parallax": """[sub_resource type="StandardMaterial3D" id="deep"]
+albedo_texture = ExtResource("1")
+heightmap_enabled = true
+heightmap_scale = 8.0
+heightmap_deep_parallax = true
+heightmap_correct_shadow_receive = true
+heightmap_write_depth = true
+heightmap_trim_edges = true
+heightmap_texture = ExtResource("1")
+
+[sub_resource type="PlaneMesh" id="deep_tile"]
+material = SubResource("deep")
+size = Vector2(2, 2)
+
+""",
 }
 
 FEATURE_NODES = {
@@ -138,6 +184,28 @@ box_projection = true
     "line": """
 [node name="Beam" type="Line3D" parent="."]
 points = PackedVector3Array(-2, 0.3, 2, 0, 1.2, 2.5, 2, 0.3, 2)
+""",
+    "compose": """
+[node name="Composed" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.6, 0.5, 1.2)
+mesh = SubResource("composed_sphere")
+""",
+    "lods": """
+[node name="LodSphere" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.4, 0.4, 2.2)
+mesh = SubResource("lod_sphere")
+""",
+    "parallax": """
+[node name="DeepTile" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.5, 0.01, -1.5)
+mesh = SubResource("deep_tile")
+""",
+    "projector": """
+[node name="Projector" type="SpotLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 3, 1)
+light_energy = 4.0
+light_projector = ExtResource("1")
+spot_range = 6.0
 """,
 }
 
@@ -245,6 +313,9 @@ def main():
                     resources = resources.replace("sdfgi_enabled = true\n", "sdfgi_enabled = true\nvolumetric_fog_enabled = true\nvolumetric_fog_density = 0.03\n")
                 if "blur" in features:
                     resources += BLUR_RESOURCE
+                for feature in FEATURES:
+                    if feature in features and feature in FEATURE_RESOURCES:
+                        resources += FEATURE_RESOURCES[feature]
                 text = text.replace('[sub_resource type="BoxMesh" id="box"]', resources + '[sub_resource type="BoxMesh" id="box"]')
             f.write(text)
             if args.lit and args.scene == "3d":
@@ -257,6 +328,8 @@ def main():
                 nodes = GI_NODES
                 if "contact" in features:
                     nodes = nodes.replace("shadow_enabled = true\n", "shadow_enabled = true\nshadow_contact_shadows_allow = true\n")
+                if "minfov" in features:
+                    nodes = nodes.replace("shadow_enabled = true\n", "shadow_enabled = true\ndirectional_shadow_min_fov = 100.0\n")
                 if "blur" in features:
                     nodes = nodes.replace('environment = SubResource("gi_environment")\n', 'environment = SubResource("gi_environment")\ncamera_attributes = SubResource("blurred")\n')
                 for feature in FEATURES:
@@ -269,6 +342,10 @@ def main():
                 f.write('transform = Transform3D(0.8, -0.26, 0.54, 0, 0.9, 0.43, -0.6, -0.35, 0.72, 3, 2.5, 4)\n')
                 if args.far:
                     f.write('far = %s\n' % repr(args.far))
+                if "customcam" in features:
+                    # A 60 degree perspective, wider than it is tall, given as a
+                    # matrix rather than by fov.
+                    f.write('projection = 3\ncustom_projection = Projection(0.974279, 0, 0, 0, 0, 1.73205, 0, 0, 0, 0, -1.00001, -1, 0, 0, -0.100001, 0)\n')
 
     if args.patch and not args.project:
         scene_file = os.path.join(project, scene)
