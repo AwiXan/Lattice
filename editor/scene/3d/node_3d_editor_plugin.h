@@ -281,9 +281,10 @@ private:
 
 	ObjectID hovered_node;
 	LocalVector<RID> hover_instances;
-	Ref<StandardMaterial3D> hover_material;
-	Ref<StandardMaterial3D> hover_rim_material;
+	// One per instance, as each is sized for its mesh's distance and scale.
+	LocalVector<Ref<StandardMaterial3D>> hover_materials;
 	uint64_t hover_checked_msec = 0;
+	Ref<StandardMaterial3D> _make_hover_material(real_t p_fill_grow, real_t p_rim_grow) const;
 	void _update_hover(const Point2 &p_pos);
 	void _set_hovered(Node *p_node);
 	void _clear_hover();
@@ -651,6 +652,10 @@ public:
 		hover_checked_msec = 0;
 		_update_hover(p_pos);
 	}
+	// Lights up p_node as the mouse over it would (nullptr: nothing).
+	void hover(Node *p_node) { _set_hovered(p_node); }
+	// How far the ring of the p_index-th lit mesh grows, in its own units.
+	real_t get_hover_rim_grow(int p_index) const;
 	Control *get_surface() const { return surface; }
 	bool is_view_type_top() const;
 	static int get_display_normal_id() { return VIEW_DISPLAY_NORMAL; }
@@ -1426,6 +1431,9 @@ public:
 		OVERLAY_FRAME_TIME,
 		OVERLAY_ENVIRONMENT,
 		OVERLAY_KEY_HINTS,
+		// What a click would select, lit up under the mouse: the editor
+		// setting editors/3d/hover_highlight, for every view.
+		OVERLAY_HOVER_HIGHLIGHT,
 		OVERLAY_MAX
 	};
 	enum SidebarPage {
