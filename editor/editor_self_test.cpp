@@ -68,6 +68,7 @@
 #include "scene/resources/3d/primitive_meshes.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/3d/mesh_instance_3d.h"
+#include "scene/3d/skeleton_3d.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/menu_bar.h"
 #include "editor/gui/editor_view_sidebar.h"
@@ -352,6 +353,37 @@ void EditorScreenshot::_notification(int p_what) {
 					} else if (action == "later:isolate" && later_view) {
 						later_view->toggle_isolation();
 						print_line(vformat("SHOT: isolated %s", later_view->is_isolating()));
+					} else if (action == "later:hover_report" && later_view) {
+						// Every mesh of the scene, with what decides how its hover ring
+						// is drawn; then the whole scene lit up, for its picture.
+						Node *root = EditorNode::get_singleton()->get_edited_scene();
+						Node3DEditorViewport *viewport = later_view->get_editor_viewport(0);
+						TypedArray<Node> found = root ? root->find_children("*", "MeshInstance3D", true, false) : TypedArray<Node>();
+						for (int i = 0; i < found.size(); i++) {
+							MeshInstance3D *mesh_instance = Object::cast_to<MeshInstance3D>(found[i]);
+							const Transform3D xform = mesh_instance->get_global_transform();
+							String surfaces;
+							const Ref<Mesh> mesh = mesh_instance->get_mesh();
+							for (int s = 0; mesh.is_valid() && s < mesh->get_surface_count(); s++) {
+								const Array arrays = mesh->surface_get_arrays(s);
+								const PackedVector3Array normals = arrays[Mesh::ARRAY_NORMAL];
+								real_t shortest = 1e20, longest = 0;
+								for (const Vector3 &normal : normals) {
+									shortest = MIN(shortest, normal.length());
+									longest = MAX(longest, normal.length());
+								}
+								const Variant bones = arrays[Mesh::ARRAY_BONES];
+								const Ref<Material> material = mesh_instance->get_active_material(s);
+								surfaces += vformat(" [%d: %d normals %.3f..%.3f, bones %s, %s]", s, normals.size(), normals.is_empty() ? 0.0 : shortest, longest, bones.get_type() != Variant::NIL ? "yes" : "no", material.is_valid() ? material->get_class() : String("none"));
+							}
+							print_line(vformat("SHOT MESH %s: scale %s det %.3f aabb %s visible %s cast %d transparency %.2f skin %s blend %d%s", root->get_path_to(mesh_instance), xform.basis.get_scale_abs(), xform.basis.determinant(), mesh_instance->get_aabb().size, mesh_instance->is_visible_in_tree(), mesh_instance->get_cast_shadows_setting(), mesh_instance->get_transparency(), mesh_instance->get_skin_reference().is_valid() ? "yes" : "no", mesh.is_valid() ? mesh->get_blend_shape_count() : 0, surfaces));
+						}
+						viewport->hover(root);
+						String rings;
+						for (int i = 0; i < viewport->get_hover_mesh_count(); i++) {
+							rings += vformat(" %.4f", viewport->get_hover_rim_grow(i));
+						}
+						print_line(vformat("SHOT: hovering the scene lights %d meshes, ring grows:%s", viewport->get_hover_mesh_count(), rings));
 					} else if (action == "later:hover_pillar" && later_view) {
 						// The mouse over the pillar, which is not selected: it lights up.
 						Node *root = EditorNode::get_singleton()->get_edited_scene();
@@ -1036,32 +1068,41 @@ void EditorSelfTest::_view_hover() {
 	}
 	const Transform3D eye = viewport->get_camera_3d()->get_global_transform();
 
-	// A box in front of the camera, and a part of it scaled down a hundred
-	// times, as imported models have them.
+	// A box in front of the camera, a part of it scaled down a hundred times,
+	// as imported models have them, and one mirrored, as the other of a pair.
 	Node3D *holder = memnew(Node3D);
 	holder->set_name("LatticeHoverTest");
 	scene->add_child(holder);
 	holder->set_global_position(eye.origin - eye.basis.get_column(2) * 10);
 	MeshInstance3D *big = memnew(MeshInstance3D);
 	MeshInstance3D *tiny = memnew(MeshInstance3D);
+	MeshInstance3D *mirrored = memnew(MeshInstance3D);
 	Ref<BoxMesh> box;
 	box.instantiate();
 	big->set_mesh(box);
 	tiny->set_mesh(box);
+	mirrored->set_mesh(box);
 	holder->add_child(big);
 	holder->add_child(tiny);
+	holder->add_child(mirrored);
 	tiny->set_scale(Vector3(0.01, 0.01, 0.01));
 	tiny->set_position(Vector3(1, 0, 0));
+	mirrored->set_scale(Vector3(-1, 1, 1));
+	mirrored->set_position(Vector3(-1.5, 0, 0));
 	viewport->hover(holder);
 	real_t big_ring = 0;
 	real_t tiny_ring = 0;
-	if (viewport->get_hover_mesh_count() == 2) {
+	real_t mirrored_ring = 0;
+	if (viewport->get_hover_mesh_count() == 3) {
 		// How wide each ring is in the world: its grow, times its scale.
 		big_ring = viewport->get_hover_rim_grow(0);
 		tiny_ring = viewport->get_hover_rim_grow(1) * 0.01;
+		mirrored_ring = viewport->get_hover_rim_grow(2);
 	}
-	const bool alike = big_ring > 0 && tiny_ring > 0 && MAX(big_ring, tiny_ring) < MIN(big_ring, tiny_ring) * 3;
-	_check(alike, vformat("each mesh of what is hovered is ringed to its own size, a part scaled down too (%.4f and %.4f wide)", big_ring, tiny_ring));
+	const real_t widest = MAX(big_ring, MAX(tiny_ring, mirrored_ring));
+	const real_t thinnest = MIN(big_ring, MIN(tiny_ring, mirrored_ring));
+	const bool alike = thinnest > 0 && widest < thinnest * 3;
+	_check(alike, vformat("each mesh of what is hovered is ringed to its own size, a part scaled down or mirrored too (%.4f, %.4f and %.4f wide)", big_ring, tiny_ring, mirrored_ring));
 	viewport->hover(nullptr);
 
 	// A room around the camera: from inside it there is nothing to outline.
