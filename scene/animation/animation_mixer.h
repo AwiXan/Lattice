@@ -39,6 +39,7 @@
 #include "scene/resources/fpslod_level.h"
 
 class AnimatedValuesBackup;
+class Node3D;
 
 class AnimationMixer : public Node {
 	GDCLASS(AnimationMixer, Node);

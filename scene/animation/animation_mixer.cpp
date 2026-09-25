@@ -1057,9 +1057,11 @@ void AnimationMixer::_process_fpslod(double p_delta) {
 			lod_target = target;
 		}
 
-		if (lod_target && fpslod_levels.size() > 0) {
+		// No camera (a dedicated server, a viewport not showing 3D): no
+		// distance to go by, so the levels are left as they are.
+		Camera3D *cam = get_viewport() ? get_viewport()->get_camera_3d() : nullptr;
+		if (lod_target && cam && fpslod_levels.size() > 0) {
 			double dist = 0.0;
-			Camera3D *cam = get_viewport()->get_camera_3d();
 			dist = lod_target->get_global_position().distance_to(cam->get_global_position());
 			if (cam->get_projection() == Camera3D::PROJECTION_PERSPECTIVE) {
 				double base_fov = 75.0;
