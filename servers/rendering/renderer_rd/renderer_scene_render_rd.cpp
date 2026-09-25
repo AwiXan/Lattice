@@ -1926,15 +1926,35 @@ RendererSceneRenderRD::~RendererSceneRenderRD() {
 		memdelete(forward_id_storage);
 	}
 
-	memdelete(motion_blur);
-	memdelete(bokeh_dof);
-	memdelete(copy_effects);
-	memdelete(debug_effects);
-	memdelete(luminance);
-	memdelete(smaa);
-	memdelete(tone_mapper);
-	memdelete(vrs);
-	memdelete(fsr);
+	// Checked: 4.7's memdelete() does not take nullptr, as 4.8's does, and
+	// vrs and fsr are made only where they can be used.
+	if (motion_blur) {
+		memdelete(motion_blur);
+	}
+	if (bokeh_dof) {
+		memdelete(bokeh_dof);
+	}
+	if (copy_effects) {
+		memdelete(copy_effects);
+	}
+	if (debug_effects) {
+		memdelete(debug_effects);
+	}
+	if (luminance) {
+		memdelete(luminance);
+	}
+	if (smaa) {
+		memdelete(smaa);
+	}
+	if (tone_mapper) {
+		memdelete(tone_mapper);
+	}
+	if (vrs) {
+		memdelete(vrs);
+	}
+	if (fsr) {
+		memdelete(fsr);
+	}
 #ifdef METAL_ENABLED
 	if (mfx_spatial) {
 		memdelete(mfx_spatial);
