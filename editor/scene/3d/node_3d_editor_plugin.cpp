@@ -108,6 +108,7 @@
 #include "scene/3d/mesh_instance_3d.h"
 #include "scene/3d/physics/collision_shape_3d.h"
 #include "scene/3d/physics/physics_body_3d.h"
+#include "scene/3d/skeleton_3d.h"
 #include "scene/3d/sprite_3d.h"
 #include "scene/3d/visual_instance_3d.h"
 #include "scene/3d/world_environment.h"
@@ -5311,42 +5312,41 @@ void Node3DEditorViewport::_set_hovered(Node *p_node) {
 		meshes.push_back(Object::cast_to<MeshInstance3D>(found[i]));
 	}
 
-	if (hover_material.is_null()) {
-		const Color color = Color(EDITOR_GET("editors/3d/selection_box_color")).lerp(Color(1, 1, 1), 0.6);
-		hover_material.instantiate();
-		hover_material->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);
-		hover_material->set_transparency(StandardMaterial3D::TRANSPARENCY_ALPHA);
-		hover_material->set_flag(StandardMaterial3D::FLAG_DISABLE_FOG, true);
-		hover_material->set_albedo(Color(color.r, color.g, color.b, 0.1));
-		hover_material->set_grow_enabled(true);
-		// The ring: the back of a shell a little bigger than it, which shows
-		// only around its edges.
-		hover_rim_material.instantiate();
-		hover_rim_material->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);
-		hover_rim_material->set_transparency(StandardMaterial3D::TRANSPARENCY_ALPHA);
-		hover_rim_material->set_flag(StandardMaterial3D::FLAG_DISABLE_FOG, true);
-		hover_rim_material->set_cull_mode(StandardMaterial3D::CULL_FRONT);
-		hover_rim_material->set_albedo(Color(color.r, color.g, color.b, 0.9));
-		hover_rim_material->set_grow_enabled(true);
-		hover_material->set_next_pass(hover_rim_material);
-	}
-
+	const Vector3 eye = camera->get_global_position();
+	const real_t height = MAX((real_t)1.0, (real_t)viewport->get_size().height);
 	for (MeshInstance3D *mesh_instance : meshes) {
 		if (!mesh_instance || !mesh_instance->is_visible_in_tree() || mesh_instance->get_mesh().is_null() || mesh_instance->get_world_3d().is_null()) {
 			continue;
 		}
 		const Transform3D xform = mesh_instance->get_global_transform();
-		// A ring a couple of pixels wide on screen, however far or scaled.
-		const real_t distance = MAX((real_t)0.01, camera->get_global_position().distance_to(xform.origin));
-		const real_t height = MAX((real_t)1.0, (real_t)viewport->get_size().height);
+		const AABB bounds = xform.xform(mesh_instance->get_aabb());
+		// From inside a mesh - a room, an arena - its ring would be all its
+		// back faces, over the whole view. Nothing to outline from there.
+		if (bounds.grow(bounds.get_longest_axis_size() * 0.01).has_point(eye)) {
+			continue;
+		}
+		// A ring a couple of pixels wide on screen, however far or scaled: by
+		// the distance to the nearest of it, not to its origin, which a big
+		// mesh can have far off.
+		const Vector3 nearest = eye.clamp(bounds.position, bounds.position + bounds.size);
+		const real_t distance = MAX((real_t)0.01, eye.distance_to(nearest));
 		const real_t per_pixel = camera->get_projection() == Camera3D::PROJECTION_ORTHOGONAL ? camera->get_size() / height : 2.0 * distance * Math::tan(Math::deg_to_rad(camera->get_fov()) * 0.5) / height;
+		// Grow is in the mesh's own units, before its scale.
 		const real_t scale = MAX((real_t)0.0001, (xform.basis.get_scale().x + xform.basis.get_scale().y + xform.basis.get_scale().z) / 3.0);
-		hover_material->set_grow(per_pixel * 0.4 / scale);
-		hover_rim_material->set_grow(per_pixel * 2.2 / scale);
+		// Its own material: sharing one, every mesh got the last one's grow,
+		// and a part scaled down a hundred times ringed the rest a hundred
+		// times too wide - over the whole view.
+		Ref<StandardMaterial3D> look = _make_hover_material(per_pixel * 0.4 / scale, per_pixel * 2.2 / scale);
+		hover_materials.push_back(look);
 
 		RID instance = RS::get_singleton()->instance_create2(mesh_instance->get_mesh()->get_rid(), mesh_instance->get_world_3d()->get_scenario());
 		RS::get_singleton()->instance_set_transform(instance, xform);
-		RS::get_singleton()->instance_geometry_set_material_override(instance, hover_material->get_rid());
+		// A skinned mesh in the pose it is in, not its rest pose.
+		const Ref<SkinReference> skin = mesh_instance->get_skin_reference();
+		if (skin.is_valid() && skin->get_skeleton().is_valid()) {
+			RS::get_singleton()->instance_attach_skeleton(instance, skin->get_skeleton());
+		}
+		RS::get_singleton()->instance_geometry_set_material_override(instance, look->get_rid());
 		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(instance, RSE::SHADOW_CASTING_SETTING_OFF);
 		RS::get_singleton()->instance_geometry_set_flag(instance, RSE::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
 		RS::get_singleton()->instance_geometry_set_flag(instance, RSE::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
@@ -5356,11 +5356,43 @@ void Node3DEditorViewport::_set_hovered(Node *p_node) {
 	}
 }
 
+Ref<StandardMaterial3D> Node3DEditorViewport::_make_hover_material(real_t p_fill_grow, real_t p_rim_grow) const {
+	const Color color = Color(EDITOR_GET("editors/3d/selection_box_color")).lerp(Color(1, 1, 1), 0.6);
+	Ref<StandardMaterial3D> fill;
+	fill.instantiate();
+	fill->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);
+	fill->set_transparency(StandardMaterial3D::TRANSPARENCY_ALPHA);
+	fill->set_flag(StandardMaterial3D::FLAG_DISABLE_FOG, true);
+	fill->set_albedo(Color(color.r, color.g, color.b, 0.1));
+	fill->set_grow_enabled(true);
+	fill->set_grow(p_fill_grow);
+	// The ring: the back of a shell a little bigger than it, which shows
+	// only around its edges.
+	Ref<StandardMaterial3D> rim;
+	rim.instantiate();
+	rim->set_shading_mode(StandardMaterial3D::SHADING_MODE_UNSHADED);
+	rim->set_transparency(StandardMaterial3D::TRANSPARENCY_ALPHA);
+	rim->set_flag(StandardMaterial3D::FLAG_DISABLE_FOG, true);
+	rim->set_cull_mode(StandardMaterial3D::CULL_FRONT);
+	rim->set_albedo(Color(color.r, color.g, color.b, 0.9));
+	rim->set_grow_enabled(true);
+	rim->set_grow(p_rim_grow);
+	fill->set_next_pass(rim);
+	return fill;
+}
+
+real_t Node3DEditorViewport::get_hover_rim_grow(int p_index) const {
+	ERR_FAIL_INDEX_V(p_index, (int)hover_materials.size(), 0);
+	const Ref<StandardMaterial3D> rim = hover_materials[p_index]->get_next_pass();
+	return rim.is_valid() ? rim->get_grow() : 0;
+}
+
 void Node3DEditorViewport::_clear_hover() {
 	for (const RID &instance : hover_instances) {
 		RS::get_singleton()->free_rid(instance);
 	}
 	hover_instances.clear();
+	hover_materials.clear();
 	hovered_node = ObjectID();
 }
 
@@ -12753,7 +12785,7 @@ void Node3DEditor::_view_bar_show_about_to_popup(int p_viewport) {
 	const int order[] = {
 		OVERLAY_ENVIRONMENT, OVERLAY_GRID, OVERLAY_ORIGIN, OVERLAY_GIZMOS, OVERLAY_TRANSFORM_GIZMO, -1,
 		OVERLAY_INFORMATION, OVERLAY_FRAME_TIME, -1,
-		OVERLAY_KEY_HINTS
+		OVERLAY_HOVER_HIGHLIGHT, OVERLAY_KEY_HINTS
 	};
 	for (int overlay : order) {
 		if (overlay < 0) {
@@ -13344,8 +13376,8 @@ void Node3DEditor::toggle_overlay_in(int p_overlay, int p_viewport) {
 	ERR_FAIL_INDEX(p_overlay, count);
 	ERR_FAIL_INDEX(p_viewport, (int)VIEWPORTS_COUNT);
 	const OverlayItem &item = items[p_overlay];
-	if (p_overlay == OVERLAY_KEY_HINTS || item.layout_option >= 0) {
-		// The view's own, whichever viewport asks.
+	if (p_overlay == OVERLAY_KEY_HINTS || p_overlay == OVERLAY_HOVER_HIGHLIGHT || item.layout_option >= 0) {
+		// The view's own - or the editor's - whichever viewport asks.
 		_overlays_id_pressed(p_overlay);
 		return;
 	}
@@ -13385,6 +13417,8 @@ const Node3DEditor::OverlayItem *Node3DEditor::_overlay_items(int &r_count) {
 		{ TTRC("Environment"), -1, Node3DEditorViewport::VIEW_ENVIRONMENT },
 		// The view's own: the line of hints under it.
 		{ TTRC("Key Hints"), -1, -1 },
+		// The editor's: an editor setting.
+		{ TTRC("Highlight on Hover"), -1, -1 },
 	};
 	static_assert(std::size(items) == OVERLAY_MAX);
 	r_count = std::size(items);
@@ -13398,6 +13432,9 @@ bool Node3DEditor::_overlay_shown_in(int p_overlay, int p_viewport) const {
 	const OverlayItem &item = items[p_overlay];
 	if (p_overlay == OVERLAY_KEY_HINTS) {
 		return hints && hints->is_visible();
+	}
+	if (p_overlay == OVERLAY_HOVER_HIGHLIGHT) {
+		return EDITOR_GET("editors/3d/hover_highlight");
 	}
 	if (item.layout_option >= 0) {
 		const PopupMenu *popup = view_layout_menu->get_popup();
@@ -13432,6 +13469,13 @@ void Node3DEditor::_overlays_id_pressed(int p_overlay) {
 			hints->set_visible(show);
 			EditorSettings::get_singleton()->set_project_metadata("3d_editor", "key_hints", show);
 			_update_hints();
+		}
+	} else if (p_overlay == OVERLAY_HOVER_HIGHLIGHT) {
+		EditorSettings::get_singleton()->set("editors/3d/hover_highlight", show);
+		EditorSettings::get_singleton()->save();
+		// Not waiting for the mouse to move to take it away.
+		for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+			viewports[i]->_clear_hover();
 		}
 	} else if (item.layout_option >= 0) {
 		_menu_item_activated(item.layout_option);

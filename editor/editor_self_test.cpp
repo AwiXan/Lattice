@@ -317,6 +317,11 @@ void EditorScreenshot::_notification(int p_what) {
 								break;
 							}
 						}
+					} else if (action == "later:open_show" && later_view && later_view->get_editor_viewport(0)->get_show_pill()) {
+						// The first viewport's Show dropdown, for its window's picture.
+						later_view->get_editor_viewport(0)->get_show_pill()->show_popup();
+						print_line("SHOT: opened Show");
+						early_shot_frames = 3;
 					} else if (action == "later:workspaces") {
 						// Three, for their tabs - gone again after the picture: the
 						// list is the editor's, not the project's.
@@ -998,6 +1003,76 @@ void EditorSelfTest::_view_isolate() {
 	_check(isolated && back, "/ isolates the selection, hiding the rest, and / again shows everything");
 
 	selection->clear();
+	scene->remove_child(holder);
+	memdelete(holder);
+}
+
+void EditorSelfTest::_view_hover() {
+	Node3DEditor *view = Node3DEditor::get_singleton();
+	Node *scene = EditorNode::get_singleton()->get_edited_scene();
+	Node3DEditorViewport *viewport = view ? view->get_editor_viewport(0) : nullptr;
+	if (!scene || !viewport || !viewport->get_camera_3d()) {
+		_check(false, "a scene and a 3D viewport to hover something in");
+		return;
+	}
+	const bool was_on = EDITOR_GET("editors/3d/hover_highlight");
+	if (!was_on) {
+		view->toggle_overlay_in(Node3DEditor::OVERLAY_HOVER_HIGHLIGHT, 0);
+	}
+	const Transform3D eye = viewport->get_camera_3d()->get_global_transform();
+
+	// A box in front of the camera, and a part of it scaled down a hundred
+	// times, as imported models have them.
+	Node3D *holder = memnew(Node3D);
+	holder->set_name("LatticeHoverTest");
+	scene->add_child(holder);
+	holder->set_global_position(eye.origin - eye.basis.get_column(2) * 10);
+	MeshInstance3D *big = memnew(MeshInstance3D);
+	MeshInstance3D *tiny = memnew(MeshInstance3D);
+	Ref<BoxMesh> box;
+	box.instantiate();
+	big->set_mesh(box);
+	tiny->set_mesh(box);
+	holder->add_child(big);
+	holder->add_child(tiny);
+	tiny->set_scale(Vector3(0.01, 0.01, 0.01));
+	tiny->set_position(Vector3(1, 0, 0));
+	viewport->hover(holder);
+	real_t big_ring = 0;
+	real_t tiny_ring = 0;
+	if (viewport->get_hover_mesh_count() == 2) {
+		// How wide each ring is in the world: its grow, times its scale.
+		big_ring = viewport->get_hover_rim_grow(0);
+		tiny_ring = viewport->get_hover_rim_grow(1) * 0.01;
+	}
+	const bool alike = big_ring > 0 && tiny_ring > 0 && MAX(big_ring, tiny_ring) < MIN(big_ring, tiny_ring) * 3;
+	_check(alike, vformat("each mesh of what is hovered is ringed to its own size, a part scaled down too (%.4f and %.4f wide)", big_ring, tiny_ring));
+	viewport->hover(nullptr);
+
+	// A room around the camera: from inside it there is nothing to outline.
+	MeshInstance3D *room = memnew(MeshInstance3D);
+	Ref<BoxMesh> room_box;
+	room_box.instantiate();
+	room_box->set_size(Vector3(200, 200, 200));
+	room->set_mesh(room_box);
+	holder->add_child(room);
+	room->set_global_position(eye.origin);
+	viewport->hover(room);
+	const bool room_left = viewport->get_hover_mesh_count() == 0;
+	viewport->hover(nullptr);
+	_check(room_left, "a mesh around the camera is not lit up over the whole view");
+
+	// Switched off in the Show dropdown: the editor setting, and the light gone at once.
+	viewport->hover(holder);
+	view->toggle_overlay_in(Node3DEditor::OVERLAY_HOVER_HIGHLIGHT, 0);
+	const bool off = !bool(EDITOR_GET("editors/3d/hover_highlight")) && !view->is_overlay_shown_in(Node3DEditor::OVERLAY_HOVER_HIGHLIGHT, 1) && viewport->get_hover_mesh_count() == 0;
+	view->toggle_overlay_in(Node3DEditor::OVERLAY_HOVER_HIGHLIGHT, 0);
+	const bool on = EDITOR_GET("editors/3d/hover_highlight");
+	_check(off && on, "Highlight on Hover in the Show dropdown switches it off and on");
+
+	if (!was_on) {
+		view->toggle_overlay_in(Node3DEditor::OVERLAY_HOVER_HIGHLIGHT, 0);
+	}
 	scene->remove_child(holder);
 	memdelete(holder);
 }
@@ -2490,6 +2565,7 @@ EditorSelfTest::EditorSelfTest() {
 	_add("view overlays", callable_mp(this, &EditorSelfTest::_view_overlays));
 	_add("view bar", callable_mp(this, &EditorSelfTest::_view_bar));
 	_add("view isolate", callable_mp(this, &EditorSelfTest::_view_isolate));
+	_add("view hover", callable_mp(this, &EditorSelfTest::_view_hover));
 	_add("view camera preview", callable_mp(this, &EditorSelfTest::_view_camera_preview));
 	_add("timeline open", callable_mp(this, &EditorSelfTest::_timeline_open));
 	_add("timeline check", callable_mp(this, &EditorSelfTest::_timeline_check));

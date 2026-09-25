@@ -160,6 +160,7 @@ class EditorSelfTest : public Node {
 	void _view_overlays();
 	void _view_bar();
 	void _view_isolate();
+	void _view_hover();
 	void _view_camera_preview();
 	void _timeline_open();
 	void _timeline_check();
