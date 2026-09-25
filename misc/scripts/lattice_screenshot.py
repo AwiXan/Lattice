@@ -147,6 +147,8 @@ def main():
     parser.add_argument("--textured", action="store_true", help="put a checker texture on the 3D scene's crate and floor")
     parser.add_argument("--renderer", choices=["forward_plus", "mobile", "gl_compatibility"], help="the project's rendering method")
     parser.add_argument("--driver", choices=["vulkan", "d3d12"], help="the project's rendering device on Windows (default: vulkan)")
+    parser.add_argument("--project", help="an existing project to open instead - a copy: the editor saves its state in it")
+    parser.add_argument("--open", help="with --project, the scene to open (res://...)")
     parser.add_argument("--editor", help="editor binary to run (default: the newest one in bin/)")
     parser.add_argument("--timeout", type=int, default=60, help="seconds before calling it hung (it is left running)")
     parser.add_argument("--stress", type=int, default=0, help="seconds of opening and closing every dropdown first")
@@ -159,43 +161,49 @@ def main():
         print("No editor binary found; build one or pass --editor.")
         return 2
 
-    project = tempfile.mkdtemp(prefix="lattice-shot-")
-    with open(os.path.join(project, "project.godot"), "w", encoding="utf-8", newline="\n") as f:
-        f.write('config_version=5\n\n[application]\n\nconfig/name="Lattice screenshot"\n')
-        if args.streaming or args.renderer or args.driver:
-            f.write('\n[rendering]\n\n')
-        if args.streaming:
-            f.write('textures/streaming/enabled=true\n')
-        if args.renderer:
-            f.write('renderer/rendering_method="%s"\n' % args.renderer)
-        if args.driver:
-            f.write('rendering_device/driver.windows="%s"\n' % args.driver)
-    if args.textured:
-        write_checker_png(os.path.join(project, "checker.png"))
-    with open(os.path.join(project, "probe.gd"), "w", encoding="utf-8", newline="\n") as f:
-        f.write("extends Node\n")
-    scene = "scene_3d.tscn" if args.scene == "3d" else "scene_2d.tscn"
-    with open(os.path.join(project, scene), "w", encoding="utf-8", newline="\n") as f:
-        text = (textured(SCENE_3D) if args.textured else SCENE_3D) if args.scene == "3d" else SCENE_2D
-        if args.gi and args.scene == "3d":
-            resources = GI_RESOURCES
-            if args.fog:
-                # GI lights the fog too (see volumetric_fog_process.glsl).
-                resources = resources.replace("sdfgi_enabled = true\n", "sdfgi_enabled = true\nvolumetric_fog_enabled = true\nvolumetric_fog_density = 0.03\n")
-            text = text.replace('[sub_resource type="BoxMesh" id="box"]', resources + '[sub_resource type="BoxMesh" id="box"]')
-        f.write(text)
-        if args.lit and args.scene == "3d":
-            # Its own sun and environment: the preview ones step aside and say so.
-            f.write('\n[node name="Sun" type="DirectionalLight3D" parent="."]\n')
-            f.write('\n[node name="Environment" type="WorldEnvironment" parent="."]\n')
-        if args.gi and args.scene == "3d":
-            # A red wall beside the crate, to see light bounce off it onto the
-            # floor. "sdfgi_enabled" is read by whichever GI the build has.
-            f.write(GI_NODES)
-        if args.camera and args.scene == "3d":
-            # Up and to the side, looking down at the crate.
-            f.write('\n[node name="Camera" type="Camera3D" parent="."]\n')
-            f.write('transform = Transform3D(0.8, -0.26, 0.54, 0, 0.9, 0.43, -0.6, -0.35, 0.72, 3, 2.5, 4)\n')
+    if args.project:
+        project = os.path.abspath(args.project)
+        scene_path = args.open
+    else:
+        scene_path = None
+        project = tempfile.mkdtemp(prefix="lattice-shot-")
+        with open(os.path.join(project, "project.godot"), "w", encoding="utf-8", newline="\n") as f:
+            f.write('config_version=5\n\n[application]\n\nconfig/name="Lattice screenshot"\n')
+            if args.streaming or args.renderer or args.driver:
+                f.write('\n[rendering]\n\n')
+            if args.streaming:
+                f.write('textures/streaming/enabled=true\n')
+            if args.renderer:
+                f.write('renderer/rendering_method="%s"\n' % args.renderer)
+            if args.driver:
+                f.write('rendering_device/driver.windows="%s"\n' % args.driver)
+        if args.textured:
+            write_checker_png(os.path.join(project, "checker.png"))
+        with open(os.path.join(project, "probe.gd"), "w", encoding="utf-8", newline="\n") as f:
+            f.write("extends Node\n")
+        scene = "scene_3d.tscn" if args.scene == "3d" else "scene_2d.tscn"
+        scene_path = "res://" + scene
+        with open(os.path.join(project, scene), "w", encoding="utf-8", newline="\n") as f:
+            text = (textured(SCENE_3D) if args.textured else SCENE_3D) if args.scene == "3d" else SCENE_2D
+            if args.gi and args.scene == "3d":
+                resources = GI_RESOURCES
+                if args.fog:
+                    # GI lights the fog too (see volumetric_fog_process.glsl).
+                    resources = resources.replace("sdfgi_enabled = true\n", "sdfgi_enabled = true\nvolumetric_fog_enabled = true\nvolumetric_fog_density = 0.03\n")
+                text = text.replace('[sub_resource type="BoxMesh" id="box"]', resources + '[sub_resource type="BoxMesh" id="box"]')
+            f.write(text)
+            if args.lit and args.scene == "3d":
+                # Its own sun and environment: the preview ones step aside and say so.
+                f.write('\n[node name="Sun" type="DirectionalLight3D" parent="."]\n')
+                f.write('\n[node name="Environment" type="WorldEnvironment" parent="."]\n')
+            if args.gi and args.scene == "3d":
+                # A red wall beside the crate, to see light bounce off it onto the
+                # floor. "sdfgi_enabled" is read by whichever GI the build has.
+                f.write(GI_NODES)
+            if args.camera and args.scene == "3d":
+                # Up and to the side, looking down at the crate.
+                f.write('\n[node name="Camera" type="Camera3D" parent="."]\n')
+                f.write('transform = Transform3D(0.8, -0.26, 0.54, 0, 0.9, 0.43, -0.6, -0.35, 0.72, 3, 2.5, 4)\n')
 
     if args.crashed:
         editor_data = os.path.join(project, ".godot", "editor")
@@ -207,7 +215,7 @@ def main():
                 f.write("A long line of the log, number %d, of a session that stopped half way.\n" % i)
 
     output = os.path.abspath(args.output)
-    env = dict(os.environ, LATTICE_SHOT=output, LATTICE_SHOT_SCENE="res://" + scene)
+    env = dict(os.environ, LATTICE_SHOT=output, LATTICE_SHOT_SCENE=scene_path)
     if args.crop:
         env["LATTICE_SHOT_CROP"] = args.crop
     if args.actions:
@@ -230,7 +238,8 @@ def main():
         # Left running, to be looked at with a debugger: it hung.
         print("HUNG: the editor did not finish; pid %d, project %s" % (process.pid, project))
         return 3
-    shutil.rmtree(project, ignore_errors=True)
+    if not args.project:
+        shutil.rmtree(project, ignore_errors=True)
     for line in out.splitlines():
         if args.all or line.startswith("SHOT") or "ERROR" in line:
             print(line)
