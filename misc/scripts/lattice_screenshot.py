@@ -109,6 +109,47 @@ environment = SubResource("gi_environment")
 """
 
 
+# --features: what the second batch of backports added, in one scene - all of
+# it, or some (comma separated): contact (contact shadows from the sun), micro
+# (microshadows), bounce (multi-bounce AO), decal (the checker, so with
+# --textured), probe (a box-projected reflection probe), line (a Line3D), blur
+# (motion blur in the camera attributes).
+FEATURES = ("contact", "micro", "bounce", "decal", "probe", "line", "blur")
+
+FEATURE_SETTINGS = {
+    "contact": "lights_and_shadows/contact_shadow/enabled=true\n",
+    "micro": "lights_and_shadows/micro_shadows/enabled=true\n",
+    "bounce": "lights_and_shadows/multi_bounce_occlusion/enabled=true\n",
+}
+
+FEATURE_NODES = {
+    "decal": """
+[node name="Decal" type="Decal" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.8, 0, 1.5)
+size = Vector3(1.5, 1, 1.5)
+texture_albedo = ExtResource("1")
+""",
+    "probe": """
+[node name="Probe" type="ReflectionProbe" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.9, 0)
+size = Vector3(12, 4, 12)
+box_projection = true
+""",
+    "line": """
+[node name="Beam" type="Line3D" parent="."]
+points = PackedVector3Array(-2, 0.3, 2, 0, 1.2, 2.5, 2, 0.3, 2)
+""",
+}
+
+BLUR_RESOURCE = """[sub_resource type="CameraAttributesPractical" id="blurred"]
+motion_blur_enabled = true
+
+"""
+
+
+CDB = r"C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe"
+
+
 SCENE_2D = """[gd_scene format=3]
 
 [node name="Hud" type="Control"]
@@ -142,11 +183,13 @@ def main():
     parser.add_argument("--camera", action="store_true", help="give the 3D scene a camera looking at the crate")
     parser.add_argument("--gi", action="store_true", help="give the 3D scene a sun, a sky, a red wall and real-time GI (SDFGI, or what replaced it)")
     parser.add_argument("--fog", action="store_true", help="with --gi, volumetric fog as well")
+    parser.add_argument("--features", nargs="?", const="all", help="the second batch's features in the scene (implies --gi --textured): all, or some of " + ",".join(FEATURES))
     parser.add_argument("--select", help="the name of the node to select, instead of the first mesh")
     parser.add_argument("--streaming", action="store_true", help="turn texture streaming on in the project")
     parser.add_argument("--textured", action="store_true", help="put a checker texture on the 3D scene's crate and floor")
     parser.add_argument("--renderer", choices=["forward_plus", "mobile", "gl_compatibility"], help="the project's rendering method")
     parser.add_argument("--driver", choices=["vulkan", "d3d12"], help="the project's rendering device on Windows (default: vulkan)")
+    parser.add_argument("--debug", action="store_true", help="run the editor under cdb (Windows SDK) and print the stack if it crashes")
     parser.add_argument("--project", help="an existing project to open instead - a copy: the editor saves its state in it")
     parser.add_argument("--open", help="with --project, the scene to open (res://...)")
     parser.add_argument("--editor", help="editor binary to run (default: the newest one in bin/)")
@@ -155,6 +198,10 @@ def main():
     parser.add_argument("--all", action="store_true", help="print everything the editor printed")
     parser.add_argument("--window", action="store_true", help="take the first window of its own showing - a dialog, a menu - instead")
     args = parser.parse_args()
+    features = set()
+    if args.features:
+        args.gi = args.textured = True
+        features = set(FEATURES) if args.features == "all" else set(args.features.split(","))
 
     editor = args.editor or find_editor()
     if not editor:
@@ -169,8 +216,11 @@ def main():
         project = tempfile.mkdtemp(prefix="lattice-shot-")
         with open(os.path.join(project, "project.godot"), "w", encoding="utf-8", newline="\n") as f:
             f.write('config_version=5\n\n[application]\n\nconfig/name="Lattice screenshot"\n')
-            if args.streaming or args.renderer or args.driver:
+            if args.streaming or args.renderer or args.driver or args.features:
                 f.write('\n[rendering]\n\n')
+            for feature in FEATURES:
+                if feature in features and feature in FEATURE_SETTINGS:
+                    f.write(FEATURE_SETTINGS[feature])
             if args.streaming:
                 f.write('textures/streaming/enabled=true\n')
             if args.renderer:
@@ -190,6 +240,8 @@ def main():
                 if args.fog:
                     # GI lights the fog too (see volumetric_fog_process.glsl).
                     resources = resources.replace("sdfgi_enabled = true\n", "sdfgi_enabled = true\nvolumetric_fog_enabled = true\nvolumetric_fog_density = 0.03\n")
+                if "blur" in features:
+                    resources += BLUR_RESOURCE
                 text = text.replace('[sub_resource type="BoxMesh" id="box"]', resources + '[sub_resource type="BoxMesh" id="box"]')
             f.write(text)
             if args.lit and args.scene == "3d":
@@ -199,7 +251,15 @@ def main():
             if args.gi and args.scene == "3d":
                 # A red wall beside the crate, to see light bounce off it onto the
                 # floor. "sdfgi_enabled" is read by whichever GI the build has.
-                f.write(GI_NODES)
+                nodes = GI_NODES
+                if "contact" in features:
+                    nodes = nodes.replace("shadow_enabled = true\n", "shadow_enabled = true\nshadow_contact_shadows_allow = true\n")
+                if "blur" in features:
+                    nodes = nodes.replace('environment = SubResource("gi_environment")\n', 'environment = SubResource("gi_environment")\ncamera_attributes = SubResource("blurred")\n')
+                for feature in FEATURES:
+                    if feature in features and feature in FEATURE_NODES:
+                        nodes += FEATURE_NODES[feature]
+                f.write(nodes)
             if args.camera and args.scene == "3d":
                 # Up and to the side, looking down at the crate.
                 f.write('\n[node name="Camera" type="Camera3D" parent="."]\n')
@@ -230,7 +290,14 @@ def main():
     # Imports first, or the scene opens before its resources are known.
     subprocess.run([editor, "--path", project, "--editor", "--headless", "--quit-after", "200"], env=dict(os.environ),
                    capture_output=True, timeout=300)
-    process = subprocess.Popen([editor, "--path", project, "--editor"], env=env, stdout=subprocess.PIPE,
+    command = [editor, "--path", project, "--editor"]
+    if args.debug:
+        # Under cdb, which prints the stack of a crash the engine's own handler
+        # misses (one at exit, say). The editor itself, not its console wrapper,
+        # which only starts it.
+        command = [CDB, "-g", "-G", "-lines", "-c", "sxd av; g; .echo CRASH_STACK; .ecxr; kn 40; q",
+                   editor.replace(".console.exe", ".exe"), "--path", project, "--editor"]
+    process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
     try:
         out, _ = process.communicate(timeout=args.timeout)
@@ -240,11 +307,13 @@ def main():
         return 3
     if not args.project:
         shutil.rmtree(project, ignore_errors=True)
+    crash = False
     for line in out.splitlines():
-        if args.all or line.startswith("SHOT") or "ERROR" in line:
+        crash = crash or "CRASH_STACK" in line
+        if args.all or line.startswith("SHOT") or "ERROR" in line or crash:
             print(line)
     ok = process.returncode == 0 and os.path.exists(output)
-    print("OK:" if ok else "FAILED:", output)
+    print("OK:" if ok else "FAILED (exit %d):" % process.returncode, output)
     return 0 if ok else 1
 
 
