@@ -1441,7 +1441,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 //
 // When this function returns a valid Address, the result of the expression is stored there. Otherwise, success (TAKEN) may fall-through.
 GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression_cond(CodeGen &codegen, Error &r_error, const GDScriptParser::ExpressionNode *p_expression) {
-	if (p_expression->is_constant && !(p_expression->type_constraint.is_meta_type && p_expression->type_constraint.kind == GDScriptParser::DataType::CLASS)) {
+	if (p_expression->is_constant && !(p_expression->get_datatype().is_meta_type && p_expression->get_datatype().kind == GDScriptParser::DataType::CLASS)) {
 		return codegen.add_constant(p_expression->reduced_value);
 	}
 

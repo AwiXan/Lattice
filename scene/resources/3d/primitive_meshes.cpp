@@ -134,8 +134,8 @@ void PrimitiveMesh::_update() const {
 
 	Dictionary lods;
 	if (generate_lods) {
-		// Use normal merge/split angles that match the defaults used for 3D scene importing.
-		importer_mesh->generate_lods(60.0f, 25.0f, {});
+		// Use the normal merge angle that matches the default used for 3D scene importing.
+		importer_mesh->generate_lods(60.0f, {});
 
 		for (int i = 0; i < importer_mesh->get_surface_lod_count(0); i++) {
 			lods[importer_mesh->get_surface_lod_size(0, i)] = importer_mesh->get_surface_lod_indices(0, i);
