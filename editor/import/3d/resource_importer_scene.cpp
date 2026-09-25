@@ -327,6 +327,15 @@ bool ResourceImporterScene::get_option_visibility(const String &p_path, const St
 	if (p_option == "nodes/use_node_type_suffixes" && p_options.has("nodes/use_name_suffixes")) {
 		return p_options["nodes/use_name_suffixes"];
 	}
+	if (p_option == "meshes/lods_from_names" || p_option.begins_with("meshes/lod_")) {
+		// Levels of detail swap nodes; a mesh library or a single mesh has none.
+		if (_scene_import_type == "MeshLibrary" || _scene_import_type == "ArrayMesh") {
+			return false;
+		}
+		if (p_option != "meshes/lods_from_names" && p_options.has("meshes/lods_from_names") && !bool(p_options["meshes/lods_from_names"])) {
+			return false;
+		}
+	}
 	if (p_option == "meshes/lightmap_texel_size" && int(p_options["meshes/light_baking"]) != 2) {
 		// Only display the lightmap texel size import option when using the Static Lightmaps light baking mode.
 		return false;
@@ -2646,6 +2655,11 @@ void ResourceImporterScene::get_import_options(const String &p_path, List<Import
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "meshes/ensure_tangents"), true));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "meshes/generate_lods"), true));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "meshes/create_shadow_meshes"), true));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "meshes/lods_from_names", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_UPDATE_ALL_IF_MODIFIED), true));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::PACKED_FLOAT32_ARRAY, "meshes/lod_distances", PROPERTY_HINT_TYPE_STRING, vformat("%d/%d:0,4096,0.01,or_greater,suffix:m", Variant::FLOAT, PROPERTY_HINT_RANGE)), PackedFloat32Array({ 20.0f, 50.0f, 100.0f })));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::FLOAT, "meshes/lod_cull_distance", PROPERTY_HINT_RANGE, "0,4096,0.01,or_greater,suffix:m"), 0.0));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::FLOAT, "meshes/lod_margin", PROPERTY_HINT_RANGE, "0,100,0.01,or_greater,suffix:m"), 1.0));
+	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "meshes/lod_fade"), false));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::INT, "meshes/light_baking", PROPERTY_HINT_ENUM, "Disabled,Static,Static Lightmaps,Dynamic", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_UPDATE_ALL_IF_MODIFIED), 1));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::FLOAT, "meshes/lightmap_texel_size", PROPERTY_HINT_RANGE, "0.001,100,0.001"), 0.2));
 	r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "meshes/force_disable_compression"), false));
@@ -2719,6 +2733,186 @@ Array ResourceImporterScene::_get_skinned_pose_transforms(ImporterMeshInstance3D
 	}
 
 	return skin_pose_transform_array;
+}
+
+// Levels of detail from node names: siblings named like "Tree_LOD0", "Tree_LOD1"
+// ("-lod1", " LOD1" too) become one object whose levels swap by camera distance
+// through visibility ranges, which every renderer supports.
+
+// "<base><separator>LOD<digits>", "lod" in any case.
+static bool _split_lod_level(const String &p_name, String &r_base, int &r_level) {
+	int digits = p_name.length();
+	while (digits > 0 && is_digit(p_name[digits - 1])) {
+		digits--;
+	}
+	// At least one base character, a separator and "lod" before the digits.
+	if (digits == p_name.length() || digits < 5 || p_name.substr(digits - 3, 3).to_lower() != "lod") {
+		return false;
+	}
+	const char32_t separator = p_name[digits - 4];
+	if (separator != '_' && separator != '-' && separator != ' ' && separator != '.') {
+		return false;
+	}
+	r_base = p_name.substr(0, digits - 4);
+	r_level = p_name.substr(digits).to_int();
+	return true;
+}
+
+// r_group names the object a level belongs to: Blender numbers a duplicate after
+// the whole name ("Tree_LOD1.001", the dot imported as "_"), and such a copy is an
+// object of its own.
+static bool _parse_lod_name(const String &p_name, String &r_group, int &r_level) {
+	if (_split_lod_level(p_name, r_group, r_level)) {
+		return true;
+	}
+	const int cut = p_name.rfind("_");
+	if (cut <= 0 || cut == p_name.length() - 1 || !p_name.substr(cut + 1).is_valid_int()) {
+		return false;
+	}
+	if (!_split_lod_level(p_name.substr(0, cut), r_group, r_level)) {
+		return false;
+	}
+	r_group += p_name.substr(cut);
+	return true;
+}
+
+static void _collect_importer_meshes(Node *p_node, LocalVector<ImporterMeshInstance3D *> &r_meshes) {
+	ImporterMeshInstance3D *mi = Object::cast_to<ImporterMeshInstance3D>(p_node);
+	if (mi) {
+		r_meshes.push_back(mi);
+	}
+	for (int i = 0; i < p_node->get_child_count(); i++) {
+		_collect_importer_meshes(p_node->get_child(i), r_meshes);
+	}
+}
+
+static Transform3D _transform_under(Node *p_node, Node *p_ancestor) {
+	Transform3D xform;
+	for (Node *n = p_node; n && n != p_ancestor; n = n->get_parent()) {
+		Node3D *n3d = Object::cast_to<Node3D>(n);
+		if (n3d) {
+			xform = n3d->get_transform() * xform;
+		}
+	}
+	return xform;
+}
+
+static bool _importer_mesh_aabb(const Ref<ImporterMesh> &p_mesh, AABB &r_aabb) {
+	bool found = false;
+	for (int s = 0; s < p_mesh->get_surface_count(); s++) {
+		const PackedVector3Array vertices = p_mesh->get_surface_arrays(s)[Mesh::ARRAY_VERTEX];
+		for (const Vector3 &v : vertices) {
+			if (found) {
+				r_aabb.expand_to(v);
+			} else {
+				r_aabb = AABB(v, Vector3());
+				found = true;
+			}
+		}
+	}
+	return found;
+}
+
+struct CustomLODSettings {
+	Vector<float> distances;
+	float cull_distance = 0.0;
+	float margin = 0.0;
+	bool fade = false;
+};
+
+struct CustomLODLevelSort {
+	bool operator()(const Pair<int, Node *> &p_a, const Pair<int, Node *> &p_b) const {
+		return p_a.first < p_b.first;
+	}
+};
+
+// A visibility range given per node in the Advanced Import Settings wins.
+static bool _has_own_visibility_range(Node *p_node, Node *p_root, const Dictionary &p_node_data) {
+	const String import_id = p_node->get_meta("import_id", "PATH:" + String(p_root->get_path_to(p_node)));
+	if (!p_node_data.has(import_id)) {
+		return false;
+	}
+	const Dictionary settings = p_node_data[import_id];
+	for (const Variant &key : settings.keys()) {
+		if (String(key).begins_with("mesh_instance/visibility_range")) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void _setup_custom_lods(Node *p_node, Node *p_root, const Dictionary &p_node_data, const CustomLODSettings &p_settings) {
+	HashMap<String, LocalVector<Pair<int, Node *>>> groups;
+	for (int i = 0; i < p_node->get_child_count(); i++) {
+		Node *child = p_node->get_child(i);
+		String group;
+		int level = 0;
+		if (Object::cast_to<Node3D>(child) && _parse_lod_name(child->get_name(), group, level)) {
+			groups[group.to_lower()].push_back(Pair<int, Node *>(level, child));
+		}
+	}
+
+	for (KeyValue<String, LocalVector<Pair<int, Node *>>> &E : groups) {
+		LocalVector<Pair<int, Node *>> &levels = E.value;
+		if (levels.size() < 2) {
+			continue;
+		}
+		levels.sort_custom<CustomLODLevelSort>();
+
+		// switches[k] is where level k gives way to level k + 1; past the given
+		// distances, each switch doubles the previous one.
+		LocalVector<float> switches;
+		float previous = 0.0;
+		for (uint32_t k = 0; k + 1 < levels.size(); k++) {
+			float distance = int(k) < p_settings.distances.size() ? p_settings.distances[k] : (previous > 0.0 ? previous * 2.0 : 10.0);
+			distance = MAX(distance, previous);
+			switches.push_back(distance);
+			previous = distance;
+		}
+
+		// Every mesh of the object measures its distance from one center, so that
+		// levels (and the parts of a level) switch together.
+		LocalVector<Pair<uint32_t, ImporterMeshInstance3D *>> meshes;
+		AABB bounds;
+		bool has_bounds = false;
+		for (uint32_t k = 0; k < levels.size(); k++) {
+			LocalVector<ImporterMeshInstance3D *> level_meshes;
+			_collect_importer_meshes(levels[k].second, level_meshes);
+			for (ImporterMeshInstance3D *mi : level_meshes) {
+				if (_has_own_visibility_range(mi, p_root, p_node_data)) {
+					continue;
+				}
+				meshes.push_back(Pair<uint32_t, ImporterMeshInstance3D *>(k, mi));
+				AABB aabb;
+				if (mi->get_mesh().is_valid() && _importer_mesh_aabb(mi->get_mesh(), aabb)) {
+					aabb = _transform_under(mi, p_node).xform(aabb);
+					bounds = has_bounds ? bounds.merge(aabb) : aabb;
+					has_bounds = true;
+				}
+			}
+		}
+
+		const uint32_t last = levels.size() - 1;
+		for (const Pair<uint32_t, ImporterMeshInstance3D *> &M : meshes) {
+			const uint32_t k = M.first;
+			ImporterMeshInstance3D *mi = M.second;
+			mi->set_visibility_range_begin(k == 0 ? 0.0 : switches[k - 1]);
+			mi->set_visibility_range_begin_margin(k == 0 ? 0.0 : p_settings.margin);
+			mi->set_visibility_range_end(k == last ? p_settings.cull_distance : switches[k]);
+			mi->set_visibility_range_end_margin(k == last && p_settings.cull_distance <= 0.0 ? 0.0 : p_settings.margin);
+			mi->set_visibility_range_fade_mode(p_settings.fade ? GeometryInstance3D::VISIBILITY_RANGE_FADE_SELF : GeometryInstance3D::VISIBILITY_RANGE_FADE_DISABLED);
+
+			// A skinned mesh moves out of any fixed box.
+			const Transform3D xform = _transform_under(mi, p_node);
+			if (has_bounds && mi->get_skin().is_null() && mi->get_skeleton_path().is_empty() && !Math::is_zero_approx(xform.basis.determinant())) {
+				mi->set_meta(SNAME("_import_lod_aabb"), xform.affine_inverse().xform(bounds));
+			}
+		}
+	}
+
+	for (int i = 0; i < p_node->get_child_count(); i++) {
+		_setup_custom_lods(p_node->get_child(i), p_root, p_node_data, p_settings);
+	}
 }
 
 Node *ResourceImporterScene::_generate_meshes(Node *p_node, const Dictionary &p_mesh_data, bool p_generate_lods, bool p_create_shadow_meshes, LightBakeMode p_light_bake_mode, float p_lightmap_texel_size, const Vector<uint8_t> &p_src_lightmap_cache, Vector<Vector<uint8_t>> &r_lightmap_caches) {
@@ -2905,6 +3099,10 @@ Node *ResourceImporterScene::_generate_meshes(Node *p_node, const Dictionary &p_
 		mesh_node->set_visibility_range_fade_mode(src_mesh_node->get_visibility_range_fade_mode());
 
 		_copy_meta(p_node, mesh_node);
+		if (mesh_node->has_meta(SNAME("_import_lod_aabb"))) {
+			mesh_node->set_custom_aabb(mesh_node->get_meta(SNAME("_import_lod_aabb")));
+			mesh_node->remove_meta(SNAME("_import_lod_aabb"));
+		}
 
 		p_node->replace_by(mesh_node);
 		p_node->set_owner(nullptr);
@@ -3337,6 +3535,17 @@ Error ResourceImporterScene::import(ResourceUID::ID p_source_id, const String &p
 	_pre_fix_animations(scene, scene, node_data, animation_data, fps);
 	_post_fix_node(scene, scene, collision_map, occluder_arrays, scanned_meshes, node_data, material_data, animation_data, fps, apply_root ? root_scale : 1.0, p_source_file, p_options);
 	_post_fix_animations(scene, scene, node_data, animation_data, fps, remove_immutable_tracks);
+
+	if (!p_options.has("meshes/lods_from_names") || bool(p_options["meshes/lods_from_names"])) {
+		CustomLODSettings lod_settings;
+		if (p_options.has("meshes/lod_distances")) {
+			lod_settings.distances = p_options["meshes/lod_distances"];
+		}
+		lod_settings.cull_distance = p_options.has("meshes/lod_cull_distance") ? float(p_options["meshes/lod_cull_distance"]) : 0.0f;
+		lod_settings.margin = p_options.has("meshes/lod_margin") ? float(p_options["meshes/lod_margin"]) : 1.0f;
+		lod_settings.fade = p_options.has("meshes/lod_fade") && bool(p_options["meshes/lod_fade"]);
+		_setup_custom_lods(scene, scene, node_data, lod_settings);
+	}
 
 	String root_type = p_options["nodes/root_type"];
 	Ref<Script> root_script = p_options["nodes/root_script"];
