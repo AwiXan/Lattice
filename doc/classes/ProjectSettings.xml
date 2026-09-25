@@ -3169,6 +3169,10 @@
 		<member name="rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality.mobile" type="int" setter="" getter="" default="0">
 			Lower-end override for [member rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality] on mobile devices, due to performance concerns or driver support.
 		</member>
+		<member name="rendering/lights_and_shadows/directional_shadow/tighter_draw_rect" type="bool" setter="" getter="" default="true">
+			If [code]true[/code], each [DirectionalLight3D] shadow cascade is drawn only over the bounding box of its part of the camera's view, rather than over the whole square around it, which saves GPU time. Set to [code]false[/code] to draw the whole square, as before this optimization, if shadows are missing at the edges of what a cascade covers.
+			[b]Note:[/b] This property is only read when the project starts.
+		</member>
 		<member name="rendering/lights_and_shadows/micro_shadows/enabled" type="bool" setter="" getter="" default="false">
 			If [code]false[/code], disable micro-shadowing globally for all [BaseMaterial3D] and [ShaderMaterial] instances.
 		</member>

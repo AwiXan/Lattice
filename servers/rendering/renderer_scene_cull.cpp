@@ -2254,7 +2254,7 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 			light_culler->prepare_directional_light_cascade(p_shadow_index, i, receiver_frustum_planes, frustum_corners_world);
 		}
 
-		constexpr bool USE_TIGHTER_DRAW_RECT = true;
+		const bool USE_TIGHTER_DRAW_RECT = directional_shadow_tighter_draw_rect;
 
 		// Compute bounding box of frustum as seen from within the shadowmap
 		Vector3 light_view_frustum_rect_min = light_transform.basis.xform_inv(frustum_corners_local[0]);
@@ -4597,6 +4597,8 @@ RendererSceneCull::RendererSceneCull() {
 	bool tighter_caster_culling = GLOBAL_DEF("rendering/lights_and_shadows/tighter_shadow_caster_culling", true);
 	light_culler->set_caster_culling_active(tighter_caster_culling);
 	light_culler->set_light_culling_active(tighter_caster_culling);
+
+	directional_shadow_tighter_draw_rect = GLOBAL_DEF("rendering/lights_and_shadows/directional_shadow/tighter_draw_rect", true);
 }
 
 RendererSceneCull::~RendererSceneCull() {
