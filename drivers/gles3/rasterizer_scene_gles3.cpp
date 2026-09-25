@@ -3678,7 +3678,10 @@ void RasterizerSceneGLES3::_render_list_template(RenderListParameters *p_params,
 							spec_constants |= SceneShaderGLES3::ADDITIVE_SPOT;
 						}
 
-						if (scene_state.positional_shadow_quality >= RSE::SHADOW_QUALITY_SOFT_HIGH) {
+						if (scene_state.positional_shadow_quality == RSE::SHADOW_QUALITY_SOFT_ULTRA) {
+							// PCF25 at Ultra: both modes.
+							spec_constants |= SceneShaderGLES3::SHADOW_MODE_PCF_5 | SceneShaderGLES3::SHADOW_MODE_PCF_13;
+						} else if (scene_state.positional_shadow_quality >= RSE::SHADOW_QUALITY_SOFT_HIGH) {
 							spec_constants |= SceneShaderGLES3::SHADOW_MODE_PCF_13;
 						} else if (scene_state.positional_shadow_quality >= RSE::SHADOW_QUALITY_SOFT_LOW) {
 							spec_constants |= SceneShaderGLES3::SHADOW_MODE_PCF_5;
@@ -3707,7 +3710,10 @@ void RasterizerSceneGLES3::_render_list_template(RenderListParameters *p_params,
 							spec_constants |= SceneShaderGLES3::LIGHT_USE_PSSM_BLEND;
 						}
 
-						if (scene_state.directional_shadow_quality >= RSE::SHADOW_QUALITY_SOFT_HIGH) {
+						if (scene_state.directional_shadow_quality == RSE::SHADOW_QUALITY_SOFT_ULTRA) {
+							// PCF25 at Ultra: both modes.
+							spec_constants |= SceneShaderGLES3::SHADOW_MODE_PCF_5 | SceneShaderGLES3::SHADOW_MODE_PCF_13;
+						} else if (scene_state.directional_shadow_quality >= RSE::SHADOW_QUALITY_SOFT_HIGH) {
 							spec_constants |= SceneShaderGLES3::SHADOW_MODE_PCF_13;
 						} else if (scene_state.directional_shadow_quality >= RSE::SHADOW_QUALITY_SOFT_LOW) {
 							spec_constants |= SceneShaderGLES3::SHADOW_MODE_PCF_5;
