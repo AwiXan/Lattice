@@ -74,6 +74,7 @@ class EditorDocumentInspector : public VBoxContainer {
 	void _build_toolbars();
 	bool _replace_in_toolbar(Node *p_original, Control *p_to);
 	void _resource_selected(const Ref<Resource> &p_resource, const String &p_property);
+	void _object_id_selected(ObjectID p_id);
 
 protected:
 	void _notification(int p_what);

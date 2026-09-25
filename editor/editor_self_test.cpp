@@ -775,6 +775,17 @@ void EditorSelfTest::_inspector_shows_again() {
 		panel->notification(NOTIFICATION_PROCESS);
 	}
 	_check(showing && panel->get_inspector()->get_edited_object() == node, "an Inspector panel that lost the selected node shows it again by itself");
+	// An object picked by its id in the panel - a sub-resource of an object in
+	// the running game - reaches whoever listens to the dock's inspector, which
+	// is how the debugger hears to fetch it.
+	heard_object_id = ObjectID();
+	const Callable heard = callable_mp(this, &EditorSelfTest::_heard_object_id);
+	InspectorDock::get_inspector_singleton()->connect("object_id_selected", heard);
+	if (panel) {
+		panel->get_inspector()->emit_signal(SNAME("object_id_selected"), inspector_node);
+	}
+	InspectorDock::get_inspector_singleton()->disconnect("object_id_selected", heard);
+	_check(inspector_node.is_valid() && heard_object_id == inspector_node, "an object picked by its id in an Inspector panel (a remote sub-resource) is passed on to be fetched");
 	// Left as it was found.
 	if (inspector_added && panel) {
 		EditorPane *pane = Object::cast_to<EditorPane>(panel->get_parent());
