@@ -5331,8 +5331,11 @@ void Node3DEditorViewport::_set_hovered(Node *p_node) {
 		const Vector3 nearest = eye.clamp(bounds.position, bounds.position + bounds.size);
 		const real_t distance = MAX((real_t)0.01, eye.distance_to(nearest));
 		const real_t per_pixel = camera->get_projection() == Camera3D::PROJECTION_ORTHOGONAL ? camera->get_size() / height : 2.0 * distance * Math::tan(Math::deg_to_rad(camera->get_fov()) * 0.5) / height;
-		// Grow is in the mesh's own units, before its scale.
-		const real_t scale = MAX((real_t)0.0001, (xform.basis.get_scale().x + xform.basis.get_scale().y + xform.basis.get_scale().z) / 3.0);
+		// Grow is in the mesh's own units, before its scale. The scale's size:
+		// get_scale() of a mirrored part (the other one of a pair) is negative,
+		// which made its ring ten thousand times too wide - shards all over.
+		const Vector3 scales = xform.basis.get_scale_abs();
+		const real_t scale = MAX((real_t)0.0001, (scales.x + scales.y + scales.z) / 3.0);
 		// Its own material: sharing one, every mesh got the last one's grow,
 		// and a part scaled down a hundred times ringed the rest a hundred
 		// times too wide - over the whole view.
