@@ -4598,7 +4598,7 @@ RendererSceneCull::RendererSceneCull() {
 	light_culler->set_caster_culling_active(tighter_caster_culling);
 	light_culler->set_light_culling_active(tighter_caster_culling);
 
-	directional_shadow_tighter_draw_rect = GLOBAL_DEF("rendering/lights_and_shadows/directional_shadow/tighter_draw_rect", true);
+	directional_shadow_tighter_draw_rect = GLOBAL_DEF("rendering/lights_and_shadows/directional_shadow/tighter_draw_rect", false);
 }
 
 RendererSceneCull::~RendererSceneCull() {

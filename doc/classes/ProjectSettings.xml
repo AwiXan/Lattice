@@ -3169,8 +3169,9 @@
 		<member name="rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality.mobile" type="int" setter="" getter="" default="0">
 			Lower-end override for [member rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality] on mobile devices, due to performance concerns or driver support.
 		</member>
-		<member name="rendering/lights_and_shadows/directional_shadow/tighter_draw_rect" type="bool" setter="" getter="" default="true">
-			If [code]true[/code], each [DirectionalLight3D] shadow cascade is drawn only over the bounding box of its part of the camera's view, rather than over the whole square around it, which saves GPU time. Set to [code]false[/code] to draw the whole square, as before this optimization, if shadows are missing at the edges of what a cascade covers.
+		<member name="rendering/lights_and_shadows/directional_shadow/tighter_draw_rect" type="bool" setter="" getter="" default="false">
+			If [code]true[/code], each [DirectionalLight3D] shadow cascade is drawn only over the bounding box of its part of the camera's view, rather than over the whole square around it, which saves GPU time.
+			[b]Warning:[/b] Experimental. The box leaves almost no margin, so shadow filtering and normal bias can read past its edge, where nothing was drawn, and let light through: seen as sunlight on objects near the camera in closed, dark rooms, worse at low shadow resolutions.
 			[b]Note:[/b] This property is only read when the project starts.
 		</member>
 		<member name="rendering/lights_and_shadows/micro_shadows/enabled" type="bool" setter="" getter="" default="false">

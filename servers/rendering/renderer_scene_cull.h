@@ -1037,7 +1037,7 @@ public:
 	RenderingLightCuller *light_culler = nullptr;
 	// Directional shadow cascades drawn over their part of the view's bounding
 	// box only (rendering/lights_and_shadows/directional_shadow/tighter_draw_rect).
-	bool directional_shadow_tighter_draw_rect = true;
+	bool directional_shadow_tighter_draw_rect = false;
 
 	virtual RID instance_allocate();
 	virtual void instance_initialize(RID p_rid);
