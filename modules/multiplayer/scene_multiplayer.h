@@ -32,6 +32,7 @@
 
 #include "scene_cache_interface.h"
 #include "scene_replication_interface.h"
+#include "multiplayer_profiler.h"
 #include "scene_rpc_interface.h"
 
 #include "scene/main/multiplayer_api.h"
@@ -126,12 +127,15 @@ private:
 	Ref<SceneCacheInterface> cache;
 	Ref<SceneReplicationInterface> replicator;
 	Ref<SceneRPCInterface> rpc;
+	// For the game itself to read; recording is a check while it is off.
+	Ref<MultiplayerProfiler> profiler;
 
 #ifdef DEBUG_ENABLED
 	_FORCE_INLINE_ void _profile_bandwidth(const String &p_what, int p_value);
 	_FORCE_INLINE_ Error _send(const uint8_t *p_packet, int p_packet_len); // Also profiles.
 #else
 	_FORCE_INLINE_ Error _send(const uint8_t *p_packet, int p_packet_len) {
+		profiler->record_packet(true, p_packet_len);
 		return multiplayer_peer->put_packet(p_packet, p_packet_len);
 	}
 #endif
@@ -153,6 +157,10 @@ public:
 	virtual Ref<MultiplayerPeer> get_multiplayer_peer() override;
 
 	virtual Error poll() override;
+
+	Ref<MultiplayerProfiler> get_profiler() const { return profiler; }
+	// For the interfaces' hot paths, without a reference to count.
+	_FORCE_INLINE_ MultiplayerProfiler *get_profiler_ptr() const { return profiler.ptr(); }
 	virtual int get_unique_id() override;
 	virtual Vector<int> get_peer_ids() override;
 	virtual int get_remote_sender_id() override { return remote_sender_override ? remote_sender_override : remote_sender_id; }

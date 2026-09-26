@@ -76,6 +76,9 @@
 		<member name="max_sync_packet_size" type="int" setter="set_max_sync_packet_size" getter="get_max_sync_packet_size" default="1350">
 			Maximum size of each synchronization packet. Higher values increase the chance of receiving full updates in a single frame, but also the chance of packet loss. See [MultiplayerSynchronizer].
 		</member>
+		<member name="profiler" type="MultiplayerProfiler" setter="" getter="get_profiler">
+			What this multiplayer sends and receives, for the project to read while it runs (off until enabled). See [MultiplayerProfiler].
+		</member>
 		<member name="refuse_new_connections" type="bool" setter="set_refuse_new_connections" getter="is_refusing_new_connections" default="false">
 			If [code]true[/code], the MultiplayerAPI's [member MultiplayerAPI.multiplayer_peer] refuses new incoming connections.
 		</member>

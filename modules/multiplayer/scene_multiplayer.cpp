@@ -92,6 +92,7 @@ Error SceneMultiplayer::poll() {
 #ifdef DEBUG_ENABLED
 		_profile_bandwidth("in", len);
 #endif
+		profiler->record_packet(false, len);
 
 		if (pending_peers.has(sender)) {
 			ERR_CONTINUE(len < 2 || (packet[0] & CMD_MASK) != NETWORK_COMMAND_SYS || packet[1] != SYS_COMMAND_AUTH);
@@ -253,6 +254,7 @@ void SceneMultiplayer::_process_packet(int p_from, const uint8_t *p_packet, int 
 #ifdef DEBUG_ENABLED
 _FORCE_INLINE_ Error SceneMultiplayer::_send(const uint8_t *p_packet, int p_packet_len) {
 	_profile_bandwidth("out", p_packet_len);
+	profiler->record_packet(true, p_packet_len);
 	return multiplayer_peer->put_packet(p_packet, p_packet_len);
 }
 #endif
@@ -652,6 +654,7 @@ void SceneMultiplayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_auth_timeout"), &SceneMultiplayer::get_auth_timeout);
 
 	ClassDB::bind_method(D_METHOD("set_refuse_new_connections", "refuse"), &SceneMultiplayer::set_refuse_new_connections);
+	ClassDB::bind_method(D_METHOD("get_profiler"), &SceneMultiplayer::get_profiler);
 	ClassDB::bind_method(D_METHOD("is_refusing_new_connections"), &SceneMultiplayer::is_refusing_new_connections);
 	ClassDB::bind_method(D_METHOD("set_allow_object_decoding", "enable"), &SceneMultiplayer::set_allow_object_decoding);
 	ClassDB::bind_method(D_METHOD("is_object_decoding_allowed"), &SceneMultiplayer::is_object_decoding_allowed);
@@ -669,6 +672,7 @@ void SceneMultiplayer::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "auth_timeout", PROPERTY_HINT_RANGE, "0,30,0.1,or_greater,suffix:s"), "set_auth_timeout", "get_auth_timeout");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "allow_object_decoding"), "set_allow_object_decoding", "is_object_decoding_allowed");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "refuse_new_connections"), "set_refuse_new_connections", "is_refusing_new_connections");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "profiler", PROPERTY_HINT_RESOURCE_TYPE, "MultiplayerProfiler", PROPERTY_USAGE_NONE), "", "get_profiler");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "server_relay"), "set_server_relay_enabled", "is_server_relay_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_sync_packet_size"), "set_max_sync_packet_size", "get_max_sync_packet_size");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_delta_packet_size"), "set_max_delta_packet_size", "get_max_delta_packet_size");
@@ -682,6 +686,7 @@ void SceneMultiplayer::_bind_methods() {
 
 SceneMultiplayer::SceneMultiplayer() {
 	relay_buffer.instantiate();
+	profiler.instantiate();
 	cache.instantiate(this);
 	replicator.instantiate(this, cache.ptr());
 	rpc.instantiate(this, cache.ptr(), replicator.ptr());

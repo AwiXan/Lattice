@@ -284,6 +284,7 @@ void SceneRPCInterface::_process_rpc(Node *p_node, const uint16_t p_rpc_method_i
 #ifdef DEBUG_ENABLED
 	_profile_node_data("rpc_in", p_node->get_instance_id(), p_packet_len);
 #endif
+	multiplayer->get_profiler_ptr()->record_node(MultiplayerProfiler::RPC_IN, p_node->get_instance_id(), p_packet_len);
 
 	int out;
 	MultiplayerAPI::decode_and_decompress_variants(args, &p_packet[p_offset], p_packet_len - p_offset, out, byte_only_or_no_args, multiplayer->is_object_decoding_allowed());
@@ -429,6 +430,7 @@ void SceneRPCInterface::_send_rpc(Node *p_node, int p_to, uint16_t p_rpc_id, con
 #ifdef DEBUG_ENABLED
 	_profile_node_data("rpc_out", p_node->get_instance_id(), ofs);
 #endif
+	multiplayer->get_profiler_ptr()->record_node(MultiplayerProfiler::RPC_OUT, p_node->get_instance_id(), ofs);
 
 	// We can now set the meta
 	packet_cache.write[0] = command_type + (node_id_compression << NODE_ID_COMPRESSION_SHIFT) + (name_id_compression << NAME_ID_COMPRESSION_SHIFT) + (byte_only_or_no_args ? BYTE_ONLY_OR_NO_ARGS_FLAG : 0);

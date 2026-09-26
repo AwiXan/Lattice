@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MultiplayerProfiler" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		What a [SceneMultiplayer] sends and receives, for the project to read while it runs.
+	</brief_description>
+	<description>
+		Counts the packets and bytes a [SceneMultiplayer] sends and receives, and for each node its RPCs and its [MultiplayerSynchronizer] updates, so the project can show or log its network use itself, in exported builds too. Unlike the editor's network profiler, it needs no debugger. Each [SceneMultiplayer] has one, as [member SceneMultiplayer.profiler]:
+		[codeblocks]
+		[gdscript]
+		func _ready():
+		    multiplayer.profiler.enabled = true
+
+		func _on_stats_timer_timeout():
+		    var data = multiplayer.profiler.get_data()
+		    $Stats.text = "In: %d B/s  Out: %d B/s" % [data.bytes_in, data.bytes_out]
+		[/gdscript]
+		[/codeblocks]
+		It is off until [member enabled] is set; while off, what it would count costs a single check, so it can stay in release builds and be switched on only when wanted.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_data">
+			<return type="Dictionary" />
+			<description>
+				Returns what was counted: for the last whole second, [code]packets_in[/code], [code]bytes_in[/code], [code]packets_out[/code] and [code]bytes_out[/code]; since [member enabled] was set (or [method reset] was called), the same with [code]total_[/code] in front ([code]total_bytes_in[/code], ...); and [code]nodes[/code], an [Array] with a [Dictionary] for each node that sent or received anything, holding [code]node[/code] (its [NodePath], empty once it has left the tree), [code]name[/code], and for each of [code]rpc_in[/code], [code]rpc_out[/code], [code]sync_in[/code], [code]sync_out[/code], [code]delta_in[/code] and [code]delta_out[/code], the count and [code]_bytes[/code] for the last second and the same with [code]total_[/code] in front.
+				Byte counts are those of the packets as sent, headers of the [MultiplayerPeer] itself not included. Freed nodes with nothing left to report are dropped.
+			</description>
+		</method>
+		<method name="reset">
+			<return type="void" />
+			<description>
+				Forgets everything counted so far.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="enabled" type="bool" setter="set_enabled" getter="is_enabled" default="false">
+			If [code]true[/code], traffic is counted. Switching it on starts from nothing.
+		</member>
+	</members>
+</class>

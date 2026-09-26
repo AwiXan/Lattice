@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  register_types.cpp                                                    */
+/*  multiplayer_profiler.h                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,43 +28,89 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "register_types.h"
+#pragma once
 
-#include "multiplayer_debugger.h"
-#include "multiplayer_spawner.h"
-#include "multiplayer_synchronizer.h"
-#include "scene_multiplayer.h"
-#include "scene_replication_interface.h"
-#include "scene_rpc_interface.h"
+#include "core/object/ref_counted.h"
+#include "core/templates/hash_map.h"
+#include "core/variant/dictionary.h"
 
-#include "core/object/class_db.h"
+// What a SceneMultiplayer sends and receives, for the game itself to read while
+// it runs, release builds included: packets and bytes, and per node its RPCs
+// and replication. Off until enabled; off, recording costs one check.
+class MultiplayerProfiler : public RefCounted {
+	GDCLASS(MultiplayerProfiler, RefCounted);
 
-#ifdef TOOLS_ENABLED
-#include "editor/multiplayer_editor_plugin.h"
-#endif
+public:
+	enum NodeTraffic {
+		RPC_IN,
+		RPC_OUT,
+		SYNC_IN,
+		SYNC_OUT,
+		DELTA_IN,
+		DELTA_OUT,
+		TRAFFIC_MAX
+	};
 
-void initialize_multiplayer_module(ModuleInitializationLevel p_level) {
-	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
-		GDREGISTER_CLASS(SceneReplicationConfig);
-		GDREGISTER_CLASS(MultiplayerSpawner);
-		GDREGISTER_CLASS(MultiplayerSynchronizer);
-		GDREGISTER_CLASS(OfflineMultiplayerPeer);
-		GDREGISTER_CLASS(SceneMultiplayer);
-		GDREGISTER_CLASS(MultiplayerProfiler);
-		if constexpr (GD_IS_CLASS_ENABLED(MultiplayerAPI)) {
-			MultiplayerAPI::set_default_interface("SceneMultiplayer");
-			MultiplayerDebugger::initialize();
+private:
+	struct Counts {
+		uint64_t count = 0;
+		uint64_t bytes = 0;
+
+		void add(int p_bytes) {
+			count++;
+			bytes += p_bytes;
+		}
+	};
+
+	// Per second: the one going on, and the last whole one, which is what is
+	// reported.
+	struct Traffic {
+		Counts total;
+		Counts current;
+		Counts last;
+
+		void add(int p_bytes) {
+			total.add(p_bytes);
+			current.add(p_bytes);
+		}
+		void roll(bool p_skipped) {
+			last = p_skipped ? Counts() : current;
+			current = Counts();
+		}
+	};
+
+	bool enabled = false;
+	uint64_t second_start = 0;
+	Traffic packets_in;
+	Traffic packets_out;
+	struct PerNode {
+		Traffic traffic[TRAFFIC_MAX];
+	};
+	HashMap<ObjectID, PerNode> nodes;
+
+	void _roll(uint64_t p_now);
+	void _record_packet(bool p_out, int p_bytes);
+	void _record_node(NodeTraffic p_what, ObjectID p_node, int p_bytes);
+
+protected:
+	static void _bind_methods();
+
+public:
+	void set_enabled(bool p_enabled);
+	bool is_enabled() const { return enabled; }
+
+	// A check while off, so a game that never turns it on pays next to nothing.
+	_FORCE_INLINE_ void record_packet(bool p_out, int p_bytes) {
+		if (enabled) {
+			_record_packet(p_out, p_bytes);
 		}
 	}
-#ifdef TOOLS_ENABLED
-	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
-		EditorPlugins::add_by_type<MultiplayerEditorPlugin>();
+	_FORCE_INLINE_ void record_node(NodeTraffic p_what, ObjectID p_node, int p_bytes) {
+		if (enabled) {
+			_record_node(p_what, p_node, p_bytes);
+		}
 	}
-#endif
-}
 
-void uninitialize_multiplayer_module(ModuleInitializationLevel p_level) {
-	if constexpr (GD_IS_CLASS_ENABLED(MultiplayerAPI)) {
-		MultiplayerDebugger::deinitialize();
-	}
-}
+	Dictionary get_data();
+	void reset();
+};

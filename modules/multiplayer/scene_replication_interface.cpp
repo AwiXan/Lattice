@@ -761,6 +761,7 @@ void SceneReplicationInterface::_send_delta(int p_peer, const HashSet<ObjectID> 
 #ifdef DEBUG_ENABLED
 		_profile_node_data("delta_out", oid, size);
 #endif
+		multiplayer->get_profiler_ptr()->record_node(MultiplayerProfiler::DELTA_OUT, oid, size);
 		peers_info[p_peer].last_watch_usecs[oid] = p_usec;
 	}
 	if (ofs > 1) {
@@ -800,6 +801,7 @@ Error SceneReplicationInterface::on_delta_receive(int p_from, const uint8_t *p_b
 #ifdef DEBUG_ENABLED
 		_profile_node_data("delta_in", sync->get_instance_id(), size);
 #endif
+		multiplayer->get_profiler_ptr()->record_node(MultiplayerProfiler::DELTA_IN, sync->get_instance_id(), size);
 	}
 	return OK;
 }
@@ -850,6 +852,7 @@ void SceneReplicationInterface::_send_sync(int p_peer, const HashSet<ObjectID> &
 #ifdef DEBUG_ENABLED
 		_profile_node_data("sync_out", oid, size);
 #endif
+		multiplayer->get_profiler_ptr()->record_node(MultiplayerProfiler::SYNC_OUT, oid, size);
 	}
 	if (ofs > 3) {
 		// Got some left over to send.
@@ -901,6 +904,7 @@ Error SceneReplicationInterface::on_sync_receive(int p_from, const uint8_t *p_bu
 #ifdef DEBUG_ENABLED
 		_profile_node_data("sync_in", sync->get_instance_id(), size);
 #endif
+		multiplayer->get_profiler_ptr()->record_node(MultiplayerProfiler::SYNC_IN, sync->get_instance_id(), size);
 	}
 	return OK;
 }
