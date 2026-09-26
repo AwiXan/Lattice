@@ -1011,6 +1011,12 @@ int OS_Unix::get_process_id() const {
 	return getpid();
 }
 
+bool OS_Unix::process_exists(const ProcessID &p_pid) const {
+	// Signal 0 sends nothing, only checks; a process one may not signal is
+	// there all the same.
+	return kill(p_pid, 0) == 0 || errno == EPERM;
+}
+
 bool OS_Unix::is_process_running(const ProcessID &p_pid) const {
 	MutexLock lock(process_map_mutex);
 	return _check_pid_is_running(p_pid, nullptr);

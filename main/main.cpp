@@ -4579,6 +4579,8 @@ int Main::start() {
 
 		if (!project_manager && !editor) { // game
 			if (!game_path.is_empty() || !script.is_empty()) {
+				// Before any autoload: they may want OS.get_crash_log().
+				OS::get_singleton()->crash_report_begin_session();
 				//autoload
 				OS::get_singleton()->benchmark_begin_measure("Startup", "Load Autoloads");
 				HashMap<StringName, ProjectSettings::AutoloadInfo> autoloads(ProjectSettings::get_singleton()->get_autoload_list());
@@ -5300,6 +5302,11 @@ void Main::force_redraw() {
  * The order matters as some of those steps are linked with each other.
  */
 void Main::cleanup(bool p_force) {
+	// Quit normally: nothing for the next session to report.
+	if (OS::get_singleton()) {
+		OS::get_singleton()->crash_report_end_session();
+	}
+
 	Thread::make_main_thread();
 
 	GodotProfileZone("cleanup");

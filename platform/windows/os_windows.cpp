@@ -1626,6 +1626,32 @@ int OS_Windows::get_process_id() const {
 	return _getpid();
 }
 
+bool OS_Windows::process_exists(const ProcessID &p_pid) const {
+	HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)p_pid);
+	if (!process) {
+		// One that may not be looked at is there all the same.
+		return GetLastError() == ERROR_ACCESS_DENIED;
+	}
+	DWORD exit_code = 0;
+	const bool running = GetExitCodeProcess(process, &exit_code) && exit_code == STILL_ACTIVE;
+	CloseHandle(process);
+	return running;
+}
+
+uint64_t OS_Windows::get_process_start_time(const ProcessID &p_pid) const {
+	HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)p_pid);
+	if (!process) {
+		return 0;
+	}
+	FILETIME created, exited, kernel, user;
+	uint64_t start = 0;
+	if (GetProcessTimes(process, &created, &exited, &kernel, &user)) {
+		start = (uint64_t(created.dwHighDateTime) << 32) | created.dwLowDateTime;
+	}
+	CloseHandle(process);
+	return start;
+}
+
 bool OS_Windows::is_process_running(const ProcessID &p_pid) const {
 	MutexLock lock(process_map_mutex);
 	if (!process_map->has(p_pid)) {
@@ -2346,10 +2372,13 @@ void OS_Windows::run() {
 
 	main_loop->initialize();
 
-	// The editor, frozen, says where.
-	const bool watched = Engine::get_singleton()->is_editor_hint() && !crash_handler.is_disabled();
+	// The editor, frozen, says where; a game keeps where it froze for
+	// OS.get_crash_log(), in case it never goes on.
+	const bool editor = Engine::get_singleton()->is_editor_hint();
+	const double game_freeze_seconds = editor ? 0.0 : double(GLOBAL_GET("debug/settings/crash_handler/freeze_report_seconds"));
+	const bool watched = !crash_handler.is_disabled() && (editor || game_freeze_seconds > 0.0);
 	if (watched) {
-		crash_handler.start_stall_watchdog();
+		crash_handler.start_stall_watchdog(editor ? 5000 : uint64_t(game_freeze_seconds * 1000.0), !editor);
 	}
 
 	while (true) {

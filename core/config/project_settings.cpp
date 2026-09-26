@@ -1798,6 +1798,9 @@ ProjectSettings::ProjectSettings() {
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "compression/formats/zlib/compression_level", PROPERTY_HINT_RANGE, "-1,9,1"), Compression::zlib_level);
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "compression/formats/gzip/compression_level", PROPERTY_HINT_RANGE, "-1,9,1"), Compression::gzip_level);
 
+	// How long a game's main loop may stand still before where it is stuck is
+	// kept for OS.get_crash_log(), in case it never goes on; 0 turns it off.
+	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "debug/settings/crash_handler/freeze_report_seconds", PROPERTY_HINT_RANGE, "0,120,0.5,suffix:s"), 5.0);
 	GLOBAL_DEF("debug/settings/crash_handler/message",
 			String("Please include this when reporting the bug to the project developer."));
 	GLOBAL_DEF("debug/settings/crash_handler/message.editor",

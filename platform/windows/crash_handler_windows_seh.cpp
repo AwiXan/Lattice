@@ -120,6 +120,15 @@ public:
 	}
 };
 
+// What a crash says, gathered as it is printed, for OS.get_crash_log() in
+// the next session.
+static String crash_report_text;
+
+static void _crash_print(const String &p_line) {
+	print_error(p_line);
+	crash_report_text += p_line + "\n";
+}
+
 DWORD CrashHandlerException(EXCEPTION_POINTERS *ep) {
 	HANDLE process = GetCurrentProcess();
 	HANDLE hThread = GetCurrentThread();
@@ -147,16 +156,16 @@ DWORD CrashHandlerException(EXCEPTION_POINTERS *ep) {
 		OS::get_singleton()->get_main_loop()->notification(MainLoop::NOTIFICATION_CRASH);
 	}
 
-	print_error("\n================================================================");
-	print_error(vformat("%s: Program crashed", __FUNCTION__));
+	_crash_print("\n================================================================");
+	_crash_print(vformat("%s: Program crashed", __FUNCTION__));
 
 	// Print the engine version just before, so that people are reminded to include the version in backtrace reports.
 	if (String(GODOT_VERSION_HASH).is_empty()) {
-		print_error(vformat("Engine version: %s", GODOT_VERSION_FULL_NAME));
+		_crash_print(vformat("Engine version: %s", GODOT_VERSION_FULL_NAME));
 	} else {
-		print_error(vformat("Engine version: %s (%s)", GODOT_VERSION_FULL_NAME, GODOT_VERSION_HASH));
+		_crash_print(vformat("Engine version: %s (%s)", GODOT_VERSION_FULL_NAME, GODOT_VERSION_HASH));
 	}
-	print_error(vformat("Dumping the backtrace. %s", msg));
+	_crash_print(vformat("Dumping the backtrace. %s", msg));
 
 	// Load the symbols - unless the stall watchdog has already.
 	if (!stall_symbols_ready && !SymInitialize(process, nullptr, false)) {
@@ -170,7 +179,7 @@ DWORD CrashHandlerException(EXCEPTION_POINTERS *ep) {
 	std::transform(module_handles.begin(), module_handles.end(), std::back_inserter(modules), get_mod_info(process));
 	void *base = modules[0].base_address;
 
-	print_error(vformat("Load address: %x\n", (uint64_t)base));
+	_crash_print(vformat("Load address: %x\n", (uint64_t)base));
 
 	// Setup stuff:
 	CONTEXT *context = ep->ContextRecord;
@@ -232,11 +241,11 @@ DWORD CrashHandlerException(EXCEPTION_POINTERS *ep) {
 					}
 				}
 				if (SymGetLineFromAddr64(process, frame.AddrPC.Offset, &offset_from_symbol, &line)) {
-					print_error(vformat("[%d] %x (%s+%x) - %s (%s:%d)", n, (uint64_t)frame.AddrPC.Offset, mod_name, (uint64_t)frame.AddrPC.Offset - offset, fnName.c_str(), (char *)line.FileName, (int)line.LineNumber));
+					_crash_print(vformat("[%d] %x (%s+%x) - %s (%s:%d)", n, (uint64_t)frame.AddrPC.Offset, mod_name, (uint64_t)frame.AddrPC.Offset - offset, fnName.c_str(), (char *)line.FileName, (int)line.LineNumber));
 				} else if (!fnName.empty()) {
-					print_error(vformat("[%d] %x (%s+%x) - %s", n, (uint64_t)frame.AddrPC.Offset, mod_name, (uint64_t)frame.AddrPC.Offset - offset, fnName.c_str()));
+					_crash_print(vformat("[%d] %x (%s+%x) - %s", n, (uint64_t)frame.AddrPC.Offset, mod_name, (uint64_t)frame.AddrPC.Offset - offset, fnName.c_str()));
 				} else {
-					print_error(vformat("[%d] %x (%s+%x) - ???", n, (uint64_t)frame.AddrPC.Offset, mod_name, (uint64_t)frame.AddrPC.Offset - offset));
+					_crash_print(vformat("[%d] %x (%s+%x) - ???", n, (uint64_t)frame.AddrPC.Offset, mod_name, (uint64_t)frame.AddrPC.Offset - offset));
 				}
 			}
 
@@ -248,18 +257,21 @@ DWORD CrashHandlerException(EXCEPTION_POINTERS *ep) {
 		}
 	} while (frame.AddrReturn.Offset != 0 && n < 256);
 
-	print_error("-- END OF C++ BACKTRACE --");
-	print_error("================================================================");
+	_crash_print("-- END OF C++ BACKTRACE --");
+	_crash_print("================================================================");
 
 	SymCleanup(process);
 
 	for (const Ref<ScriptBacktrace> &backtrace : ScriptServer::capture_script_backtraces(false)) {
 		if (!backtrace->is_empty()) {
-			print_error(backtrace->format());
-			print_error(vformat("-- END OF %s BACKTRACE --", backtrace->get_language_name().to_upper()));
-			print_error("================================================================");
+			_crash_print(backtrace->format());
+			_crash_print(vformat("-- END OF %s BACKTRACE --", backtrace->get_language_name().to_upper()));
+			_crash_print("================================================================");
 		}
 	}
+
+	// For OS.get_crash_log() in the next session.
+	OS::get_singleton()->write_crash_report(crash_report_text);
 
 	// Pass the exception to the OS
 	return EXCEPTION_CONTINUE_SEARCH;
@@ -285,6 +297,8 @@ static constexpr int STALL_MAX_FRAMES = 64;
 static SafeFlag stall_watchdog_running;
 static Thread stall_watchdog_thread;
 static HANDLE stall_main_thread = nullptr;
+static uint64_t stall_first_msec = STALL_FIRST_MSEC;
+static bool stall_quiet = false;
 
 static int _capture_stalled_stack(HANDLE p_thread, DWORD64 *r_frames) {
 #if defined(_M_X64)
@@ -396,11 +410,22 @@ static void _print_stalled_stack(uint64_t p_msec) {
 		}
 	}
 
-	print_error("\n================================================================");
-	print_error(vformat("Lattice: the editor has not gone round its main loop for %d s. Its main thread is here:", int(p_msec / 1000)));
+	String report;
+	auto out = [&report](const String &p_line) {
+		if (!stall_quiet) {
+			print_error(p_line);
+		}
+		report += p_line + "\n";
+	};
+	out("\n================================================================");
+	if (stall_quiet) {
+		out(vformat("The game froze: its main loop had not gone round for %d s. Its main thread was here:", int(p_msec / 1000)));
+	} else {
+		out(vformat("Lattice: the editor has not gone round its main loop for %d s. Its main thread is here:", int(p_msec / 1000)));
+	}
 	const char *likely = _stall_likely_cause(process, frames, names);
 	if (likely) {
-		print_error(likely);
+		out(likely);
 	}
 	IMAGEHLP_LINE64 line;
 	memset(&line, 0, sizeof(line));
@@ -408,13 +433,15 @@ static void _print_stalled_stack(uint64_t p_msec) {
 	for (int i = 0; i < count; i++) {
 		DWORD offset_from_symbol = 0;
 		if (SymGetLineFromAddr64(process, frames[i], &offset_from_symbol, &line)) {
-			print_error(vformat("[%d] %s (%s:%d)", i, names[i].c_str(), String((const char *)line.FileName).get_file(), (int)line.LineNumber));
+			out(vformat("[%d] %s (%s:%d)", i, names[i].c_str(), String((const char *)line.FileName).get_file(), (int)line.LineNumber));
 		} else {
-			print_error(vformat("[%d] %s", i, names[i].c_str()));
+			out(vformat("[%d] %s", i, names[i].c_str()));
 		}
 	}
-	print_error("-- END OF THE STALLED MAIN THREAD --");
-	print_error("================================================================");
+	out("-- END OF THE STALLED MAIN THREAD --");
+	out("================================================================");
+	// Kept in case it never goes on; a game clears it when it does.
+	OS::get_singleton()->write_crash_report(report);
 }
 
 static void _stall_watchdog(void *p_userdata) {
@@ -426,23 +453,29 @@ static void _stall_watchdog(void *p_userdata) {
 		const uint64_t frame = Engine::get_singleton()->get_process_frames();
 		const uint64_t now = OS::get_singleton()->get_ticks_msec();
 		if (frame != last_frame) {
+			if (reported > 0 && stall_quiet) {
+				// A game that went on after all: not a freeze to report.
+				OS::get_singleton()->clear_crash_report();
+			}
 			last_frame = frame;
 			since = now;
 			reported = 0;
 			continue;
 		}
 		const uint64_t stalled = now - since;
-		if ((reported == 0 && stalled >= STALL_FIRST_MSEC) || (reported == 1 && stalled >= STALL_AGAIN_MSEC)) {
+		if ((reported == 0 && stalled >= stall_first_msec) || (reported == 1 && stalled >= MAX(STALL_AGAIN_MSEC, stall_first_msec * 2))) {
 			reported++;
 			_print_stalled_stack(stalled);
 		}
 	}
 }
 
-void CrashHandler::start_stall_watchdog() {
+void CrashHandler::start_stall_watchdog(uint64_t p_after_msec, bool p_quiet) {
 	if (stall_watchdog_running.is_set()) {
 		return;
 	}
+	stall_first_msec = MAX((uint64_t)500, p_after_msec);
+	stall_quiet = p_quiet;
 	// Called on the main thread, which is the one watched.
 	stall_main_thread = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, GetCurrentThreadId());
 	if (!stall_main_thread) {
@@ -462,7 +495,7 @@ void CrashHandler::stop_stall_watchdog() {
 	stall_main_thread = nullptr;
 }
 #else
-void CrashHandler::start_stall_watchdog() {
+void CrashHandler::start_stall_watchdog(uint64_t p_after_msec, bool p_quiet) {
 }
 
 void CrashHandler::stop_stall_watchdog() {

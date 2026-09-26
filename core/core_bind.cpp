@@ -475,6 +475,10 @@ int OS::get_process_exit_code(int p_pid) const {
 	return ::OS::get_singleton()->get_process_exit_code(p_pid);
 }
 
+String OS::get_crash_log() const {
+	return ::OS::get_singleton()->get_crash_log();
+}
+
 int OS::get_process_id() const {
 	return ::OS::get_singleton()->get_process_id();
 }
@@ -796,6 +800,7 @@ void OS::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_process_running", "pid"), &OS::is_process_running);
 	ClassDB::bind_method(D_METHOD("get_process_exit_code", "pid"), &OS::get_process_exit_code);
 	ClassDB::bind_method(D_METHOD("get_process_id"), &OS::get_process_id);
+	ClassDB::bind_method(D_METHOD("get_crash_log"), &OS::get_crash_log);
 
 	ClassDB::bind_method(D_METHOD("has_environment", "variable"), &OS::has_environment);
 	ClassDB::bind_method(D_METHOD("get_environment", "variable"), &OS::get_environment);

@@ -206,6 +206,8 @@ public:
 	virtual Error kill(const ProcessID &p_pid) override;
 	virtual int get_process_id() const override;
 	virtual bool is_process_running(const ProcessID &p_pid) const override;
+	virtual bool process_exists(const ProcessID &p_pid) const override;
+	virtual uint64_t get_process_start_time(const ProcessID &p_pid) const override;
 	virtual int get_process_exit_code(const ProcessID &p_pid) const override;
 
 	virtual bool has_environment(const String &p_var) const override;

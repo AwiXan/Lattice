@@ -691,6 +691,10 @@
 		<member name="debug/gdscript/warnings/unused_variable" type="int" setter="" getter="" default="1">
 			When set to [b]Warn[/b] or [b]Error[/b], produces a warning or an error respectively when a local variable is unused.
 		</member>
+		<member name="debug/settings/crash_handler/freeze_report_seconds" type="float" setter="" getter="" default="5.0">
+			How long, in seconds, the project's main loop may stand still before where its main thread is stuck is kept for [method OS.get_crash_log], in case the project never goes on and is stopped. Nothing is printed, and the report is dropped as soon as the main loop goes round again. [code]0.0[/code] turns this off.
+			[b]Note:[/b] Only on Windows. This property is only read when the project starts.
+		</member>
 		<member name="debug/settings/crash_handler/message" type="String" setter="" getter="" default="&quot;Please include this when reporting the bug to the project developer.&quot;">
 			Message to be displayed before the backtrace when the engine crashes. By default, this message is only used in exported projects due to the editor-only override applied to this setting.
 		</member>

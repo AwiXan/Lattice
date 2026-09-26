@@ -76,6 +76,11 @@ public:
 
 private:
 	static OS *singleton;
+	// The previous session's report, read when this one began, and where
+	// this session keeps its marker and report.
+	String crash_log;
+	String crash_session_marker;
+	String crash_report_path;
 	static uint64_t target_ticks;
 	String _execpath;
 	List<String> _cmdline;
@@ -219,7 +224,24 @@ public:
 	virtual Error open_with_program(const String &p_program_path, const List<String> &p_paths) { return create_process(p_program_path, p_paths); }
 	virtual Error kill(const ProcessID &p_pid) = 0;
 	virtual int get_process_id() const;
+
+	// A game's crash and freeze reports (see get_crash_log()). The session
+	// begins when a game starts running and ends when it quits normally; a
+	// session that never ended is what the next one reports.
+	void crash_report_begin_session();
+	void crash_report_end_session();
+	// This session's report, for the next one to find if this one never
+	// ends: written by the crash handler, and by the freeze watchdog.
+	void write_crash_report(const String &p_text);
+	void clear_crash_report();
+	String get_crash_log() const { return crash_log; }
 	virtual bool is_process_running(const ProcessID &p_pid) const = 0;
+	// Any process at all, not only one started with create_process(): for
+	// telling whether another instance that left a file behind still runs.
+	virtual bool process_exists(const ProcessID &p_pid) const { return is_process_running(p_pid); }
+	// When a process started, in the system's own units; 0 if not known. A
+	// PID is given out again once its process has ended.
+	virtual uint64_t get_process_start_time(const ProcessID &p_pid) const { return 0; }
 	virtual int get_process_exit_code(const ProcessID &p_pid) const = 0;
 	virtual void vibrate_handheld(int p_duration_ms = 500, float p_amplitude = -1.0) {}
 

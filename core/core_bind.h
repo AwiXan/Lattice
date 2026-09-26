@@ -229,6 +229,7 @@ public:
 	bool is_process_running(int p_pid) const;
 	int get_process_exit_code(int p_pid) const;
 	int get_process_id() const;
+	String get_crash_log() const;
 
 	void set_restart_on_exit(bool p_restart, const Vector<String> &p_restart_arguments = Vector<String>());
 	bool is_restart_on_exit_set() const;

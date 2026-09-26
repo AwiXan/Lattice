@@ -182,6 +182,90 @@ String OS::get_executable_path() const {
 	return _execpath;
 }
 
+void OS::crash_report_begin_session() {
+	const String dir = get_user_data_dir().path_join("logs");
+	if (DirAccess::make_dir_recursive_absolute(dir) != OK) {
+		return;
+	}
+
+	// Sessions that left their marker behind and are not running any more
+	// ended without closing: the newest one is reported.
+	Ref<DirAccess> da = DirAccess::open(dir);
+	if (da.is_valid()) {
+		uint64_t newest = 0;
+		da->list_dir_begin();
+		for (String file = da->get_next(); !file.is_empty(); file = da->get_next()) {
+			if (da->current_is_dir() || !file.begins_with("session_") || !file.ends_with(".running")) {
+				continue;
+			}
+			const int pid = file.trim_prefix("session_").trim_suffix(".running").to_int();
+			const String marker = dir.path_join(file);
+			// The marker says when its process started: the PID may have been
+			// given to another process since.
+			const uint64_t started = FileAccess::get_file_as_string(marker).strip_edges().to_int();
+			if (pid <= 0 || pid == get_process_id() || (process_exists(pid) && (started == 0 || get_process_start_time(pid) == started))) {
+				// Another instance, still going.
+				continue;
+			}
+			const String report = dir.path_join(vformat("crash_%d.txt", pid));
+			const uint64_t when = FileAccess::get_modified_time(marker);
+			String text;
+			if (FileAccess::exists(report)) {
+				text = FileAccess::get_file_as_string(report);
+			}
+			if (text.strip_edges().is_empty()) {
+				text = "The last session ended without closing: it was stopped (killed) or the computer stopped, with no crash to report.";
+			}
+			if (when >= newest) {
+				newest = when;
+				crash_log = text;
+			}
+			DirAccess::remove_absolute(marker);
+			if (FileAccess::exists(report)) {
+				DirAccess::remove_absolute(report);
+			}
+		}
+		da->list_dir_end();
+	}
+
+	crash_session_marker = dir.path_join(vformat("session_%d.running", get_process_id()));
+	crash_report_path = dir.path_join(vformat("crash_%d.txt", get_process_id()));
+	Ref<FileAccess> f = FileAccess::open(crash_session_marker, FileAccess::WRITE);
+	if (f.is_valid()) {
+		f->store_string(itos(int64_t(get_process_start_time(get_process_id()))));
+	} else {
+		crash_session_marker = String();
+	}
+}
+
+void OS::crash_report_end_session() {
+	if (!crash_report_path.is_empty() && FileAccess::exists(crash_report_path)) {
+		DirAccess::remove_absolute(crash_report_path);
+	}
+	if (!crash_session_marker.is_empty()) {
+		DirAccess::remove_absolute(crash_session_marker);
+	}
+	crash_report_path = String();
+	crash_session_marker = String();
+}
+
+void OS::write_crash_report(const String &p_text) {
+	if (crash_report_path.is_empty()) {
+		return;
+	}
+	Ref<FileAccess> f = FileAccess::open(crash_report_path, FileAccess::WRITE);
+	if (f.is_valid()) {
+		f->store_string(p_text);
+		f->flush();
+	}
+}
+
+void OS::clear_crash_report() {
+	if (!crash_report_path.is_empty() && FileAccess::exists(crash_report_path)) {
+		DirAccess::remove_absolute(crash_report_path);
+	}
+}
+
 int OS::get_process_id() const {
 	return -1;
 }

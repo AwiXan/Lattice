@@ -32,6 +32,8 @@
 
 #include <windows.h>
 
+#include <cstdint>
+
 // Crash handler exception only enabled with MSVC
 #if defined(DEBUG_ENABLED)
 #define CRASH_HANDLER_EXCEPTION 1
@@ -51,7 +53,9 @@ public:
 	// For the editor: should its main loop stop going round for seconds on
 	// end, the main thread's stack goes to the log, which the crash report of
 	// the next start shows. See crash_handler_windows_seh.cpp.
-	void start_stall_watchdog();
+	// p_quiet (a game): nothing printed, where it is stuck only kept for
+	// OS.get_crash_log() until it goes on again.
+	void start_stall_watchdog(uint64_t p_after_msec = 5000, bool p_quiet = false);
 	void stop_stall_watchdog();
 
 	void disable();

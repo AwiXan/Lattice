@@ -261,6 +261,22 @@
 				[b]Note:[/b] On the Web platform, using MIDI input requires a browser permission to be granted first. This permission request is performed when calling [method open_midi_inputs]. The browser will refrain from processing MIDI input until the user accepts the permission request.
 			</description>
 		</method>
+		<method name="get_crash_log" qualifiers="const">
+			<return type="String" />
+			<description>
+				If the previous run of the project did not close normally, returns what is known about how it ended: the crash's backtrace (C++ and script) when it crashed, where its main thread was stuck when it froze for longer than [member ProjectSettings.debug/settings/crash_handler/freeze_report_seconds] and was then stopped, or a line saying it ended without closing when it was killed with no crash to report. Returns an empty string if it closed normally, or on its first run. Only plain text is returned, so the project can show it, or send it, in its own way:
+				[codeblocks]
+				[gdscript]
+				func _ready():
+				    var report = OS.get_crash_log()
+				    if not report.is_empty():
+				        $CrashDialog.show_report(report)
+				[/gdscript]
+				[/codeblocks]
+				Runs of the project are told apart by process ID, so several instances running at once (testing multiplayer, say) do not report each other.
+				[b]Note:[/b] The report is kept in [code]user://logs[/code] until the next run reads it. Backtraces and freeze reports are only written on Windows; other platforms report that the last run ended without closing.
+			</description>
+		</method>
 		<method name="get_data_dir" qualifiers="const">
 			<return type="String" />
 			<description>
