@@ -10879,6 +10879,10 @@ void Node3DEditor::_notification(int p_what) {
 		} break;
 
 		case EditorSettings::NOTIFICATION_EDITOR_SETTINGS_CHANGED: {
+			if (EditorSettings::get_singleton()->check_changed_settings_in_group("editors/3d/camera_preview_in_corner")) {
+				// Switched in the Editor Settings: gone, or back, at once.
+				update_camera_preview();
+			}
 			if (EditorSettings::get_singleton()->check_changed_settings_in_group("editors/3d")) {
 				const Color selection_box_color = EDITOR_GET("editors/3d/selection_box_color");
 				const Color active_selection_box_color = EDITOR_GET("editors/3d/active_selection_box_color");
@@ -12788,7 +12792,7 @@ void Node3DEditor::_view_bar_show_about_to_popup(int p_viewport) {
 	const int order[] = {
 		OVERLAY_ENVIRONMENT, OVERLAY_GRID, OVERLAY_ORIGIN, OVERLAY_GIZMOS, OVERLAY_TRANSFORM_GIZMO, -1,
 		OVERLAY_INFORMATION, OVERLAY_FRAME_TIME, -1,
-		OVERLAY_HOVER_HIGHLIGHT, OVERLAY_KEY_HINTS
+		OVERLAY_HOVER_HIGHLIGHT, OVERLAY_CAMERA_PREVIEW, OVERLAY_KEY_HINTS
 	};
 	for (int overlay : order) {
 		if (overlay < 0) {
@@ -13379,7 +13383,7 @@ void Node3DEditor::toggle_overlay_in(int p_overlay, int p_viewport) {
 	ERR_FAIL_INDEX(p_overlay, count);
 	ERR_FAIL_INDEX(p_viewport, (int)VIEWPORTS_COUNT);
 	const OverlayItem &item = items[p_overlay];
-	if (p_overlay == OVERLAY_KEY_HINTS || p_overlay == OVERLAY_HOVER_HIGHLIGHT || item.layout_option >= 0) {
+	if (p_overlay == OVERLAY_KEY_HINTS || p_overlay == OVERLAY_HOVER_HIGHLIGHT || p_overlay == OVERLAY_CAMERA_PREVIEW || item.layout_option >= 0) {
 		// The view's own - or the editor's - whichever viewport asks.
 		_overlays_id_pressed(p_overlay);
 		return;
@@ -13422,6 +13426,7 @@ const Node3DEditor::OverlayItem *Node3DEditor::_overlay_items(int &r_count) {
 		{ TTRC("Key Hints"), -1, -1 },
 		// The editor's: an editor setting.
 		{ TTRC("Highlight on Hover"), -1, -1 },
+		{ TTRC("Selected Camera Preview"), -1, -1 },
 	};
 	static_assert(std::size(items) == OVERLAY_MAX);
 	r_count = std::size(items);
@@ -13438,6 +13443,9 @@ bool Node3DEditor::_overlay_shown_in(int p_overlay, int p_viewport) const {
 	}
 	if (p_overlay == OVERLAY_HOVER_HIGHLIGHT) {
 		return EDITOR_GET("editors/3d/hover_highlight");
+	}
+	if (p_overlay == OVERLAY_CAMERA_PREVIEW) {
+		return EDITOR_GET("editors/3d/camera_preview_in_corner");
 	}
 	if (item.layout_option >= 0) {
 		const PopupMenu *popup = view_layout_menu->get_popup();
@@ -13480,6 +13488,10 @@ void Node3DEditor::_overlays_id_pressed(int p_overlay) {
 		for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
 			viewports[i]->_clear_hover();
 		}
+	} else if (p_overlay == OVERLAY_CAMERA_PREVIEW) {
+		EditorSettings::get_singleton()->set("editors/3d/camera_preview_in_corner", show);
+		EditorSettings::get_singleton()->save();
+		update_camera_preview();
 	} else if (item.layout_option >= 0) {
 		_menu_item_activated(item.layout_option);
 	} else {

@@ -1158,6 +1158,14 @@ void EditorSelfTest::_view_camera_preview() {
 	view->update_camera_preview();
 	const bool shown = view->get_camera_preview()->is_visible_in_tree();
 	const String state = vformat("view shown %s, panel %s", view->is_visible_in_tree(), view->get_camera_preview()->is_visible());
+	// Switched off from the Show menu (addons do this better, for some), and
+	// back: the setting is the editor's, and left as it was.
+	const bool setting_before = EDITOR_GET("editors/3d/camera_preview_in_corner");
+	view->toggle_overlay(Node3DEditor::OVERLAY_CAMERA_PREVIEW);
+	const bool switched_off = !view->get_camera_preview()->is_visible() && bool(EDITOR_GET("editors/3d/camera_preview_in_corner")) != setting_before;
+	view->toggle_overlay(Node3DEditor::OVERLAY_CAMERA_PREVIEW);
+	const bool switched_back = view->get_camera_preview()->is_visible() == shown && bool(EDITOR_GET("editors/3d/camera_preview_in_corner")) == setting_before;
+	_check(switched_off && switched_back, "the Show menu switches the selected camera's corner preview off, and on again");
 	// Out of the selection of its own scene.
 	selection->remove_node(camera);
 	view->update_camera_preview();
