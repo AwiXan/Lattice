@@ -3900,13 +3900,20 @@ void SceneTreeDock::_add_children_to_popup(Object *p_obj, int p_depth) {
 }
 
 void SceneTreeDock::_tree_rmb(const Vector2 &p_menu_pos) {
+	scene_tree->get_scene_tree()->grab_focus(true);
+	_popup_node_menu(p_menu_pos);
+}
+
+void SceneTreeDock::popup_node_menu(const Vector2 &p_screen_position) {
+	_popup_node_menu(p_screen_position);
+}
+
+void SceneTreeDock::_popup_node_menu(const Vector2 &p_menu_pos) {
 	ERR_FAIL_COND(!EditorNode::get_singleton()->get_edited_scene());
 	menu->clear(false);
 
 	const List<Node *> selection = editor_selection->get_top_selected_node_list(); // Only the top-level selected nodes.
 	List<Node *> full_selection = editor_selection->get_full_selected_node_list(); // All selected nodes.
-
-	scene_tree->get_scene_tree()->grab_focus(true);
 
 	if (selection.is_empty()) {
 		if (!profile_allow_editing) {

@@ -928,6 +928,8 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	EDITOR_SETTING_USAGE(Variant::COLOR, PROPERTY_HINT_NONE, "editors/3d/selection_box_color", Color(1.0, 0.5, 0), "", PROPERTY_USAGE_DEFAULT)
 	// What a click would select, lit up under the mouse.
 	EDITOR_SETTING(Variant::BOOL, PROPERTY_HINT_NONE, "editors/3d/hover_highlight", true, "")
+	// A right click in a 3D view opens the node menu; held, it flies either way.
+	EDITOR_SETTING(Variant::BOOL, PROPERTY_HINT_NONE, "editors/3d/right_click_menu", true, "")
 	// The selected camera's view, small, in a corner of the viewport.
 	EDITOR_SETTING(Variant::BOOL, PROPERTY_HINT_NONE, "editors/3d/camera_preview_in_corner", true, "")
 	EDITOR_SETTING_USAGE(Variant::COLOR, PROPERTY_HINT_NONE, "editors/3d/active_selection_box_color", Color(1.5, 0.75, 0, 1.0), "", PROPERTY_USAGE_DEFAULT)

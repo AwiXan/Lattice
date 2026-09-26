@@ -1190,6 +1190,57 @@ void EditorSelfTest::_view_camera_preview() {
 	memdelete(camera);
 }
 
+void EditorSelfTest::_view_right_click() {
+	int index = -1;
+	EditorPane *pane = _pane_showing("view_3d", &index);
+	Node3DEditor *view = pane ? Object::cast_to<Node3DEditor>(pane->get_panel_at(index)) : nullptr;
+	PopupMenu *menu = SceneTreeDock::get_singleton()->get_node_menu();
+	if (!view || !menu) {
+		_check(false, "a 3D view, for a right click in it");
+		return;
+	}
+	Control *surface = view->get_editor_viewport(0)->get_surface();
+	const Vector2 at = surface->get_global_rect().get_center();
+	auto right = [&](bool p_pressed) {
+		Ref<InputEventMouseButton> click;
+		click.instantiate();
+		click->set_button_index(MouseButton::RIGHT);
+		click->set_position(at);
+		click->set_global_position(at);
+		click->set_pressed(p_pressed);
+		click->set_button_mask(p_pressed ? MouseButtonMask::RIGHT : MouseButtonMask::NONE);
+		surface->get_viewport()->push_input(click);
+	};
+	// Left as found: the click picks a node, and the view it lands in becomes
+	// the context, its document the current one.
+	EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
+	const List<Node *> kept = selection->get_full_selected_node_list();
+	const int current = EditorNode::get_editor_data().get_edited_scene();
+	const bool setting_before = EDITOR_GET("editors/3d/right_click_menu");
+	EditorSettings::get_singleton()->set("editors/3d/right_click_menu", true);
+	menu->hide();
+	// A right click, let go at once: the node menu, as in the scene tree.
+	right(true);
+	right(false);
+	const bool opened = menu->is_visible();
+	menu->hide();
+	// Switched off: a right click does nothing but fly.
+	EditorSettings::get_singleton()->set("editors/3d/right_click_menu", false);
+	right(true);
+	right(false);
+	const bool quiet = !menu->is_visible();
+	menu->hide();
+	EditorSettings::get_singleton()->set("editors/3d/right_click_menu", setting_before);
+	if (EditorNode::get_editor_data().get_edited_scene() != current) {
+		EditorNode::get_singleton()->set_current_scene_index(current);
+	}
+	selection->clear();
+	for (Node *node : kept) {
+		selection->add_node(node);
+	}
+	_check(opened && quiet, vformat("a right click in a 3D view opens the node menu (%s), and does not once switched off (%s)", opened, quiet));
+}
+
 void EditorSelfTest::_timeline_open() {
 	EditorPane *pane = EditorNode::get_singleton()->get_editor_main_screen()->open_panel("history_timeline", Variant());
 	EditorHistoryTimeline *timeline = nullptr;
@@ -2642,6 +2693,7 @@ EditorSelfTest::EditorSelfTest() {
 	_add("view isolate", callable_mp(this, &EditorSelfTest::_view_isolate));
 	_add("view hover", callable_mp(this, &EditorSelfTest::_view_hover));
 	_add("view camera preview", callable_mp(this, &EditorSelfTest::_view_camera_preview));
+	_add("view right click", callable_mp(this, &EditorSelfTest::_view_right_click));
 	_add("timeline open", callable_mp(this, &EditorSelfTest::_timeline_open));
 	_add("timeline check", callable_mp(this, &EditorSelfTest::_timeline_check));
 	_add("view sidebar open", callable_mp(this, &EditorSelfTest::_view_sidebar_open));
