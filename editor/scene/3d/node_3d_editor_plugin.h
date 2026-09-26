@@ -412,6 +412,9 @@ private:
 	// the node menu. Held, it flies.
 	bool rmb_click_pending = false;
 	uint64_t rmb_click_msec = 0;
+	// Where it was pressed: the fly the press starts holds the mouse in the
+	// middle of the window, which is where the release is said to be.
+	Point2 rmb_click_pos;
 	Transform3D rmb_click_camera;
 	void _open_context_menu(const Point2 &p_pos);
 
