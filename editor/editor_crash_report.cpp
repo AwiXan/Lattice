@@ -141,7 +141,7 @@ void EditorCrashReport::begin_session() {
 	const String marker = _marker_path();
 	if (FileAccess::exists(marker)) {
 		const int pid = FileAccess::get_file_as_string(marker).strip_edges().to_int();
-		if (pid > 0 && pid != OS::get_singleton()->get_process_id() && OS::get_singleton()->is_process_running(pid)) {
+		if (pid > 0 && pid != OS::get_singleton()->get_process_id() && OS::get_singleton()->process_exists(pid)) {
 			// Another editor has this project open and is still running: not a
 			// crash, and not this session's mark to take over or clear.
 			return;

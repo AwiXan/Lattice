@@ -220,6 +220,12 @@ public:
 	virtual Error kill(const ProcessID &p_pid) = 0;
 	virtual int get_process_id() const;
 	virtual bool is_process_running(const ProcessID &p_pid) const = 0;
+	// Any process at all, not only one started with create_process(): for
+	// telling whether another instance that left a file behind still runs.
+	virtual bool process_exists(const ProcessID &p_pid) const { return is_process_running(p_pid); }
+	// When a process started, in the system's own units; 0 if not known. A
+	// PID is given out again once its process has ended.
+	virtual uint64_t get_process_start_time(const ProcessID &p_pid) const { return 0; }
 	virtual int get_process_exit_code(const ProcessID &p_pid) const = 0;
 	virtual void vibrate_handheld(int p_duration_ms = 500, float p_amplitude = -1.0) {}
 
