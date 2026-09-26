@@ -566,6 +566,7 @@ SceneShaderForwardClustered::ShaderData::ShaderData() :
 		shader_list_element(this) {
 	pipeline_hash_map.set_creation_object_and_function(this, &ShaderData::_create_pipeline);
 	pipeline_hash_map.set_compilations(SceneShaderForwardClustered::singleton->pipeline_compilations, &SceneShaderForwardClustered::singleton_mutex);
+	pipeline_hash_map.set_stats_kind(RenderingShaderStats::KIND_SPATIAL);
 }
 
 SceneShaderForwardClustered::ShaderData::~ShaderData() {
@@ -693,6 +694,7 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 
 		Vector<uint64_t> dynamic_buffers;
 		dynamic_buffers.push_back(ShaderRD::DynamicBuffer::encode(RenderForwardClustered::RENDER_PASS_UNIFORM_SET, 2));
+		shader.set_stats_kind(RenderingShaderStats::KIND_SPATIAL);
 		shader.initialize(shader_versions, p_defines, Vector<RD::PipelineImmutableSampler>(), dynamic_buffers);
 
 		if (RendererCompositorRD::get_singleton()->is_xr_enabled()) {

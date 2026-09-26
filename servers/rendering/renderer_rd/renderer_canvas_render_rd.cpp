@@ -1681,6 +1681,7 @@ RendererCanvasRenderRD::CanvasShaderData::CanvasShaderData() {
 	RendererCanvasRenderRD *canvas_singleton = static_cast<RendererCanvasRenderRD *>(RendererCanvasRender::singleton);
 	pipeline_hash_map.set_creation_object_and_function(this, &CanvasShaderData::_create_pipeline);
 	pipeline_hash_map.set_compilations(&canvas_singleton->shader.pipeline_compilations[0], &canvas_singleton->shader.mutex);
+	pipeline_hash_map.set_stats_kind(RenderingShaderStats::KIND_CANVAS_ITEM);
 }
 
 RendererCanvasRenderRD::CanvasShaderData::~CanvasShaderData() {
@@ -1758,6 +1759,7 @@ RendererCanvasRenderRD::RendererCanvasRenderRD() {
 			variants.push_back(base_define + "#define USE_ATTRIBUTES\n#define USE_POINT_SIZE\n"); // SHADER_VARIANT_ATTRIBUTES_POINTS
 		}
 
+		shader.canvas_shader.set_stats_kind(RenderingShaderStats::KIND_CANVAS_ITEM);
 		shader.canvas_shader.initialize(variants, global_defines, {}, {});
 
 		shader.default_version_data = memnew(CanvasShaderData);

@@ -404,11 +404,32 @@ Vector<String> ShaderRD::_build_variant_stage_sources(uint32_t p_variant, Compil
 	return stage_sources;
 }
 
+uint32_t ShaderRD::_enabled_variants_in_group(int p_group) const {
+	uint32_t count = 0;
+	for (uint32_t i = 0; i < group_to_variant_map[p_group].size(); i++) {
+		count += variants_enabled[group_to_variant_map[p_group][i]] ? 1 : 0;
+	}
+	return count;
+}
+
+// Counts a variant done however it ends.
+struct ShaderStatsDone {
+	RenderingShaderStats::Counters &counters;
+	bool from_cache = false;
+	~ShaderStatsDone() {
+		counters.shaders_done.increment();
+		if (from_cache) {
+			counters.shaders_from_cache.increment();
+		}
+	}
+};
+
 void ShaderRD::_compile_variant(uint32_t p_variant, CompileData p_data) {
 	uint32_t variant = group_to_variant_map[p_data.group][p_variant];
 	if (!variants_enabled[variant]) {
 		return; // Variant is disabled, return.
 	}
+	ShaderStatsDone done{ RenderingShaderStats::of(stats_kind) };
 
 	Vector<String> variant_stage_sources = _build_variant_stage_sources(variant, p_data);
 	Vector<RD::ShaderStageSPIRVData> variant_stages = compile_stages(variant_stage_sources, dynamic_buffers);
@@ -618,6 +639,7 @@ void ShaderRD::_load_variant_from_cache(uint32_t p_variant, CompileData p_data) 
 		p_data.version->variants.write[variant] = RID();
 		return; // Variant is disabled, return.
 	}
+	ShaderStatsDone done{ RenderingShaderStats::of(stats_kind), true };
 
 	p_data.version->variants.write[variant] = RD::get_singleton()->shader_create_from_bytecode_with_samplers(p_data.version->variant_data[variant], p_data.version->variants[variant], immutable_samplers);
 }
@@ -678,6 +700,7 @@ bool ShaderRD::_load_from_cache(Version *p_version, int p_group) {
 	compile_data.version = p_version;
 	compile_data.group = p_group;
 
+	RenderingShaderStats::of(stats_kind).shaders_queued.add(_enabled_variants_in_group(p_group));
 	WorkerThreadPool::GroupID group_task = WorkerThreadPool::get_singleton()->add_template_group_task(this, &ShaderRD::_load_variant_from_cache, compile_data, variant_count, -1, true, "LoadVariantFromCache");
 	p_version->group_compilation_tasks.write[p_group] = group_task;
 	p_version->group_loaded_from_cache.write[p_group] = true;
@@ -729,6 +752,7 @@ void ShaderRD::_compile_version_start(Version *p_version, int p_group) {
 	compile_data.version = p_version;
 	compile_data.group = p_group;
 
+	RenderingShaderStats::of(stats_kind).shaders_queued.add(_enabled_variants_in_group(p_group));
 	WorkerThreadPool::GroupID group_task = WorkerThreadPool::get_singleton()->add_template_group_task(this, &ShaderRD::_compile_variant, compile_data, group_to_variant_map[p_group].size(), -1, true, SNAME("ShaderCompilation"));
 	p_version->group_compilation_tasks.write[p_group] = group_task;
 	p_version->group_loaded_from_cache.write[p_group] = false;

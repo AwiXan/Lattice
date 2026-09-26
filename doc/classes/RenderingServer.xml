@@ -1723,6 +1723,23 @@
 				[/codeblock]
 			</description>
 		</method>
+		<method name="get_shader_compilation_info" qualifiers="const">
+			<return type="Dictionary" />
+			<description>
+				Returns what the renderer has compiled and is compiling: shader programs (the variants of each shader, built from source or loaded from the shader cache) and pipelines (a shader program ready for one way of drawing). Both are compiled on worker threads; while a pipeline is being compiled, the Forward+ and Mobile renderers draw with a slower general one.
+				The dictionary holds [code]compiling[/code] ([code]true[/code] while anything is), [code]shaders_compiling[/code], [code]shaders_compiled[/code], [code]shaders_from_cache[/code] (out of the compiled ones), [code]pipelines_compiling[/code], [code]pipelines_compiled[/code], and [code]types[/code]: the same numbers for each kind of shader, under [code]"spatial"[/code], [code]"canvas_item"[/code], [code]"particles"[/code], [code]"sky"[/code], [code]"fog"[/code] and [code]"engine"[/code] (the renderer's own effects). The numbers count up from the start of the game.
+				A loading screen waiting for the level's shaders, once the level is in the tree:
+				[codeblock]
+				func _process(_delta):
+				    var info = RenderingServer.get_shader_compilation_info()
+				    var spatial = info.types.spatial
+				    $Label.text = "Spatial shaders: %d compiled, %d to go" % [spatial.pipelines_compiled, spatial.pipelines_compiling]
+				    if not info.compiling:
+				        hide()
+				[/codeblock]
+				[b]Note:[/b] Counted by the Forward+ and Mobile renderers only; with Compatibility, all numbers stay at [code]0[/code].
+			</description>
+		</method>
 		<method name="get_shader_parameter_list" qualifiers="const">
 			<return type="Dictionary[]" />
 			<param index="0" name="shader" type="RID" />

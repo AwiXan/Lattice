@@ -60,6 +60,7 @@ ParticlesStorage::ParticlesStorage() {
 		// Initialize particles
 		Vector<String> particles_modes;
 		particles_modes.push_back("");
+		particles_shader.shader.set_stats_kind(RenderingShaderStats::KIND_PARTICLES);
 		particles_shader.shader.initialize(particles_modes, defines);
 	}
 	MaterialStorage::get_singleton()->shader_set_data_request_function(MaterialStorage::SHADER_TYPE_PARTICLES, _create_particles_shader_funcs);

@@ -224,6 +224,7 @@ void Fog::init_fog_shader(uint32_t p_max_directional_lights, int p_roughness_lay
 		volumetric_fog_modes.push_back(ShaderRD::VariantDefine(VolumetricFogShader::SHADER_GROUP_VULKAN_MEMORY_MODEL, "#define USE_VULKAN_MEMORY_MODEL\n", false));
 		volumetric_fog_modes.push_back(ShaderRD::VariantDefine(VolumetricFogShader::SHADER_GROUP_VULKAN_MEMORY_MODEL_NO_ATOMICS, "#define USE_VULKAN_MEMORY_MODEL\n#define NO_IMAGE_ATOMICS\n", false));
 
+		volumetric_fog.shader.set_stats_kind(RenderingShaderStats::KIND_FOG);
 		volumetric_fog.shader.initialize(volumetric_fog_modes, defines);
 		volumetric_fog.shader.enable_group(_get_fog_shader_group());
 

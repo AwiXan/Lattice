@@ -35,6 +35,7 @@
 #include "core/templates/local_vector.h"
 #include "core/templates/rid_owner.h"
 #include "servers/rendering/rendering_device.h"
+#include "servers/rendering/rendering_shader_stats.h"
 #include "servers/rendering/rendering_server_types.h"
 
 class StringBuilder;
@@ -139,6 +140,9 @@ private:
 	RD::PipelineType pipeline_type = RD::PIPELINE_TYPE_RASTERIZATION;
 
 	String name;
+	// What its versions are counted as in RenderingShaderStats.
+	int stats_kind = RenderingShaderStats::KIND_ENGINE;
+	uint32_t _enabled_variants_in_group(int p_group) const;
 
 	CharString base_compute_defines;
 
@@ -191,6 +195,8 @@ protected:
 	void setup_raytracing(const char *p_raygen_code, const char *p_any_hit_code, const char *p_closest_hit_code, const char *p_miss_code, const char *p_intersection_code, const char *p_name);
 
 public:
+	void set_stats_kind(int p_kind) { stats_kind = p_kind; }
+
 	RID version_create(bool p_embedded = true);
 
 	void version_set_code(RID p_version, const HashMap<String, String> &p_code, const String &p_uniforms, const String &p_vertex_globals, const String &p_fragment_globals, const Vector<String> &p_custom_defines);

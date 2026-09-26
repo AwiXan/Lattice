@@ -30,6 +30,7 @@
 
 #include "rendering_server.h"
 #include "rendering_server.compat.inc"
+#include "rendering_shader_stats.h"
 
 #include "core/config/project_settings.h"
 #include "core/math/geometry_3d.h"
@@ -42,6 +43,42 @@
 #include "servers/rendering/shader_warnings.h"
 
 RenderingServer *RenderingServer::singleton = nullptr;
+
+RenderingShaderStats::Counters RenderingShaderStats::counters[RenderingShaderStats::KIND_MAX];
+
+Dictionary RenderingServer::get_shader_compilation_info() const {
+	// One set of numbers for everything, and the same set for each kind.
+	auto numbers = [](uint32_t p_queued, uint32_t p_done, uint32_t p_cached, uint32_t p_pipelines_queued, uint32_t p_pipelines_done) {
+		Dictionary d;
+		d["shaders_compiling"] = p_queued > p_done ? p_queued - p_done : 0;
+		d["shaders_compiled"] = p_done;
+		d["shaders_from_cache"] = p_cached;
+		d["pipelines_compiling"] = p_pipelines_queued > p_pipelines_done ? p_pipelines_queued - p_pipelines_done : 0;
+		d["pipelines_compiled"] = p_pipelines_done;
+		return d;
+	};
+	Dictionary types;
+	uint32_t totals[5] = {};
+	for (int i = 0; i < RenderingShaderStats::KIND_MAX; i++) {
+		RenderingShaderStats::Counters &c = RenderingShaderStats::counters[i];
+		// Done read before queued: never more done than queued.
+		const uint32_t done = c.shaders_done.get();
+		const uint32_t cached = c.shaders_from_cache.get();
+		const uint32_t queued = c.shaders_queued.get();
+		const uint32_t pipelines_done = c.pipelines_done.get();
+		const uint32_t pipelines_queued = c.pipelines_queued.get();
+		types[RenderingShaderStats::get_kind_name(i)] = numbers(queued, done, cached, pipelines_queued, pipelines_done);
+		totals[0] += queued;
+		totals[1] += done;
+		totals[2] += cached;
+		totals[3] += pipelines_queued;
+		totals[4] += pipelines_done;
+	}
+	Dictionary info = numbers(totals[0], totals[1], totals[2], totals[3], totals[4]);
+	info["compiling"] = int(info["shaders_compiling"]) > 0 || int(info["pipelines_compiling"]) > 0;
+	info["types"] = types;
+	return info;
+}
 RenderingServer *(*RenderingServer::create_func)() = nullptr;
 
 RenderingServer *RenderingServer::get_singleton() {
@@ -3525,6 +3562,7 @@ void RenderingServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("request_frame_drawn_callback", "callable"), &RenderingServer::request_frame_drawn_callback);
 	ClassDB::bind_method(D_METHOD("has_changed"), &RenderingServer::has_changed);
 	ClassDB::bind_method(D_METHOD("get_rendering_info", "info"), &RenderingServer::get_rendering_info);
+	ClassDB::bind_method(D_METHOD("get_shader_compilation_info"), &RenderingServer::get_shader_compilation_info);
 	ClassDB::bind_method(D_METHOD("get_video_adapter_name"), &RenderingServer::get_video_adapter_name);
 	ClassDB::bind_method(D_METHOD("get_video_adapter_vendor"), &RenderingServer::get_video_adapter_vendor);
 	ClassDB::bind_method(D_METHOD("get_video_adapter_type"), &RenderingServer::get_video_adapter_type);

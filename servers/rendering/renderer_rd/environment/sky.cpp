@@ -729,6 +729,7 @@ void SkyRD::init() {
 		sky_modes.push_back("\n#define USE_HALF_RES_PASS\n#define USE_MULTIVIEW\n"); // Half Res multiview
 		sky_modes.push_back("\n#define USE_QUARTER_RES_PASS\n#define USE_MULTIVIEW\n"); // Quarter res multiview
 
+		sky_shader.shader.set_stats_kind(RenderingShaderStats::KIND_SKY);
 		sky_shader.shader.initialize(sky_modes, defines);
 
 		if (!RendererCompositorRD::get_singleton()->is_xr_enabled()) {

@@ -40,6 +40,7 @@
 #include "core/templates/vector.h"
 #include "servers/rendering/rendering_device.h"
 #include "servers/rendering/rendering_server_enums.h"
+#include "servers/rendering/rendering_shader_stats.h"
 
 #define PRINT_PIPELINE_COMPILATION_KEYS 0
 
@@ -56,6 +57,12 @@ private:
 	RBSet<uint32_t> compilation_set;
 	HashMap<uint32_t, WorkerThreadPool::TaskID> compilation_tasks;
 	Mutex local_mutex;
+	int stats_kind = RenderingShaderStats::KIND_ENGINE;
+
+	void _compile_task(Key p_key) {
+		(creation_object->*creation_function)(p_key);
+		RenderingShaderStats::of(stats_kind).pipelines_done.increment();
+	}
 
 	bool _add_new_pipelines_to_map() {
 		thread_local Vector<uint32_t> hashes_added;
@@ -148,7 +155,8 @@ public:
 #endif
 
 		// Queue a background compilation task.
-		WorkerThreadPool::TaskID task_id = WorkerThreadPool::get_singleton()->add_template_task(creation_object, creation_function, p_key, p_high_priority, "PipelineCompilation");
+		RenderingShaderStats::of(stats_kind).pipelines_queued.increment();
+		WorkerThreadPool::TaskID task_id = WorkerThreadPool::get_singleton()->add_template_task(this, &PipelineHashMapRD::_compile_task, p_key, p_high_priority, "PipelineCompilation");
 		compilation_tasks.insert(p_key_hash, task_id);
 	}
 
@@ -228,6 +236,9 @@ public:
 		compilations = p_compilations;
 		compilations_mutex = p_compilations_mutex;
 	}
+
+	// What its pipelines are counted as in RenderingShaderStats.
+	void set_stats_kind(int p_kind) { stats_kind = p_kind; }
 
 	void set_creation_object_and_function(CreationClass *p_creation_object, CreationFunction p_creation_function) {
 		creation_object = p_creation_object;
