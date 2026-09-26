@@ -35,6 +35,8 @@
 #include "multiplayer_profiler.h"
 #include "scene_rpc_interface.h"
 
+#include "core/math/random_pcg.h"
+
 #include "scene/main/multiplayer_api.h"
 
 class OfflineMultiplayerPeer : public MultiplayerPeer {
@@ -130,6 +132,37 @@ private:
 	// For the game itself to read; recording is a check while it is off.
 	Ref<MultiplayerProfiler> profiler;
 
+	// A worse network than the real one, on purpose, for testing: packets
+	// received from connected peers held back by the latency, give or take
+	// the jitter, and some lost - an unreliable one dropped, a reliable one
+	// sent again (it costs time, and holds back the ones after it). What
+	// comes in only: each end of a connection simulates its own side.
+	struct SimulatedPacket {
+		uint64_t release_usec = 0;
+		int sender = 0;
+		int channel = 0;
+		MultiplayerPeer::TransferMode mode = MultiplayerPeer::TRANSFER_MODE_RELIABLE;
+		Vector<uint8_t> data;
+	};
+	int simulated_latency_msec = 0;
+	int simulated_jitter_msec = 0;
+	double simulated_packet_loss = 0.0;
+	// By release time; those released at the same time as they came.
+	LocalVector<SimulatedPacket> simulated_packets;
+	// Per sender and channel, the last release of an ordered packet:
+	// nothing overtakes what came before it there.
+	HashMap<uint64_t, uint64_t> simulated_last_release;
+	RandomPCG simulation_rng;
+	// Debug > Network Simulation of the editor that runs the game, for
+	// every SceneMultiplayer that sets none of its own.
+	static inline int debug_simulated_latency_msec = 0;
+	static inline int debug_simulated_jitter_msec = 0;
+	static inline double debug_simulated_packet_loss = 0.0;
+	void _get_network_simulation(int &r_latency_msec, int &r_jitter_msec, double &r_packet_loss) const;
+	void _simulate_incoming(int p_sender, const uint8_t *p_packet, int p_len, MultiplayerPeer::TransferMode p_mode, int p_channel);
+	// A packet from a connected peer, handled; false if that disconnected.
+	bool _process_incoming(int p_sender, const uint8_t *p_packet, int p_len, MultiplayerPeer::TransferMode p_mode, int p_channel);
+
 #ifdef DEBUG_ENABLED
 	_FORCE_INLINE_ void _profile_bandwidth(const String &p_what, int p_value);
 	_FORCE_INLINE_ Error _send(const uint8_t *p_packet, int p_packet_len); // Also profiles.
@@ -207,6 +240,14 @@ public:
 
 	void set_max_delta_packet_size(int p_size);
 	int get_max_delta_packet_size() const;
+
+	void set_simulated_latency_msec(int p_msec);
+	int get_simulated_latency_msec() const { return simulated_latency_msec; }
+	void set_simulated_jitter_msec(int p_msec);
+	int get_simulated_jitter_msec() const { return simulated_jitter_msec; }
+	void set_simulated_packet_loss(double p_ratio);
+	double get_simulated_packet_loss() const { return simulated_packet_loss; }
+	static void set_debug_network_simulation(int p_latency_msec, int p_jitter_msec, double p_packet_loss);
 
 	SceneMultiplayer();
 	~SceneMultiplayer();

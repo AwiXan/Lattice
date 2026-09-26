@@ -31,6 +31,7 @@
 #include "multiplayer_debugger.h"
 
 #include "multiplayer_synchronizer.h"
+#include "scene_multiplayer.h"
 #include "scene_replication_config.h"
 
 #include "core/debugger/engine_debugger.h"
@@ -63,6 +64,12 @@ void MultiplayerDebugger::deinitialize() {
 }
 
 Error MultiplayerDebugger::_capture(void *p_user, const String &p_msg, const Array &p_args, bool &r_captured) {
+	if (p_msg == "network_simulation") {
+		// Debug > Network Simulation changed in the editor.
+		ERR_FAIL_COND_V(p_args.size() < 3, ERR_INVALID_DATA);
+		SceneMultiplayer::set_debug_network_simulation(p_args[0], p_args[1], p_args[2]);
+		return OK;
+	}
 	if (p_msg == "cache") {
 		Array out;
 		for (int i = 0; i < p_args.size(); i++) {

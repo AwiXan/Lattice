@@ -91,6 +91,16 @@
 			[b]Note:[/b] Changing this option while other peers are connected may lead to unexpected behaviors.
 			[b]Note:[/b] Support for this feature may depend on the current [MultiplayerPeer] configuration. See [method MultiplayerPeer.is_server_relay_supported].
 		</member>
+		<member name="simulated_jitter_msec" type="int" setter="set_simulated_jitter_msec" getter="get_simulated_jitter_msec" default="0">
+			How much each packet's delay may differ from [member simulated_latency_msec], either way, at random, in milliseconds. Packets sent unreliably can then arrive out of order; ordered ones keep their order.
+		</member>
+		<member name="simulated_latency_msec" type="int" setter="set_simulated_latency_msec" getter="get_simulated_latency_msec" default="0">
+			Holds back every packet received from a connected peer by this many milliseconds, to try the game on a slow network. Only what is received is delayed: with the simulation on both ends, a round trip takes twice this.
+			While [member simulated_latency_msec], [member simulated_jitter_msec] and [member simulated_packet_loss] are all [code]0[/code], the editor's [b]Debug &gt; Network Simulation[/b] applies to the games it runs.
+		</member>
+		<member name="simulated_packet_loss" type="float" setter="set_simulated_packet_loss" getter="get_simulated_packet_loss" default="0.0">
+			The chance, from [code]0.0[/code] to [code]1.0[/code], that a packet received is lost. A packet sent unreliably is dropped; a reliable one costs the time of sending it again instead, and holds back the ones after it on its channel.
+		</member>
 	</members>
 	<signals>
 		<signal name="peer_authenticating">

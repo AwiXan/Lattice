@@ -122,23 +122,29 @@ Error SceneMultiplayer::poll() {
 
 		ERR_CONTINUE(!connected_peers.has(sender));
 
-		if (len && (packet[0] & CMD_MASK) == NETWORK_COMMAND_SYS) {
-			// Sys messages are processed separately since they might call _process_packet themselves.
-			if (len > 1 && packet[1] == SYS_COMMAND_AUTH) {
-				ERR_CONTINUE(len != 2);
-				// If we are here, we already admitted the peer locally, and this is just a confirmation packet.
-				continue;
-			}
-
-			_process_sys(sender, packet, len, mode, channel);
-		} else {
-			remote_sender_id = sender;
-			_process_packet(sender, packet, len);
-			remote_sender_id = 0;
+		// A worse network than the real one, on purpose.
+		int latency = 0;
+		int jitter = 0;
+		double loss = 0.0;
+		_get_network_simulation(latency, jitter, loss);
+		if (latency > 0 || jitter > 0 || loss > 0.0) {
+			_simulate_incoming(sender, packet, len, mode, channel);
+			continue;
 		}
 
-		_update_status();
-		if (last_connection_status != MultiplayerPeer::CONNECTION_CONNECTED) { // It's possible that processing a packet might have resulted in a disconnection, so check here.
+		if (!_process_incoming(sender, packet, len, mode, channel)) {
+			return OK;
+		}
+	}
+	// What the simulated network lets through by now, in order.
+	const uint64_t now = OS::get_singleton()->get_ticks_usec();
+	while (!simulated_packets.is_empty() && simulated_packets[0].release_usec <= now) {
+		const SimulatedPacket held = simulated_packets[0];
+		simulated_packets.remove_at(0);
+		if (!connected_peers.has(held.sender)) {
+			continue; // Gone while it was on its way.
+		}
+		if (!_process_incoming(held.sender, held.data.ptr(), held.data.size(), held.mode, held.channel)) {
 			return OK;
 		}
 	}
@@ -167,9 +173,106 @@ Error SceneMultiplayer::poll() {
 	return OK;
 }
 
+bool SceneMultiplayer::_process_incoming(int p_sender, const uint8_t *p_packet, int p_len, MultiplayerPeer::TransferMode p_mode, int p_channel) {
+	if (p_len && (p_packet[0] & CMD_MASK) == NETWORK_COMMAND_SYS) {
+		// Sys messages are processed separately since they might call _process_packet themselves.
+		if (p_len > 1 && p_packet[1] == SYS_COMMAND_AUTH) {
+			// If we are here, we already admitted the peer locally, and this is just a confirmation packet.
+			ERR_FAIL_COND_V(p_len != 2, true);
+			return true;
+		}
+
+		_process_sys(p_sender, p_packet, p_len, p_mode, p_channel);
+	} else {
+		remote_sender_id = p_sender;
+		_process_packet(p_sender, p_packet, p_len);
+		remote_sender_id = 0;
+	}
+
+	// It's possible that processing a packet might have resulted in a disconnection.
+	_update_status();
+	return last_connection_status == MultiplayerPeer::CONNECTION_CONNECTED;
+}
+
+void SceneMultiplayer::_get_network_simulation(int &r_latency_msec, int &r_jitter_msec, double &r_packet_loss) const {
+	if (simulated_latency_msec > 0 || simulated_jitter_msec > 0 || simulated_packet_loss > 0.0) {
+		r_latency_msec = simulated_latency_msec;
+		r_jitter_msec = simulated_jitter_msec;
+		r_packet_loss = simulated_packet_loss;
+	} else {
+		r_latency_msec = debug_simulated_latency_msec;
+		r_jitter_msec = debug_simulated_jitter_msec;
+		r_packet_loss = debug_simulated_packet_loss;
+	}
+}
+
+void SceneMultiplayer::_simulate_incoming(int p_sender, const uint8_t *p_packet, int p_len, MultiplayerPeer::TransferMode p_mode, int p_channel) {
+	int latency = 0;
+	int jitter = 0;
+	double loss = 0.0;
+	_get_network_simulation(latency, jitter, loss);
+	double delay_msec = latency;
+	if (jitter > 0) {
+		delay_msec += simulation_rng.random(-jitter, jitter);
+	}
+	if (loss > 0.0 && simulation_rng.randd() < loss) {
+		if (p_mode != MultiplayerPeer::TRANSFER_MODE_RELIABLE) {
+			return; // Lost.
+		}
+		// A reliable packet lost is sent again, about a round trip later.
+		delay_msec += MAX(2 * latency, 30);
+	}
+	uint64_t release = OS::get_singleton()->get_ticks_usec() + uint64_t(MAX(delay_msec, 0.0) * 1000.0);
+	if (p_mode != MultiplayerPeer::TRANSFER_MODE_UNRELIABLE) {
+		// Ordered: after what came before it on its channel, whatever the jitter.
+		const uint64_t key = (uint64_t(uint32_t(p_sender)) << 32) | uint32_t(p_channel);
+		uint64_t *last = simulated_last_release.getptr(key);
+		if (last) {
+			release = MAX(release, *last);
+			*last = release;
+		} else {
+			simulated_last_release.insert(key, release);
+		}
+	}
+	SimulatedPacket packet;
+	packet.release_usec = release;
+	packet.sender = p_sender;
+	packet.channel = p_channel;
+	packet.mode = p_mode;
+	packet.data.resize(p_len);
+	if (p_len) {
+		memcpy(packet.data.ptrw(), p_packet, p_len);
+	}
+	uint32_t at = simulated_packets.size();
+	while (at > 0 && simulated_packets[at - 1].release_usec > release) {
+		at--;
+	}
+	simulated_packets.insert(at, packet);
+}
+
+void SceneMultiplayer::set_simulated_latency_msec(int p_msec) {
+	simulated_latency_msec = MAX(p_msec, 0);
+}
+
+void SceneMultiplayer::set_simulated_jitter_msec(int p_msec) {
+	simulated_jitter_msec = MAX(p_msec, 0);
+}
+
+void SceneMultiplayer::set_simulated_packet_loss(double p_ratio) {
+	simulated_packet_loss = CLAMP(p_ratio, 0.0, 1.0);
+}
+
+void SceneMultiplayer::set_debug_network_simulation(int p_latency_msec, int p_jitter_msec, double p_packet_loss) {
+	debug_simulated_latency_msec = MAX(p_latency_msec, 0);
+	debug_simulated_jitter_msec = MAX(p_jitter_msec, 0);
+	debug_simulated_packet_loss = CLAMP(p_packet_loss, 0.0, 1.0);
+}
+
 void SceneMultiplayer::clear() {
 	last_connection_status = MultiplayerPeer::CONNECTION_DISCONNECTED;
 	pending_peers.clear();
+	simulated_packets.clear();
+	simulated_last_release.clear();
 	connected_peers.clear();
 	packet_cache.clear();
 	replicator->on_reset();
@@ -666,6 +769,12 @@ void SceneMultiplayer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_max_sync_packet_size", "size"), &SceneMultiplayer::set_max_sync_packet_size);
 	ClassDB::bind_method(D_METHOD("get_max_delta_packet_size"), &SceneMultiplayer::get_max_delta_packet_size);
 	ClassDB::bind_method(D_METHOD("set_max_delta_packet_size", "size"), &SceneMultiplayer::set_max_delta_packet_size);
+	ClassDB::bind_method(D_METHOD("set_simulated_latency_msec", "msec"), &SceneMultiplayer::set_simulated_latency_msec);
+	ClassDB::bind_method(D_METHOD("get_simulated_latency_msec"), &SceneMultiplayer::get_simulated_latency_msec);
+	ClassDB::bind_method(D_METHOD("set_simulated_jitter_msec", "msec"), &SceneMultiplayer::set_simulated_jitter_msec);
+	ClassDB::bind_method(D_METHOD("get_simulated_jitter_msec"), &SceneMultiplayer::get_simulated_jitter_msec);
+	ClassDB::bind_method(D_METHOD("set_simulated_packet_loss", "ratio"), &SceneMultiplayer::set_simulated_packet_loss);
+	ClassDB::bind_method(D_METHOD("get_simulated_packet_loss"), &SceneMultiplayer::get_simulated_packet_loss);
 
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "root_path"), "set_root_path", "get_root_path");
 	ADD_PROPERTY(PropertyInfo(Variant::CALLABLE, "auth_callback"), "set_auth_callback", "get_auth_callback");
@@ -677,6 +786,11 @@ void SceneMultiplayer::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_sync_packet_size"), "set_max_sync_packet_size", "get_max_sync_packet_size");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_delta_packet_size"), "set_max_delta_packet_size", "get_max_delta_packet_size");
 
+	ADD_GROUP("Network Simulation", "simulated_");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "simulated_latency_msec", PROPERTY_HINT_RANGE, "0,1000,1,or_greater,suffix:ms"), "set_simulated_latency_msec", "get_simulated_latency_msec");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "simulated_jitter_msec", PROPERTY_HINT_RANGE, "0,500,1,or_greater,suffix:ms"), "set_simulated_jitter_msec", "get_simulated_jitter_msec");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "simulated_packet_loss", PROPERTY_HINT_RANGE, "0,1,0.001"), "set_simulated_packet_loss", "get_simulated_packet_loss");
+
 	ADD_PROPERTY_DEFAULT("refuse_new_connections", false);
 
 	ADD_SIGNAL(MethodInfo("peer_authenticating", PropertyInfo(Variant::INT, "id")));
@@ -685,6 +799,19 @@ void SceneMultiplayer::_bind_methods() {
 }
 
 SceneMultiplayer::SceneMultiplayer() {
+	// Games run from the editor get its Debug > Network Simulation this way
+	// (and through the debugger when it changes).
+	static bool arguments_read = false;
+	if (!arguments_read) {
+		arguments_read = true;
+		for (const String &arg : OS::get_singleton()->get_cmdline_args()) {
+			if (arg.begins_with("--network-simulation=")) {
+				const Vector<String> values = arg.get_slicec('=', 1).split(",");
+				set_debug_network_simulation(values.size() > 0 ? values[0].to_int() : 0, values.size() > 1 ? values[1].to_int() : 0, values.size() > 2 ? values[2].to_float() : 0.0);
+			}
+		}
+	}
+	simulation_rng.seed(OS::get_singleton()->get_ticks_usec());
 	relay_buffer.instantiate();
 	profiler.instantiate();
 	cache.instantiate(this);

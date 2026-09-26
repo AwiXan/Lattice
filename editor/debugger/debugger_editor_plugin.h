@@ -59,6 +59,12 @@ private:
 		RUN_MULTIPLE_INSTANCES,
 	};
 
+	// Debug > Network Simulation: how bad the network is for the games run
+	// from here, as far as their SceneMultiplayer goes.
+	PopupMenu *network_simulation_menu = nullptr;
+	void _network_simulation_pressed(int p_preset);
+	void _update_network_simulation_menu();
+
 	bool initializing = true;
 
 	void _update_debug_options();

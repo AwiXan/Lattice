@@ -101,6 +101,12 @@ Error EditorRun::run(const String &p_scene, const String &p_write_movie, const V
 		args.push_back("--debug-mute-audio");
 	}
 
+	// Debug > Network Simulation, for SceneMultiplayer.
+	const String network_simulation = EditorSettings::get_singleton()->get_project_metadata("debug_options", "network_simulation_argument", String());
+	if (!network_simulation.is_empty()) {
+		args.push_back(network_simulation);
+	}
+
 	if (p_write_movie != "") {
 		args.push_back("--write-movie");
 		args.push_back(p_write_movie);

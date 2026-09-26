@@ -235,6 +235,8 @@ public:
 	void live_debug_reparent_node(const NodePath &p_at, const NodePath &p_new_place, const String &p_new_name, int p_at_pos);
 
 	void set_debug_mute_audio(bool p_mute);
+	// To every game being debugged.
+	void send_message_to_all(const String &p_message, const Array &p_args);
 	bool get_debug_mute_audio() const;
 
 	void set_camera_override(CameraOverride p_override);

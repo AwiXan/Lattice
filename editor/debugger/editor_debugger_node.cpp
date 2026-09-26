@@ -1014,6 +1014,12 @@ void EditorDebuggerNode::live_debug_reparent_node(const NodePath &p_at, const No
 	});
 }
 
+void EditorDebuggerNode::send_message_to_all(const String &p_message, const Array &p_args) {
+	_for_all(tabs, [&](ScriptEditorDebugger *dbg) {
+		dbg->send_message(p_message, p_args);
+	});
+}
+
 void EditorDebuggerNode::set_debug_mute_audio(bool p_mute) {
 	_for_all(tabs, [&](ScriptEditorDebugger *dbg) {
 		dbg->set_debug_mute_audio(p_mute);

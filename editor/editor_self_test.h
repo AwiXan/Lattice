@@ -166,6 +166,7 @@ class EditorSelfTest : public Node {
 	void _view_camera_preview();
 	void _view_right_click();
 	void _view_transform_readout();
+	void _debug_network_simulation();
 	void _timeline_open();
 	void _timeline_check();
 	ObjectID timeline_panel;

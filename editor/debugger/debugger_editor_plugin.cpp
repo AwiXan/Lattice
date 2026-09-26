@@ -95,6 +95,13 @@ DebuggerEditorPlugin::DebuggerEditorPlugin(PopupMenu *p_debug_menu) {
 	debug_menu->set_item_tooltip(-1,
 			TTRC("When this option is enabled, the editor debug server will stay open and listen for new sessions started outside of the editor itself."));
 
+	network_simulation_menu = memnew(PopupMenu);
+	network_simulation_menu->set_name("NetworkSimulation");
+	network_simulation_menu->connect(SceneStringName(id_pressed), callable_mp(this, &DebuggerEditorPlugin::_network_simulation_pressed));
+	debug_menu->add_submenu_node_item(TTRC("Network Simulation"), network_simulation_menu);
+	debug_menu->set_item_tooltip(-1,
+			TTRC("Makes the network worse, on purpose, for the multiplayer of the games run from the editor: packets they receive come late, and some are lost.\nThe ping given is for two instances run from here, both of which delay what they receive. Changes apply to running games too."));
+
 	// Multi-instance, start/stop.
 	debug_menu->add_separator();
 	debug_menu->add_item(TTRC("Customize Run Instances..."), RUN_MULTIPLE_INSTANCES);
@@ -226,7 +233,48 @@ void DebuggerEditorPlugin::_notification(int p_what) {
 	}
 }
 
+struct NetworkSimulationPreset {
+	const char *name;
+	int latency_msec;
+	int jitter_msec;
+	double packet_loss;
+};
+
+static const NetworkSimulationPreset network_simulation_presets[] = {
+	{ TTRC("Off"), 0, 0, 0.0 },
+	{ TTRC("Good (40 ms ping)"), 20, 5, 0.0 },
+	{ TTRC("Average (120 ms ping, 1% loss)"), 60, 15, 0.01 },
+	{ TTRC("Bad (300 ms ping, 3% loss)"), 150, 40, 0.03 },
+	{ TTRC("Terrible (600 ms ping, 10% loss)"), 300, 100, 0.1 },
+};
+
+void DebuggerEditorPlugin::_update_network_simulation_menu() {
+	const int current = EditorSettings::get_singleton()->get_project_metadata("debug_options", "network_simulation", 0);
+	network_simulation_menu->clear();
+	for (int i = 0; i < (int)std::size(network_simulation_presets); i++) {
+		network_simulation_menu->add_radio_check_item(TTRGET(network_simulation_presets[i].name), i);
+		network_simulation_menu->set_item_checked(-1, i == current);
+	}
+}
+
+void DebuggerEditorPlugin::_network_simulation_pressed(int p_preset) {
+	ERR_FAIL_INDEX(p_preset, (int)std::size(network_simulation_presets));
+	const NetworkSimulationPreset &preset = network_simulation_presets[p_preset];
+	EditorSettings::get_singleton()->set_project_metadata("debug_options", "network_simulation", p_preset);
+	// What the games run from now on are given.
+	const String argument = p_preset == 0 ? String() : vformat("--network-simulation=%d,%d,%s", preset.latency_msec, preset.jitter_msec, String::num(preset.packet_loss));
+	EditorSettings::get_singleton()->set_project_metadata("debug_options", "network_simulation_argument", argument);
+	_update_network_simulation_menu();
+	// And the ones running now.
+	Array args;
+	args.push_back(preset.latency_msec);
+	args.push_back(preset.jitter_msec);
+	args.push_back(preset.packet_loss);
+	EditorDebuggerNode::get_singleton()->send_message_to_all("multiplayer:network_simulation", args);
+}
+
 void DebuggerEditorPlugin::_update_debug_options() {
+	_update_network_simulation_menu();
 	bool check_deploy_remote = EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_deploy_remote_debug", true);
 	bool check_file_server = EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_file_server", false);
 	bool check_debug_collisions = EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_debug_collisions", false);

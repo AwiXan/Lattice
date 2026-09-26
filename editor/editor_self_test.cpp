@@ -1346,6 +1346,24 @@ void EditorSelfTest::_view_transform_readout() {
 			vformat("G X 2.5 in a 3D view: \"%s\" beside the mouse, moved to %s; Escape puts it back and the numbers away (%s) - focus on %s, \"%s\" once begun", typed, moved, back, focus, begun));
 }
 
+void EditorSelfTest::_debug_network_simulation() {
+	PopupMenu *menu = Object::cast_to<PopupMenu>(EditorNode::get_singleton()->find_child("NetworkSimulation", true, false));
+	if (!menu) {
+		_check(false, "Debug > Network Simulation is there");
+		return;
+	}
+	// A preset picked: what the games run from now on are given; and back.
+	const int before = EditorSettings::get_singleton()->get_project_metadata("debug_options", "network_simulation", 0);
+	menu->emit_signal(SceneStringName(id_pressed), 2);
+	const String argument = EditorSettings::get_singleton()->get_project_metadata("debug_options", "network_simulation_argument", String());
+	const bool checked = menu->is_item_checked(menu->get_item_index(2));
+	menu->emit_signal(SceneStringName(id_pressed), 0);
+	const String off = EditorSettings::get_singleton()->get_project_metadata("debug_options", "network_simulation_argument", String());
+	menu->emit_signal(SceneStringName(id_pressed), before);
+	_check(argument == "--network-simulation=60,15,0.01" && checked && off.is_empty() && menu->get_item_count() == 5,
+			vformat("Debug > Network Simulation > Average gives the games run \"%s\" (checked %s); Off gives nothing (\"%s\")", argument, checked, off));
+}
+
 void EditorSelfTest::_timeline_open() {
 	EditorPane *pane = EditorNode::get_singleton()->get_editor_main_screen()->open_panel("history_timeline", Variant());
 	EditorHistoryTimeline *timeline = nullptr;
@@ -2867,6 +2885,7 @@ EditorSelfTest::EditorSelfTest() {
 	_add("view camera preview", callable_mp(this, &EditorSelfTest::_view_camera_preview));
 	_add("view right click", callable_mp(this, &EditorSelfTest::_view_right_click));
 	_add("view transform readout", callable_mp(this, &EditorSelfTest::_view_transform_readout));
+	_add("debug network simulation", callable_mp(this, &EditorSelfTest::_debug_network_simulation));
 	_add("timeline open", callable_mp(this, &EditorSelfTest::_timeline_open));
 	_add("timeline check", callable_mp(this, &EditorSelfTest::_timeline_check));
 	_add("view sidebar open", callable_mp(this, &EditorSelfTest::_view_sidebar_open));
