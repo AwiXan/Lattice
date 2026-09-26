@@ -72,6 +72,12 @@
 				Callables are called with arguments supplied in argument array.
 			</description>
 		</method>
+		<method name="clear_hitch_log">
+			<return type="void" />
+			<description>
+				Empties the log [method get_hitch_log] returns.
+			</description>
+		</method>
 		<method name="get_custom_monitor">
 			<return type="Variant" />
 			<param index="0" name="id" type="StringName" />
@@ -89,6 +95,23 @@
 			<return type="PackedInt32Array" />
 			<description>
 				Returns the [enum MonitorType] values of active custom monitors in an [Array].
+			</description>
+		</method>
+		<method name="get_hitch_log" qualifiers="const">
+			<return type="Array" />
+			<description>
+				Returns the last 32 frames that took at least [member hitch_threshold_msec], the oldest first, each with what went on in it, to find out what makes the game stutter - in a debug overlay, a log file, or a report sent home. Each is a [Dictionary] with:
+				- [code]frame[/code]: [method Engine.get_process_frames] once it was over, and [code]time_msec[/code]: [method Time.get_ticks_msec] then;
+				- [code]duration_msec[/code]: how long the frame took in all;
+				- [code]process_msec[/code], [code]render_msec[/code], [code]physics_msec[/code] and [code]physics_steps[/code]: what processing, rendering and the physics steps took;
+				- [code]shader_wait_msec[/code]: the time rendering stood waiting for shaders or pipelines to compile, and [code]shaders_compiled[/code] and [code]pipelines_compiled[/code]: how many finished compiling during the frame (see [method RenderingServer.get_shader_compilation_info]);
+				- [code]load_msec[/code] and [code]loads[/code]: the time spent loading resources on the main thread (or waiting for them with [method ResourceLoader.load_threaded_get]), and the slowest of those loads, as dictionaries with [code]path[/code] and [code]msec[/code];
+				- [code]instantiate_msec[/code] and [code]instantiated[/code]: the same for scenes instantiated with [method PackedScene.instantiate];
+				- [code]causes[/code]: what most likely made the frame long, the largest first - any of [code]"shader_compilation"[/code], [code]"resource_loading"[/code], [code]"scene_instancing"[/code], [code]"physics"[/code], [code]"process"[/code] (scripts and nodes), [code]"rendering"[/code] and [code]"other"[/code] (presenting the frame, waiting for the GPU or the system).
+				[codeblock]
+				Performance.hitch_detected.connect(func(hitch):
+				    print("%d ms: %s" % [hitch.duration_msec, ", ".join(hitch.causes)]))
+				[/codeblock]
 			</description>
 		</method>
 		<method name="get_monitor" qualifiers="const">
@@ -128,6 +151,19 @@
 			</description>
 		</method>
 	</methods>
+	<members>
+		<member name="hitch_threshold_msec" type="float" setter="set_hitch_threshold_msec" getter="get_hitch_threshold_msec" default="50.0">
+			A frame at least this long, in milliseconds, goes in [method get_hitch_log] and emits [signal hitch_detected]. [code]0[/code] turns it off. Starts as [member ProjectSettings.debug/settings/performance/hitch_threshold_msec].
+		</member>
+	</members>
+	<signals>
+		<signal name="hitch_detected">
+			<param index="0" name="hitch" type="Dictionary" />
+			<description>
+				Emitted when a frame took at least [member hitch_threshold_msec], with what [method get_hitch_log] keeps of it.
+			</description>
+		</signal>
+	</signals>
 	<constants>
 		<constant name="TIME_FPS" value="0" enum="Monitor">
 			The number of frames rendered in the last second. This metric is only updated once per second, even if queried more often. [i]Higher is better.[/i]

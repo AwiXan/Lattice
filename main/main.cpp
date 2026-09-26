@@ -5017,6 +5017,10 @@ bool Main::iteration() {
 	main_timer_sync.set_fixed_fps(fixed_fps);
 
 	const uint64_t ticks_elapsed = ticks - last_ticks;
+	// The frame before this one is over: long enough to be a hitch?
+	if (performance) {
+		performance->frame_ended(ticks_elapsed);
+	}
 
 	const int physics_ticks_per_second = Engine::get_singleton()->get_user_physics_ticks_per_second();
 	const double physics_step = 1.0 / physics_ticks_per_second;
@@ -5033,6 +5037,8 @@ bool Main::iteration() {
 
 	uint64_t physics_process_ticks = 0;
 	uint64_t process_ticks = 0;
+	uint64_t physics_total_ticks = 0;
+	uint64_t render_ticks = 0;
 #if !defined(NAVIGATION_2D_DISABLED) || !defined(NAVIGATION_3D_DISABLED)
 	uint64_t navigation_process_ticks = 0;
 #endif // !defined(NAVIGATION_2D_DISABLED) || !defined(NAVIGATION_3D_DISABLED)
@@ -5137,6 +5143,7 @@ bool Main::iteration() {
 
 		physics_process_ticks = MAX(physics_process_ticks, OS::get_singleton()->get_ticks_usec() - physics_begin); // keep the largest one for reference
 		physics_process_max = MAX(OS::get_singleton()->get_ticks_usec() - physics_begin, physics_process_max);
+		physics_total_ticks += OS::get_singleton()->get_ticks_usec() - physics_begin;
 
 		Engine::get_singleton()->_in_physics = false;
 	}
@@ -5162,6 +5169,7 @@ bool Main::iteration() {
 	NavigationServer3D::get_singleton()->process(process_step * time_scale);
 #endif // NAVIGATION_3D_DISABLED
 
+	const uint64_t render_begin = OS::get_singleton()->get_ticks_usec();
 	GodotProfileZoneGrouped(_profile_zone, "RenderingServer::sync");
 	RenderingServer::get_singleton()->sync(); //sync if still drawing from previous frames.
 
@@ -5185,8 +5193,12 @@ bool Main::iteration() {
 		}
 	}
 
+	render_ticks = OS::get_singleton()->get_ticks_usec() - render_begin;
 	process_ticks = OS::get_singleton()->get_ticks_usec() - process_begin;
 	process_max = MAX(process_ticks, process_max);
+	if (performance) {
+		performance->set_frame_work(process_ticks - render_ticks, render_ticks, physics_total_ticks, advance.physics_steps);
+	}
 	uint64_t frame_time = OS::get_singleton()->get_ticks_usec() - ticks;
 
 	GodotProfileZoneGrouped(_profile_zone, "GDExtensionManager::frame");

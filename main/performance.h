@@ -60,6 +60,23 @@ class Performance : public Object {
 	double _physics_process_time;
 	double _navigation_process_time;
 
+	// Frames at least hitch_threshold_msec long, and what went on in them.
+	static constexpr uint32_t HITCH_LOG_SIZE = 32;
+	double hitch_threshold_msec = 50.0;
+	// Taken from the project settings when first wanted: they are not
+	// there yet when this is made. A value set by the game stays.
+	bool hitch_threshold_read = false;
+	LocalVector<Dictionary> hitch_log;
+	bool frame_work_known = false;
+	uint64_t frame_process_usec = 0;
+	uint64_t frame_render_usec = 0;
+	uint64_t frame_physics_usec = 0;
+	int frame_physics_steps = 0;
+	uint64_t last_shader_wait_usec = 0;
+	uint32_t last_shaders_done = 0;
+	uint32_t last_pipelines_done = 0;
+	double _hitch_threshold();
+
 public:
 	enum Monitor {
 		TIME_FPS,
@@ -145,6 +162,16 @@ public:
 	void set_process_time(double p_pt);
 	void set_physics_process_time(double p_pt);
 	void set_navigation_process_time(double p_pt);
+
+	// From Main, each frame: what its parts took; then, as the next one
+	// begins, how long it took in all.
+	void set_frame_work(uint64_t p_process_usec, uint64_t p_render_usec, uint64_t p_physics_usec, int p_physics_steps);
+	void frame_ended(uint64_t p_frame_usec);
+
+	Array get_hitch_log() const;
+	void clear_hitch_log();
+	void set_hitch_threshold_msec(double p_msec);
+	double get_hitch_threshold_msec();
 
 	void add_custom_monitor(const StringName &p_id, const Callable &p_callable, const Vector<Variant> &p_args, MonitorType p_type = MONITOR_TYPE_QUANTITY);
 	void remove_custom_monitor(const StringName &p_id);

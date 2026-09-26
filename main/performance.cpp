@@ -32,13 +32,16 @@
 #include "performance.compat.inc"
 
 #include "core/config/engine.h"
+#include "core/config/project_settings.h"
 #include "core/object/class_db.h"
+#include "core/os/main_thread_work.h"
 #include "core/os/os.h"
 #include "core/variant/typed_array.h"
 #include "scene/main/node.h"
 #include "scene/main/scene_tree.h"
 #include "servers/audio/audio_server.h"
 #include "servers/rendering/rendering_server.h"
+#include "servers/rendering/rendering_shader_stats.h"
 
 #ifndef NAVIGATION_2D_DISABLED
 #include "servers/navigation_2d/navigation_server_2d.h"
@@ -71,6 +74,13 @@ void Performance::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("has_custom_monitor", "id"), &Performance::has_custom_monitor);
 	ClassDB::bind_method(D_METHOD("get_custom_monitor", "id"), &Performance::get_custom_monitor);
 	ClassDB::bind_method(D_METHOD("get_monitor_modification_time"), &Performance::get_monitor_modification_time);
+
+	ClassDB::bind_method(D_METHOD("get_hitch_log"), &Performance::get_hitch_log);
+	ClassDB::bind_method(D_METHOD("clear_hitch_log"), &Performance::clear_hitch_log);
+	ClassDB::bind_method(D_METHOD("set_hitch_threshold_msec", "msec"), &Performance::set_hitch_threshold_msec);
+	ClassDB::bind_method(D_METHOD("get_hitch_threshold_msec"), &Performance::get_hitch_threshold_msec);
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "hitch_threshold_msec", PROPERTY_HINT_RANGE, "0,1000,1,or_greater,suffix:ms"), "set_hitch_threshold_msec", "get_hitch_threshold_msec");
+	ADD_SIGNAL(MethodInfo("hitch_detected", PropertyInfo(Variant::DICTIONARY, "hitch")));
 	ClassDB::bind_method(D_METHOD("get_custom_monitor_names"), &Performance::get_custom_monitor_names);
 	ClassDB::bind_method(D_METHOD("get_custom_monitor_types"), &Performance::get_custom_monitor_types);
 
@@ -551,6 +561,146 @@ Performance::MonitorType Performance::get_monitor_type(Monitor p_monitor) const 
 	static_assert((sizeof(types) / sizeof(MonitorType)) == MONITOR_MAX);
 
 	return types[p_monitor];
+}
+
+double Performance::_hitch_threshold() {
+	if (!hitch_threshold_read && ProjectSettings::get_singleton() && ProjectSettings::get_singleton()->has_setting("debug/settings/performance/hitch_threshold_msec")) {
+		hitch_threshold_read = true;
+		hitch_threshold_msec = GLOBAL_GET("debug/settings/performance/hitch_threshold_msec");
+	}
+	return hitch_threshold_msec;
+}
+
+void Performance::set_hitch_threshold_msec(double p_msec) {
+	hitch_threshold_read = true;
+	hitch_threshold_msec = MAX(p_msec, 0.0);
+}
+
+double Performance::get_hitch_threshold_msec() {
+	return _hitch_threshold();
+}
+
+void Performance::set_frame_work(uint64_t p_process_usec, uint64_t p_render_usec, uint64_t p_physics_usec, int p_physics_steps) {
+	frame_process_usec = p_process_usec;
+	frame_render_usec = p_render_usec;
+	frame_physics_usec = p_physics_usec;
+	frame_physics_steps = p_physics_steps;
+	frame_work_known = true;
+}
+
+void Performance::frame_ended(uint64_t p_frame_usec) {
+	// What happened since the last frame ended.
+	uint32_t shaders = 0;
+	uint32_t pipelines = 0;
+	for (int i = 0; i < RenderingShaderStats::KIND_MAX; i++) {
+		shaders += RenderingShaderStats::counters[i].shaders_done.get();
+		pipelines += RenderingShaderStats::counters[i].pipelines_done.get();
+	}
+	const uint64_t shader_wait = RenderingShaderStats::wait_usec.get();
+	const uint32_t new_shaders = shaders - last_shaders_done;
+	const uint32_t new_pipelines = pipelines - last_pipelines_done;
+	const uint64_t waited = shader_wait - last_shader_wait_usec;
+	last_shaders_done = shaders;
+	last_pipelines_done = pipelines;
+	last_shader_wait_usec = shader_wait;
+
+	const bool known = frame_work_known;
+	frame_work_known = false;
+	const double threshold = _hitch_threshold();
+	if (!known || threshold <= 0.0 || double(p_frame_usec) < threshold * 1000.0) {
+		MainThreadWork::reset();
+		return;
+	}
+
+	const auto msec = [](uint64_t p_usec) {
+		return double(p_usec) / 1000.0;
+	};
+	// The slowest few, the slowest first.
+	const auto items = [&msec](int p_kind) {
+		LocalVector<MainThreadWork::Item> list(MainThreadWork::slowest[p_kind]);
+		for (uint32_t i = 1; i < list.size(); i++) {
+			for (uint32_t j = i; j > 0 && list[j - 1].usec < list[j].usec; j--) {
+				SWAP(list[j - 1], list[j]);
+			}
+		}
+		Array out;
+		for (const MainThreadWork::Item &item : list) {
+			Dictionary d;
+			d["path"] = item.what;
+			d["msec"] = msec(item.usec);
+			out.push_back(d);
+		}
+		return out;
+	};
+	const uint64_t load = MainThreadWork::usec[MainThreadWork::KIND_LOAD];
+	const uint64_t instantiate = MainThreadWork::usec[MainThreadWork::KIND_INSTANTIATE];
+
+	Dictionary hitch;
+	hitch["frame"] = Engine::get_singleton()->get_process_frames();
+	hitch["time_msec"] = OS::get_singleton()->get_ticks_msec();
+	hitch["duration_msec"] = msec(p_frame_usec);
+	hitch["process_msec"] = msec(frame_process_usec);
+	hitch["render_msec"] = msec(frame_render_usec);
+	hitch["physics_msec"] = msec(frame_physics_usec);
+	hitch["physics_steps"] = frame_physics_steps;
+	hitch["shader_wait_msec"] = msec(waited);
+	hitch["shaders_compiled"] = new_shaders;
+	hitch["pipelines_compiled"] = new_pipelines;
+	hitch["load_msec"] = msec(load);
+	hitch["loads"] = items(MainThreadWork::KIND_LOAD);
+	hitch["instantiate_msec"] = msec(instantiate);
+	hitch["instantiated"] = items(MainThreadWork::KIND_INSTANTIATE);
+
+	// What most likely made it long: each part that took a fifth of the frame
+	// or more, the largest first. Loading and instantiating happen within
+	// processing, waiting for shaders within rendering: taken out of those.
+	struct Part {
+		const char *name;
+		uint64_t usec;
+	};
+	const uint64_t accounted = frame_process_usec + frame_render_usec + frame_physics_usec;
+	Part parts[] = {
+		{ "shader_compilation", waited },
+		{ "resource_loading", load },
+		{ "scene_instancing", instantiate },
+		{ "physics", frame_physics_usec },
+		{ "process", frame_process_usec > load + instantiate ? frame_process_usec - load - instantiate : 0 },
+		{ "rendering", frame_render_usec > waited ? frame_render_usec - waited : 0 },
+		// Presenting, waiting for the GPU or the system, the frame limiter.
+		{ "other", p_frame_usec > accounted ? p_frame_usec - accounted : 0 },
+	};
+	const int part_count = std::size(parts);
+	for (int i = 1; i < part_count; i++) {
+		for (int j = i; j > 0 && parts[j - 1].usec < parts[j].usec; j--) {
+			SWAP(parts[j - 1], parts[j]);
+		}
+	}
+	PackedStringArray causes;
+	for (int i = 0; i < part_count; i++) {
+		if (parts[i].usec * 5 >= p_frame_usec || i == 0) {
+			causes.push_back(parts[i].name);
+		}
+	}
+	hitch["causes"] = causes;
+	MainThreadWork::reset();
+
+	hitch_log.push_back(hitch);
+	if (hitch_log.size() > HITCH_LOG_SIZE) {
+		hitch_log.remove_at(0);
+	}
+	emit_signal(SNAME("hitch_detected"), hitch);
+}
+
+Array Performance::get_hitch_log() const {
+	Array log;
+	for (const Dictionary &hitch : hitch_log) {
+		log.push_back(hitch.duplicate(true));
+	}
+	return log;
+}
+
+void Performance::clear_hitch_log() {
+	hitch_log.clear();
 }
 
 void Performance::set_process_time(double p_pt) {

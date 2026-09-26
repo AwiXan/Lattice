@@ -763,7 +763,9 @@ void ShaderRD::_compile_version_end(Version *p_version, int p_group) {
 		return;
 	}
 	WorkerThreadPool::GroupID group_task = p_version->group_compilation_tasks[p_group];
+	const uint64_t wait_begin = OS::get_singleton()->get_ticks_usec();
 	WorkerThreadPool::get_singleton()->wait_for_group_task_completion(group_task);
+	RenderingShaderStats::wait_usec.add(OS::get_singleton()->get_ticks_usec() - wait_begin);
 	p_version->group_compilation_tasks.write[p_group] = 0;
 
 	bool all_valid = true;

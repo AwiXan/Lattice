@@ -32,6 +32,7 @@
 
 #include "core/object/worker_thread_pool.h"
 #include "core/os/mutex.h"
+#include "core/os/os.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/local_vector.h"
 #include "core/templates/rb_map.h"
@@ -101,9 +102,11 @@ private:
 			}
 		}
 
+		const uint64_t wait_begin = OS::get_singleton()->get_ticks_usec();
 		for (WorkerThreadPool::TaskID task_id : tasks_to_wait) {
 			WorkerThreadPool::get_singleton()->wait_for_task_completion(task_id);
 		}
+		RenderingShaderStats::wait_usec.add(OS::get_singleton()->get_ticks_usec() - wait_begin);
 	}
 
 public:
@@ -179,7 +182,9 @@ public:
 		}
 
 		if (task_id_to_wait != WorkerThreadPool::INVALID_TASK_ID) {
+			const uint64_t wait_begin = OS::get_singleton()->get_ticks_usec();
 			WorkerThreadPool::get_singleton()->wait_for_task_completion(task_id_to_wait);
+			RenderingShaderStats::wait_usec.add(OS::get_singleton()->get_ticks_usec() - wait_begin);
 		}
 	}
 

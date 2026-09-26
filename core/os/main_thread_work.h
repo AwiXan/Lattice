@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  rendering_shader_stats.h                                              */
+/*  main_thread_work.h                                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,41 +30,85 @@
 
 #pragma once
 
-#include "core/templates/safe_refcount.h"
+#include "core/os/os.h"
+#include "core/os/thread.h"
+#include "core/string/ustring.h"
+#include "core/templates/local_vector.h"
 
-// What the renderer has compiled and is compiling, by kind of shader, for
-// RenderingServer.get_shader_compilation_info(): a loading screen can wait
-// for it, a game can show it. Shader programs (a material's variants, built
-// from source or loaded from the shader cache) and the pipelines made of them
-// for the ways they are drawn - both happen on worker threads.
-struct RenderingShaderStats {
+// What took the main thread's time since the last frame ended, for the hitch
+// log (Performance.get_hitch_log()): loading resources and instantiating
+// scenes - the outermost call of each only - with the slowest few by name.
+// Main thread only: the log is about frames, which the main thread makes.
+struct MainThreadWork {
 	enum Kind {
-		KIND_SPATIAL,
-		KIND_CANVAS_ITEM,
-		KIND_PARTICLES,
-		KIND_SKY,
-		KIND_FOG,
-		// The renderer's own effects.
-		KIND_ENGINE,
+		KIND_LOAD,
+		KIND_INSTANTIATE,
 		KIND_MAX,
 	};
 
-	struct Counters {
-		SafeNumeric<uint32_t> shaders_queued;
-		SafeNumeric<uint32_t> shaders_done;
-		SafeNumeric<uint32_t> shaders_from_cache;
-		SafeNumeric<uint32_t> pipelines_queued;
-		SafeNumeric<uint32_t> pipelines_done;
+	struct Item {
+		String what;
+		uint64_t usec = 0;
+	};
+	static constexpr uint32_t SLOWEST = 8;
+
+	static inline uint64_t usec[KIND_MAX] = {};
+	static inline uint32_t count[KIND_MAX] = {};
+	static inline LocalVector<Item> slowest[KIND_MAX];
+	static inline uint32_t depth[KIND_MAX] = {};
+
+	class Scope {
+		int kind = -1;
+		bool outermost = false;
+		uint64_t begin = 0;
+		String what;
+
+	public:
+		Scope(Kind p_kind, const String &p_what) {
+			if (!Thread::is_main_thread()) {
+				return;
+			}
+			kind = p_kind;
+			outermost = depth[kind]++ == 0;
+			if (outermost) {
+				what = p_what;
+				begin = OS::get_singleton()->get_ticks_usec();
+			}
+		}
+
+		~Scope() {
+			if (kind < 0) {
+				return;
+			}
+			depth[kind]--;
+			if (!outermost) {
+				return;
+			}
+			const uint64_t spent = OS::get_singleton()->get_ticks_usec() - begin;
+			usec[kind] += spent;
+			count[kind]++;
+			LocalVector<Item> &list = slowest[kind];
+			if (list.size() < SLOWEST) {
+				list.push_back({ what, spent });
+				return;
+			}
+			uint32_t least = 0;
+			for (uint32_t i = 1; i < list.size(); i++) {
+				if (list[i].usec < list[least].usec) {
+					least = i;
+				}
+			}
+			if (spent > list[least].usec) {
+				list[least] = { what, spent };
+			}
+		}
 	};
 
-	static Counters counters[KIND_MAX];
-	// Time the renderer stood waiting for a compilation it needed there and
-	// then, in all: for the hitch log.
-	static inline SafeNumeric<uint64_t> wait_usec;
-
-	static const char *get_kind_name(int p_kind) {
-		static const char *names[KIND_MAX] = { "spatial", "canvas_item", "particles", "sky", "fog", "engine" };
-		return (p_kind >= 0 && p_kind < KIND_MAX) ? names[p_kind] : "engine";
+	static void reset() {
+		for (int i = 0; i < KIND_MAX; i++) {
+			usec[i] = 0;
+			count[i] = 0;
+			slowest[i].clear();
+		}
 	}
-	static Counters &of(int p_kind) { return counters[(p_kind >= 0 && p_kind < KIND_MAX) ? p_kind : KIND_ENGINE]; }
 };

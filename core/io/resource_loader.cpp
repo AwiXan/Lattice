@@ -40,6 +40,7 @@
 #include "core/object/class_db.h"
 #include "core/object/message_queue.h"
 #include "core/object/script_language.h"
+#include "core/os/main_thread_work.h"
 #include "core/os/condition_variable.h"
 #include "core/os/os.h"
 #include "core/os/safe_binary_mutex.h"
@@ -723,6 +724,7 @@ void ResourceLoader::_load_threaded_request_setup_user_token(LoadToken *p_token,
 }
 
 Ref<Resource> ResourceLoader::load(const String &p_path, const String &p_type_hint, CacheMode p_cache_mode, Error *r_error) {
+	MainThreadWork::Scope work(MainThreadWork::KIND_LOAD, p_path);
 	if (r_error) {
 		*r_error = OK;
 	}
@@ -930,6 +932,8 @@ ResourceLoader::ThreadLoadStatus ResourceLoader::load_threaded_get_status(const 
 }
 
 Ref<Resource> ResourceLoader::load_threaded_get(const String &p_path, Error *r_error) {
+	// Waiting for it, if it is not done.
+	MainThreadWork::Scope work(MainThreadWork::KIND_LOAD, p_path);
 	if (r_error) {
 		*r_error = OK;
 	}

@@ -713,6 +713,9 @@
 		<member name="debug/settings/gdscript/max_call_stack" type="int" setter="" getter="" default="1024">
 			Maximum call stack allowed for debugging GDScript.
 		</member>
+		<member name="debug/settings/performance/hitch_threshold_msec" type="float" setter="" getter="" default="50.0">
+			A frame at least this long, in milliseconds, goes in [method Performance.get_hitch_log], with what went on in it. [code]0[/code] turns it off. See [member Performance.hitch_threshold_msec] to change it while the game runs.
+		</member>
 		<member name="debug/settings/physics_interpolation/enable_warnings" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], enables warnings which can help pinpoint where nodes are being incorrectly updated, which will result in incorrect interpolation and visual glitches.
 			When a node is being interpolated, it is essential that the transform is set during [method Node._physics_process] (during a physics tick) rather than [method Node._process] (during a frame).
