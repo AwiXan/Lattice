@@ -796,6 +796,10 @@ private:
 	// first if it does not hold any more), into p_atlas_rect.
 	void _render_directional_static_cached(RID p_light, int p_pass, const PagedArray<RenderGeometryInstance *> &p_static_instances, uint64_t p_generation, RID p_atlas_fb, const Rect2i &p_atlas_rect, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, bool p_reverse_cull_face, bool p_use_pancake, bool p_flip_y, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, RenderingServerTypes::RenderInfo *p_render_info, const Size2i &p_viewport_size, const Transform3D &p_main_cam_transform);
 	void _render_shadow_copy(RID p_source, const Size2i &p_source_size, RID p_framebuffer, const Rect2i &p_rect, const Vector2i &p_offset);
+	// An omni or spot light's still casters, from its cache (drawn into it
+	// first if it does not hold any more), into p_rect of p_fb, which is
+	// p_texture's; the rest are then drawn over them without clearing.
+	void _render_positional_static_cached(RID p_light, int p_pass, const PagedArray<RenderGeometryInstance *> &p_static_instances, uint64_t p_generation, RID p_fb, const Rect2i &p_rect, RID p_texture, const Size2i &p_texture_size, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, bool p_reverse_cull_face, bool p_use_dp, bool p_use_dp_flip, bool p_use_pancake, bool p_flip_y, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, RenderingServerTypes::RenderInfo *p_render_info, const Size2i &p_viewport_size, const Transform3D &p_main_cam_transform);
 	// The still casters over a strip of a cascade that came into it.
 	PagedArrayPool<RenderGeometryInstance *> shadow_cache_strip_pool;
 	PagedArray<RenderGeometryInstance *> shadow_cache_strip_instances;
@@ -882,7 +886,7 @@ public:
 
 	virtual bool free(RID p_rid) override;
 
-	virtual bool directional_shadow_cache_supported() const override { return true; }
+	virtual bool shadow_cache_supported() const override { return true; }
 
 	virtual void update() override;
 

@@ -630,7 +630,7 @@ void LightStorage::light_instance_free(RID p_light) {
 		shadow_atlas->shadow_owners.erase(p_light);
 	}
 
-	for (DirectionalShadowCache &cache : light_instance->directional_cache) {
+	for (ShadowCache &cache : light_instance->shadow_cache) {
 		if (cache.texture.is_valid()) {
 			// Its framebuffer goes with it.
 			RD::get_singleton()->free_rid(cache.texture);
@@ -2831,15 +2831,15 @@ uint32_t LightStorage::get_shadow_atlas_depth_usage_bits() {
 
 /* DIRECTIONAL SHADOW */
 
-LightStorage::DirectionalShadowCache *LightStorage::light_instance_get_directional_cache(RID p_light_instance, int p_pass, const Size2i &p_size) {
+LightStorage::ShadowCache *LightStorage::light_instance_get_shadow_cache(RID p_light_instance, int p_pass, const Size2i &p_size, RD::DataFormat p_format) {
 	LightInstance *light_instance = light_instance_owner.get_or_null(p_light_instance);
 	ERR_FAIL_NULL_V(light_instance, nullptr);
-	ERR_FAIL_INDEX_V(p_pass, 4, nullptr);
+	ERR_FAIL_INDEX_V(p_pass, 6, nullptr);
 	if (p_size.width <= 0 || p_size.height <= 0) {
 		return nullptr;
 	}
-	DirectionalShadowCache &cache = light_instance->directional_cache[p_pass];
-	const RD::DataFormat format = get_shadow_atlas_depth_format(directional_shadow.use_16_bits);
+	ShadowCache &cache = light_instance->shadow_cache[p_pass];
+	const RD::DataFormat format = p_format;
 	if (cache.texture.is_null() || cache.size != p_size || cache.format != format) {
 		if (cache.texture.is_valid()) {
 			RD::get_singleton()->free_rid(cache.texture);
@@ -2850,7 +2850,7 @@ LightStorage::DirectionalShadowCache *LightStorage::light_instance_get_direction
 		tf.height = p_size.height;
 		tf.usage_bits = get_shadow_atlas_depth_usage_bits();
 		cache.texture = RD::get_singleton()->texture_create(tf, RD::TextureView());
-		RD::get_singleton()->set_resource_name(cache.texture, "Directional Shadow Cache");
+		RD::get_singleton()->set_resource_name(cache.texture, "Shadow Cache");
 		Vector<RID> fb_tex;
 		fb_tex.push_back(cache.texture);
 		cache.framebuffer = RD::get_singleton()->framebuffer_create(fb_tex);
@@ -2963,6 +2963,7 @@ LightStorage::ShadowCubemap *LightStorage::_get_shadow_cubemap(int p_size) {
 
 		for (int i = 0; i < 6; i++) {
 			RID side_texture = RD::get_singleton()->texture_create_shared_from_slice(RD::TextureView(), sc.cubemap, i, 0);
+			sc.side_texture[i] = side_texture;
 			Vector<RID> fbtex;
 			fbtex.push_back(side_texture);
 			sc.side_fb[i] = RD::get_singleton()->framebuffer_create(fbtex);
@@ -2972,6 +2973,11 @@ LightStorage::ShadowCubemap *LightStorage::_get_shadow_cubemap(int p_size) {
 	}
 
 	return &shadow_cubemaps[p_size];
+}
+
+RID LightStorage::get_cubemap_side_texture(int p_size, int p_pass) {
+	ERR_FAIL_INDEX_V(p_pass, 6, RID());
+	return _get_shadow_cubemap(p_size)->side_texture[p_pass];
 }
 
 RID LightStorage::get_cubemap(int p_size) {

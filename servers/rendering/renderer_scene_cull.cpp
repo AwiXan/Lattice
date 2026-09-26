@@ -563,7 +563,7 @@ void RendererSceneCull::_shadow_static_touch(Instance *p_instance) const {
 			p_instance->scenario->shadow_static_generation++;
 		}
 	}
-	if (!directional_shadow_cache_static) {
+	if (!directional_shadow_cache_static && !positional_shadow_cache_static) {
 		return;
 	}
 	p_instance->shadow_static_due = RSG::rasterizer->get_frame_number() + SHADOW_STATIC_FRAMES;
@@ -2264,7 +2264,7 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 	cull.shadows[p_shadow_index].caster_mask = RSG::light_storage->light_get_shadow_caster_mask(p_instance->base);
 	// The cache holds a cascade's whole square; a tighter draw rect changes
 	// with every turn of the camera, so the two do not go together.
-	cull.shadows[p_shadow_index].cache_static = directional_shadow_cache_static && !directional_shadow_tighter_draw_rect && scene_render->directional_shadow_cache_supported();
+	cull.shadows[p_shadow_index].cache_static = directional_shadow_cache_static && !directional_shadow_tighter_draw_rect && scene_render->shadow_cache_supported();
 
 	// Discard scale
 	const Transform3D light_transform = p_instance->transform.orthonormalized();
@@ -2471,6 +2471,12 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 
 	bool animated_material_found = false;
 
+	// Still casters to their own list, drawn once into a cache: the light keeps
+	// still, so the cache holds until one of them changes or the light does.
+	// All of them then, not only those the camera sees now.
+	const RSE::LightType light_type = RSG::light_storage->light_get_type(p_instance->base);
+	const bool cache_static_positional = positional_shadow_cache_static && scene_render->shadow_cache_supported() && (light_type == RSE::LIGHT_OMNI || light_type == RSE::LIGHT_SPOT);
+
 	switch (RSG::light_storage->light_get_type(p_instance->base)) {
 		case RSE::LIGHT_DIRECTIONAL: {
 		} break;
@@ -2516,8 +2522,10 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 					p_scenario->indexers[Scenario::INDEXER_GEOMETRY].convex_query(planes.ptr(), planes.size(), points.ptr(), points.size(), cull_convex);
 
 					RendererSceneRender::RenderShadowData &shadow_data = render_shadow_data[max_shadows_used++];
+					shadow_data.cache_static = cache_static_positional;
+					shadow_data.static_generation = p_scenario->shadow_static_generation;
 
-					if (!light->is_shadow_update_full()) {
+					if (!light->is_shadow_update_full() && !cache_static_positional) {
 						light_culler->cull_regular_light(instance_shadow_cull_result);
 					}
 
@@ -2543,7 +2551,11 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 							}
 						}
 
-						shadow_data.instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
+						if (cache_static_positional && instance->shadow_static) {
+							shadow_data.static_instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
+						} else {
+							shadow_data.instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
+						}
 					}
 
 					RSG::mesh_storage->update_mesh_instances();
@@ -2609,8 +2621,10 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 					p_scenario->indexers[Scenario::INDEXER_GEOMETRY].convex_query(planes.ptr(), planes.size(), points.ptr(), points.size(), cull_convex);
 
 					RendererSceneRender::RenderShadowData &shadow_data = render_shadow_data[max_shadows_used++];
+					shadow_data.cache_static = cache_static_positional;
+					shadow_data.static_generation = p_scenario->shadow_static_generation;
 
-					if (!light->is_shadow_update_full()) {
+					if (!light->is_shadow_update_full() && !cache_static_positional) {
 						light_culler->cull_regular_light(instance_shadow_cull_result);
 					}
 
@@ -2635,7 +2649,11 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 							}
 						}
 
-						shadow_data.instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
+						if (cache_static_positional && instance->shadow_static) {
+							shadow_data.static_instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
+						} else {
+							shadow_data.instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
+						}
 					}
 
 					RSG::mesh_storage->update_mesh_instances();
@@ -2687,8 +2705,10 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 			p_scenario->indexers[Scenario::INDEXER_GEOMETRY].convex_query(planes.ptr(), planes.size(), points.ptr(), points.size(), cull_convex);
 
 			RendererSceneRender::RenderShadowData &shadow_data = render_shadow_data[max_shadows_used++];
+			shadow_data.cache_static = cache_static_positional;
+			shadow_data.static_generation = p_scenario->shadow_static_generation;
 
-			if (!light->is_shadow_update_full()) {
+			if (!light->is_shadow_update_full() && !cache_static_positional) {
 				light_culler->cull_regular_light(instance_shadow_cull_result);
 			}
 
@@ -2714,7 +2734,11 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 					}
 				}
 
-				shadow_data.instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
+				if (cache_static_positional && instance->shadow_static) {
+					shadow_data.static_instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
+				} else {
+					shadow_data.instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
+				}
 			}
 
 			RSG::mesh_storage->update_mesh_instances();
@@ -2762,8 +2786,10 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 			p_scenario->indexers[Scenario::INDEXER_GEOMETRY].convex_query(planes.ptr(), planes.size(), points.ptr(), points.size(), cull_convex);
 
 			RendererSceneRender::RenderShadowData &shadow_data = render_shadow_data[max_shadows_used++];
+			shadow_data.cache_static = cache_static_positional;
+			shadow_data.static_generation = p_scenario->shadow_static_generation;
 
-			if (!light->is_shadow_update_full()) {
+			if (!light->is_shadow_update_full() && !cache_static_positional) {
 				light_culler->cull_regular_light(instance_shadow_cull_result);
 			}
 
@@ -2782,7 +2808,11 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 					}
 				}
 
-				shadow_data.instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
+				if (cache_static_positional && instance->shadow_static) {
+					shadow_data.static_instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
+				} else {
+					shadow_data.instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
+				}
 			}
 
 			RSG::mesh_storage->update_mesh_instances();
@@ -4706,6 +4736,7 @@ RendererSceneCull::RendererSceneCull() {
 
 	directional_shadow_tighter_draw_rect = GLOBAL_DEF("rendering/lights_and_shadows/directional_shadow/tighter_draw_rect", false);
 	directional_shadow_cache_static = GLOBAL_DEF("rendering/lights_and_shadows/directional_shadow/cache_static_casters", true);
+	positional_shadow_cache_static = GLOBAL_DEF("rendering/lights_and_shadows/positional_shadow/cache_static_casters", true);
 }
 
 RendererSceneCull::~RendererSceneCull() {

@@ -3212,6 +3212,12 @@
 		<member name="rendering/lights_and_shadows/positional_shadow/atlas_size.mobile" type="int" setter="" getter="" default="2048">
 			Lower-end override for [member rendering/lights_and_shadows/positional_shadow/atlas_size] on mobile devices, due to performance concerns or driver support.
 		</member>
+		<member name="rendering/lights_and_shadows/positional_shadow/cache_static_casters" type="bool" setter="" getter="" default="true">
+			If [code]true[/code], [OmniLight3D] and [SpotLight3D] shadows keep the shadows of meshes that stay still in a cache per light. An omni or spot light redraws its shadow whenever something moves within its range; with this, the still meshes are copied from the cache and only what moves is drawn again, instead of everything the light reaches. The cache is redrawn when the light itself moves or changes, or when one of its still meshes does. A light that moves every frame gains nothing from it.
+			What counts as still is the same as for [member rendering/lights_and_shadows/directional_shadow/cache_static_casters]. The cache is shared by every viewport, since a light's shadow does not depend on the camera; still meshes are then always drawn in full, without [member rendering/lights_and_shadows/tighter_shadow_caster_culling].
+			[b]Note:[/b] Only supported when using the Forward+ rendering method. Each light with a shadow keeps a cache as large as its place in the shadow atlas (six faces for an omni light in Cube mode, two halves in Dual Paraboloid mode).
+			[b]Note:[/b] This property is only read when the project starts.
+		</member>
 		<member name="rendering/lights_and_shadows/positional_shadow/soft_shadow_filter_quality" type="int" setter="" getter="" default="2">
 			Quality setting for shadows cast by [OmniLight3D]s and [SpotLight3D]s. Higher quality settings use more samples when reading from shadow maps and are thus slower. Low quality settings may result in shadows looking grainy.
 			[b]Note:[/b] The Soft Very Low setting will automatically multiply [i]constant[/i] shadow blur by 0.75x to reduce the amount of noise visible. This automatic blur change only affects the constant blur factor defined in [member Light3D.shadow_blur], not the variable blur performed by [DirectionalLight3D]s' [member Light3D.light_angular_distance].

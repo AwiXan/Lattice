@@ -1060,6 +1060,9 @@ public:
 	// Directional shadows cache the casters that keep still
 	// (rendering/lights_and_shadows/directional_shadow/cache_static_casters).
 	bool directional_shadow_cache_static = true;
+	// The same for omni and spot lights
+	// (rendering/lights_and_shadows/positional_shadow/cache_static_casters).
+	bool positional_shadow_cache_static = true;
 	// Meshes waiting to count as still, in order of when they may.
 	mutable SelfList<Instance>::List shadow_static_pending;
 	uint64_t shadow_static_checked_frame = 0;

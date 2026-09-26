@@ -53,11 +53,11 @@ public:
 		SHADOW_INVALID = 0xFFFFFFFF
 	};
 
-	// A directional light's cascade, its still casters only: drawn once and
-	// copied into the atlas every frame after, moved along as the camera moves
-	// (see RenderForwardClustered::_render_directional_static_cached()). What
-	// it was drawn with says whether it still holds.
-	struct DirectionalShadowCache {
+	// A shadow pass's still casters only - a directional cascade, a spot
+	// light, one half or face of an omni light: drawn once and copied back
+	// every time after (see RenderForwardClustered::_render_*_static_cached()).
+	// What it was drawn with says whether it still holds.
+	struct ShadowCache {
 		RID texture;
 		RID framebuffer;
 		Size2i size;
@@ -68,6 +68,8 @@ public:
 		Transform3D transform;
 		float zfar = 0.0;
 		bool pancake = false;
+		bool dual_paraboloid = false;
+		bool dual_paraboloid_flip = false;
 		// The view it is kept for (its render buffers), and when that last drew
 		// it: another view with a camera of its own would have it redrawn for
 		// both every frame.
@@ -132,7 +134,7 @@ private:
 		RSE::LightType light_type = RSE::LIGHT_DIRECTIONAL;
 
 		ShadowTransform shadow_transform[6];
-		DirectionalShadowCache directional_cache[4];
+		ShadowCache shadow_cache[6];
 
 		AABB aabb;
 		RID self;
@@ -483,6 +485,7 @@ private:
 
 	struct ShadowCubemap {
 		RID cubemap;
+		RID side_texture[6];
 		RID side_fb[6];
 	};
 
@@ -820,8 +823,8 @@ public:
 		return li->shadow_transform[p_index].shadow_texel_size;
 	}
 
-	// Cascade p_pass's cache, (re)made for this size and the atlas's format.
-	DirectionalShadowCache *light_instance_get_directional_cache(RID p_light_instance, int p_pass, const Size2i &p_size);
+	// Pass p_pass's cache, (re)made for this size and depth format.
+	ShadowCache *light_instance_get_shadow_cache(RID p_light_instance, int p_pass, const Size2i &p_size, RD::DataFormat p_format);
 
 	_FORCE_INLINE_ Rect2 light_instance_get_directional_shadow_draw_norm_rect(RID p_light_instance, int p_index) {
 		LightInstance *li = light_instance_owner.get_or_null(p_light_instance);
@@ -1238,6 +1241,8 @@ public:
 
 	RID get_cubemap(int p_size);
 	RID get_cubemap_fb(int p_size, int p_pass);
+	// One face, as a 2D texture of its own: what a shadow cache is copied from.
+	RID get_cubemap_side_texture(int p_size, int p_pass);
 	static RD::DataFormat get_cubemap_depth_format();
 	static uint32_t get_cubemap_depth_usage_bits();
 
