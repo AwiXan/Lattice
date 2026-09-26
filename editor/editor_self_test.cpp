@@ -1331,6 +1331,115 @@ void EditorSelfTest::_view_transform_readout() {
 			vformat("G X 2.5 in a 3D view: \"%s\" beside the mouse, moved to %s; Escape puts it back and the numbers away (%s) - focus on %s, \"%s\" once begun", typed, moved, back, focus, begun));
 }
 
+static void _subres_open_submenu(PopupMenu *p_menu, int p_item) {
+	// By the keyboard, as the mouse held over it would.
+	p_menu->set_focused_item(p_item);
+	Ref<InputEventKey> right;
+	right.instantiate();
+	right->set_keycode(Key::RIGHT);
+	right->set_physical_keycode(Key::RIGHT);
+	right->set_pressed(true);
+	right->set_window_id(p_menu->get_window_id());
+	Input::get_singleton()->parse_input_event(right);
+}
+
+void EditorSelfTest::_node_menu_subresources_open() {
+	Node *scene = EditorNode::get_singleton()->get_edited_scene();
+	PopupMenu *menu = SceneTreeDock::get_singleton()->get_node_menu();
+	if (!scene || !menu) {
+		_check(false, "a scene, for the node menu's sub-resources");
+		return;
+	}
+	// A mesh, which has a sub-resource to list, and a node that has none.
+	MeshInstance3D *mesh = memnew(MeshInstance3D);
+	mesh->set_name("LatticeSubresourcesTest");
+	Ref<BoxMesh> box;
+	box.instantiate();
+	mesh->set_mesh(box);
+	scene->add_child(mesh);
+	mesh->set_owner(scene);
+	Node3D *plain = memnew(Node3D);
+	plain->set_name("Plain");
+	mesh->add_child(plain);
+	plain->set_owner(scene);
+	subresources_node = mesh->get_instance_id();
+	EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
+	selection->clear();
+	selection->add_node(mesh);
+	subresources_errors = errors.get();
+	SceneTreeDock::get_singleton()->popup_node_menu(Vector2(300, 300));
+	subresources_item = -1;
+	for (int i = 0; i < menu->get_item_count(); i++) {
+		if (menu->get_item_text(i) == TTR("Sub-Resources")) {
+			subresources_item = i;
+		}
+	}
+	if (subresources_item >= 0) {
+		_subres_open_submenu(menu, subresources_item);
+	}
+	seconds_to_wait = 0.3;
+}
+
+void EditorSelfTest::_node_menu_subresources_other() {
+	PopupMenu *menu = SceneTreeDock::get_singleton()->get_node_menu();
+	PopupMenu *sub = subresources_item >= 0 ? menu->get_item_submenu_node(subresources_item) : nullptr;
+	subresources_opened = sub && sub->is_visible();
+	subresources_submenu = sub ? sub->get_instance_id() : ObjectID();
+	// A right click on the other node, which has no sub-resources: the click
+	// outside asks the popups to close, and the menu is opened for it.
+	MeshInstance3D *mesh = ObjectDB::get_instance<MeshInstance3D>(subresources_node);
+	EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
+	selection->clear();
+	selection->add_node(mesh->get_node(NodePath("Plain")));
+	menu->notification(NOTIFICATION_WM_CLOSE_REQUEST);
+	SceneTreeDock::get_singleton()->popup_node_menu(Vector2(320, 320));
+	seconds_to_wait = 0.3;
+}
+
+void EditorSelfTest::_node_menu_subresources_again() {
+	PopupMenu *menu = SceneTreeDock::get_singleton()->get_node_menu();
+	PopupMenu *sub = ObjectDB::get_instance<PopupMenu>(subresources_submenu);
+	// The submenu of what the menu showed before: not left showing.
+	subresources_orphaned = sub && sub->is_visible();
+	// And for the mesh again, its Sub-Resources opened again.
+	MeshInstance3D *mesh = ObjectDB::get_instance<MeshInstance3D>(subresources_node);
+	EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
+	selection->clear();
+	selection->add_node(mesh);
+	if (!menu->is_visible()) {
+		SceneTreeDock::get_singleton()->popup_node_menu(Vector2(340, 340));
+	} else {
+		SceneTreeDock::get_singleton()->popup_node_menu(Vector2(340, 340));
+	}
+	for (int i = 0; i < menu->get_item_count(); i++) {
+		if (menu->get_item_text(i) == TTR("Sub-Resources")) {
+			subresources_item = i;
+			_subres_open_submenu(menu, i);
+		}
+	}
+	seconds_to_wait = 0.3;
+}
+
+void EditorSelfTest::_node_menu_subresources_check() {
+	PopupMenu *menu = SceneTreeDock::get_singleton()->get_node_menu();
+	PopupMenu *sub = ObjectDB::get_instance<PopupMenu>(subresources_submenu);
+	if (menu) {
+		menu->hide();
+	}
+	if (sub) {
+		sub->hide();
+	}
+	MeshInstance3D *mesh = ObjectDB::get_instance<MeshInstance3D>(subresources_node);
+	if (mesh) {
+		EditorNode::get_singleton()->get_editor_selection()->clear();
+		mesh->get_parent()->remove_child(mesh);
+		memdelete(mesh);
+	}
+	const uint32_t new_errors = errors.get() - subresources_errors;
+	_check(subresources_item >= 0 && subresources_opened && !subresources_orphaned && new_errors == 0,
+			vformat("the node menu opened again, Sub-Resources open (%s), for a node without any: no submenu left behind (%s), and back, without errors (%d)", subresources_opened, !subresources_orphaned, new_errors));
+}
+
 void EditorSelfTest::_timeline_open() {
 	EditorPane *pane = EditorNode::get_singleton()->get_editor_main_screen()->open_panel("history_timeline", Variant());
 	EditorHistoryTimeline *timeline = nullptr;
@@ -2852,6 +2961,10 @@ EditorSelfTest::EditorSelfTest() {
 	_add("view camera preview", callable_mp(this, &EditorSelfTest::_view_camera_preview));
 	_add("view right click", callable_mp(this, &EditorSelfTest::_view_right_click));
 	_add("view transform readout", callable_mp(this, &EditorSelfTest::_view_transform_readout));
+	_add("node menu subresources open", callable_mp(this, &EditorSelfTest::_node_menu_subresources_open));
+	_add("node menu subresources other", callable_mp(this, &EditorSelfTest::_node_menu_subresources_other));
+	_add("node menu subresources again", callable_mp(this, &EditorSelfTest::_node_menu_subresources_again));
+	_add("node menu subresources check", callable_mp(this, &EditorSelfTest::_node_menu_subresources_check));
 	_add("timeline open", callable_mp(this, &EditorSelfTest::_timeline_open));
 	_add("timeline check", callable_mp(this, &EditorSelfTest::_timeline_check));
 	_add("view sidebar open", callable_mp(this, &EditorSelfTest::_view_sidebar_open));

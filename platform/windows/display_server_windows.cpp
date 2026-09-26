@@ -2411,7 +2411,12 @@ void DisplayServerWindows::window_set_transient(DisplayServerEnums::WindowID p_w
 
 	WindowData &wd_window = windows[p_window];
 
-	ERR_FAIL_COND(wd_window.transient_parent == p_parent);
+	if (wd_window.transient_parent == p_parent) {
+		// Already so. Window asks again when the parent's window was deleted
+		// and made anew in the meantime - which let its children go here
+		// without telling them - or a child left over was taken over.
+		return;
+	}
 	ERR_FAIL_COND_MSG(wd_window.always_on_top, "Windows with the 'on top' can't become transient.");
 
 	if (p_parent == DisplayServerEnums::INVALID_WINDOW_ID) {

@@ -3920,6 +3920,12 @@ void SceneTreeDock::popup_node_menu(const Vector2 &p_screen_position, const Call
 
 void SceneTreeDock::_popup_node_menu(const Vector2 &p_menu_pos) {
 	ERR_FAIL_COND(!EditorNode::get_singleton()->get_edited_scene());
+	// Open already, with Sub-Resources open maybe: closed first. Emptied
+	// while open, it would leave that submenu showing, no item's anymore -
+	// nothing would close it.
+	if (menu->is_visible()) {
+		menu->hide();
+	}
 	menu->clear(false);
 
 	const List<Node *> selection = editor_selection->get_top_selected_node_list(); // Only the top-level selected nodes.

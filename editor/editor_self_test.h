@@ -166,6 +166,16 @@ class EditorSelfTest : public Node {
 	void _view_camera_preview();
 	void _view_right_click();
 	void _view_transform_readout();
+	void _node_menu_subresources_open();
+	void _node_menu_subresources_other();
+	void _node_menu_subresources_again();
+	void _node_menu_subresources_check();
+	ObjectID subresources_submenu;
+	bool subresources_opened = false;
+	bool subresources_orphaned = false;
+	ObjectID subresources_node;
+	int subresources_item = -1;
+	uint32_t subresources_errors = 0;
 	void _timeline_open();
 	void _timeline_check();
 	ObjectID timeline_panel;
