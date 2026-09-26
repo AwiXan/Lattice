@@ -415,6 +415,11 @@ static void _print_stalled_stack(uint64_t p_msec) {
 	}
 	print_error("-- END OF THE STALLED MAIN THREAD --");
 	print_error("================================================================");
+	// Let the symbols go: loaded, they hold every module's .pdb open, and a
+	// module rebuilt while the editor runs - a GDExtension's, Jenova's - could
+	// not be linked again (LNK1201). Loaded anew for the next stall.
+	SymCleanup(process);
+	stall_symbols_ready = false;
 }
 
 static void _stall_watchdog(void *p_userdata) {
