@@ -2532,6 +2532,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 
 					rmb_click_pending = EDITOR_GET("editors/3d/right_click_menu");
 					rmb_click_msec = OS::get_singleton()->get_ticks_msec();
+					rmb_click_pos = b->get_position();
 					rmb_click_camera = camera->get_global_transform();
 
 					const Key mod = _get_key_modifier(b);
@@ -2544,7 +2545,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 					view_3d_controller->set_freelook_enabled(false);
 					// Let go soon, and nothing flown: a click.
 					if (rmb_click_pending && OS::get_singleton()->get_ticks_msec() - rmb_click_msec < 350 && camera->get_global_transform().is_equal_approx(rmb_click_camera)) {
-						_open_context_menu(b->get_position());
+						_open_context_menu(rmb_click_pos);
 					}
 					rmb_click_pending = false;
 				}
