@@ -178,7 +178,29 @@ void GPUParticles3D::set_process_material(const Ref<Material> &p_material) {
 
 void GPUParticles3D::set_speed_scale(double p_scale) {
 	speed_scale = p_scale;
-	RS::get_singleton()->particles_set_speed_scale(particles, p_scale);
+	_update_speed_scale();
+}
+
+void GPUParticles3D::_update_speed_scale() {
+	double scale = speed_scale;
+	if (is_inside_tree()) {
+		if (!can_process()) {
+			scale = 0.0;
+		} else if (Node::is_time_scale_used()) {
+			const TimeScaleInTree time = _get_time_scale_in_tree();
+			scale *= time.scale;
+			// The server's step has Engine.time_scale in it already: a Full
+			// Override takes it out, where it can.
+			const double engine = Engine::get_singleton()->get_time_scale();
+			if (time.without_engine && engine > 0.0) {
+				scale /= engine;
+			}
+		}
+	}
+	if (scale != applied_speed_scale) {
+		applied_speed_scale = scale;
+		RS::get_singleton()->particles_set_speed_scale(particles, scale);
+	}
 }
 
 void GPUParticles3D::set_collision_base_size(real_t p_size) {
@@ -534,7 +556,8 @@ void GPUParticles3D::_notification(int p_what) {
 		// Use internal process when emitting and one_shot is on so that when
 		// the shot ends the editor can properly update.
 		case NOTIFICATION_INTERNAL_PROCESS: {
-			const Vector3 velocity = (get_global_position() - previous_position) / get_process_delta_time();
+			const double delta = get_process_delta_time();
+			const Vector3 velocity = delta > 0.0 ? (get_global_position() - previous_position) / delta : previous_velocity;
 
 			if (velocity != previous_velocity) {
 				RS::get_singleton()->particles_set_emitter_velocity(particles, velocity);
@@ -565,7 +588,11 @@ void GPUParticles3D::_notification(int p_what) {
 		case NOTIFICATION_INTERNAL_PHYSICS_PROCESS: {
 			// Update velocity in physics process, so that velocity calculations remain correct
 			// if the physics tick rate is lower than the rendered framerate (especially without physics interpolation).
-			const Vector3 velocity = (get_global_position() - previous_position) / get_physics_process_delta_time();
+			if (Node::is_time_scale_used()) {
+				_update_speed_scale();
+			}
+			const double delta = get_physics_process_delta_time();
+			const Vector3 velocity = delta > 0.0 ? (get_global_position() - previous_position) / delta : previous_velocity;
 
 			if (velocity != previous_velocity) {
 				RS::get_singleton()->particles_set_emitter_velocity(particles, velocity);
@@ -580,11 +607,8 @@ void GPUParticles3D::_notification(int p_what) {
 			if (sub_emitter != NodePath()) {
 				_attach_sub_emitter();
 			}
-			if (can_process()) {
-				RS::get_singleton()->particles_set_speed_scale(particles, speed_scale);
-			} else {
-				RS::get_singleton()->particles_set_speed_scale(particles, 0);
-			}
+			applied_speed_scale = -1.0;
+			_update_speed_scale();
 			previous_position = get_global_transform().origin;
 			set_process_internal(true);
 			set_physics_process_internal(true);
@@ -599,11 +623,7 @@ void GPUParticles3D::_notification(int p_what) {
 		case NOTIFICATION_PAUSED:
 		case NOTIFICATION_UNPAUSED: {
 			if (is_inside_tree()) {
-				if (can_process()) {
-					RS::get_singleton()->particles_set_speed_scale(particles, speed_scale);
-				} else {
-					RS::get_singleton()->particles_set_speed_scale(particles, 0);
-				}
+				_update_speed_scale();
 			}
 		} break;
 

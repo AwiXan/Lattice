@@ -93,6 +93,10 @@ private:
 	RID mesh;
 
 	void _attach_sub_emitter();
+	// The speed the RenderingServer is given: speed_scale, and the node's
+	// time scale; 0 when it cannot process.
+	double applied_speed_scale = -1.0;
+	void _update_speed_scale();
 
 	void _texture_changed();
 

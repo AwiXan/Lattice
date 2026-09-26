@@ -841,7 +841,14 @@ void SceneTree::process_tweens(double p_delta, bool p_physics) {
 			continue;
 		}
 
-		if (!tween->step(tween->is_ignoring_time_scale() ? unscaled_delta : p_delta)) {
+		double delta = tween->is_ignoring_time_scale() ? unscaled_delta : p_delta;
+		if (!tween->is_ignoring_time_scale() && Node::is_time_scale_used()) {
+			const Node *bound = tween->get_bound_node();
+			if (bound && bound->is_inside_tree()) {
+				delta = p_physics ? bound->get_physics_process_delta_time() : bound->get_process_delta_time();
+			}
+		}
+		if (!tween->step(delta)) {
 			tween->clear();
 			tweens.erase(E);
 		}

@@ -62,6 +62,8 @@ STATIC_ASSERT_INCOMPLETE_TYPE(class, Engine);
 #ifdef DEBUG_ENABLED
 SafeNumeric<uint64_t> Node::total_node_count{ 0 };
 #endif
+SafeNumeric<uint32_t> Node::time_scale_users{ 0 };
+SafeNumeric<uint32_t> Node::time_scale_version{ 1 };
 
 thread_local Node *Node::current_process_thread_group = nullptr;
 
@@ -1007,19 +1009,89 @@ bool Node::is_enabled() const {
 }
 
 double Node::get_physics_process_delta_time() const {
-	if (data.tree) {
-		return data.tree->get_physics_process_time();
-	} else {
+	if (!data.tree) {
 		return 0;
 	}
+	if (likely(!is_time_scale_used())) {
+		return data.tree->get_physics_process_time();
+	}
+	const TimeScaleInTree scale = _get_time_scale_in_tree();
+	return (scale.without_engine ? Engine::get_singleton()->get_physics_step_without_time_scale() : data.tree->get_physics_process_time()) * scale.scale;
+}
+
+Node::TimeScaleInTree Node::_get_time_scale_in_tree() const {
+	const uint32_t version = time_scale_version.get();
+	const uint64_t kept = data.time_scale_cache.get();
+	TimeScaleInTree result;
+	if (uint32_t(kept >> 32) == version) {
+		const uint32_t bits = uint32_t(kept);
+		result.without_engine = bits & 0x80000000u;
+		const uint32_t scale_bits = bits & 0x7fffffffu;
+		memcpy(&result.scale, &scale_bits, sizeof(float));
+		return result;
+	}
+	switch (data.time_scale_mode) {
+		case TIME_SCALE_INHERIT:
+		case TIME_SCALE_MULTIPLY: {
+			if (data.parent) {
+				result = data.parent->_get_time_scale_in_tree();
+			}
+			if (data.time_scale_mode == TIME_SCALE_MULTIPLY) {
+				result.scale *= data.time_scale;
+			}
+		} break;
+		case TIME_SCALE_OVERRIDE:
+		case TIME_SCALE_FULL_OVERRIDE: {
+			result.scale = data.time_scale;
+			result.without_engine = data.time_scale_mode == TIME_SCALE_FULL_OVERRIDE;
+		} break;
+	}
+	uint32_t scale_bits;
+	memcpy(&scale_bits, &result.scale, sizeof(float));
+	data.time_scale_cache.set((uint64_t(version) << 32) | (scale_bits & 0x7fffffffu) | (result.without_engine ? 0x80000000u : 0u));
+	return result;
+}
+
+void Node::set_time_scale_mode(TimeScaleMode p_mode) {
+	ERR_THREAD_GUARD
+	ERR_FAIL_UNSIGNED_INDEX(p_mode, 4u);
+	if (data.time_scale_mode == p_mode) {
+		return;
+	}
+	if (data.time_scale_mode == TIME_SCALE_INHERIT) {
+		time_scale_users.increment();
+	} else if (p_mode == TIME_SCALE_INHERIT) {
+		time_scale_users.decrement();
+	}
+	data.time_scale_mode = p_mode;
+	time_scale_version.increment();
+	notify_property_list_changed();
+}
+
+void Node::set_time_scale(float p_scale) {
+	ERR_THREAD_GUARD
+	// Time does not run backwards; not -0 either, whose sign bit is taken.
+	data.time_scale = p_scale > 0.0f ? p_scale : 0.0f;
+	time_scale_version.increment();
+}
+
+double Node::get_effective_time_scale(bool p_include_engine_time_scale) const {
+	const TimeScaleInTree scale = _get_time_scale_in_tree();
+	if (!p_include_engine_time_scale || scale.without_engine) {
+		return scale.scale;
+	}
+	return scale.scale * Engine::get_singleton()->get_time_scale();
 }
 
 double Node::get_process_delta_time() const {
-	if (data.tree) {
-		return data.tree->get_process_time();
-	} else {
+	if (!data.tree) {
 		return 0;
 	}
+	if (likely(!is_time_scale_used())) {
+		return data.tree->get_process_time();
+	}
+	const TimeScaleInTree scale = _get_time_scale_in_tree();
+	return (scale.without_engine ? Engine::get_singleton()->get_process_step_without_time_scale() : data.tree->get_process_time()) * scale.scale;
 }
 
 void Node::set_process(bool p_process) {
@@ -1689,6 +1761,9 @@ void Node::_add_child_nocheck(Node *p_child, const StringName &p_name, InternalM
 	}
 
 	p_child->data.parent = this;
+	if (is_time_scale_used()) {
+		time_scale_version.increment();
+	}
 
 	if (!data.children_cache_dirty && can_push_back) {
 		data.children_cache.push_back(p_child);
@@ -1792,6 +1867,9 @@ void Node::remove_child(RequiredParam<Node> rp_child) {
 
 	p_child->data.parent = nullptr;
 	p_child->data.index = -1;
+	if (is_time_scale_used()) {
+		time_scale_version.increment();
+	}
 
 	notification(NOTIFICATION_CHILD_ORDER_CHANGED);
 	emit_signal(SNAME("child_order_changed"));
@@ -3644,6 +3722,10 @@ void Node::_validate_property(PropertyInfo &p_property) const {
 	if ((p_property.name == "process_thread_group_order" || p_property.name == "process_thread_messages") && data.process_thread_group == PROCESS_THREAD_GROUP_INHERIT) {
 		p_property.usage = PROPERTY_USAGE_NONE;
 	}
+	if (p_property.name == "time_scale" && data.time_scale_mode == TIME_SCALE_INHERIT) {
+		// Nothing of its own to say while inheriting; kept if it was set.
+		p_property.usage = PROPERTY_USAGE_NO_EDITOR;
+	}
 }
 
 String Node::_to_string() {
@@ -3882,6 +3964,12 @@ void Node::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_physics_process_internal", "enable"), &Node::set_physics_process_internal);
 	ClassDB::bind_method(D_METHOD("is_physics_processing_internal"), &Node::is_physics_processing_internal);
 
+	ClassDB::bind_method(D_METHOD("set_time_scale_mode", "mode"), &Node::set_time_scale_mode);
+	ClassDB::bind_method(D_METHOD("get_time_scale_mode"), &Node::get_time_scale_mode);
+	ClassDB::bind_method(D_METHOD("set_time_scale", "scale"), &Node::set_time_scale);
+	ClassDB::bind_method(D_METHOD("get_time_scale"), &Node::get_time_scale);
+	ClassDB::bind_method(D_METHOD("get_effective_time_scale", "include_engine_time_scale"), &Node::get_effective_time_scale, DEFVAL(true));
+
 	ClassDB::bind_method(D_METHOD("set_physics_interpolation_mode", "mode"), &Node::set_physics_interpolation_mode);
 	ClassDB::bind_method(D_METHOD("get_physics_interpolation_mode"), &Node::get_physics_interpolation_mode);
 	ClassDB::bind_method(D_METHOD("is_physics_interpolated"), &Node::is_physics_interpolated);
@@ -4047,6 +4135,11 @@ void Node::_bind_methods() {
 	BIND_ENUM_CONSTANT(PHYSICS_INTERPOLATION_MODE_ON);
 	BIND_ENUM_CONSTANT(PHYSICS_INTERPOLATION_MODE_OFF);
 
+	BIND_ENUM_CONSTANT(TIME_SCALE_INHERIT);
+	BIND_ENUM_CONSTANT(TIME_SCALE_MULTIPLY);
+	BIND_ENUM_CONSTANT(TIME_SCALE_OVERRIDE);
+	BIND_ENUM_CONSTANT(TIME_SCALE_FULL_OVERRIDE);
+
 	BIND_ENUM_CONSTANT(DUPLICATE_SIGNALS);
 	BIND_ENUM_CONSTANT(DUPLICATE_GROUPS);
 	BIND_ENUM_CONSTANT(DUPLICATE_SCRIPTS);
@@ -4090,6 +4183,10 @@ void Node::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "process_thread_group", PROPERTY_HINT_ENUM, "Inherit,Main Thread,Sub Thread"), "set_process_thread_group", "get_process_thread_group");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "process_thread_group_order"), "set_process_thread_group_order", "get_process_thread_group_order");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "process_thread_messages", PROPERTY_HINT_FLAGS, "Process,Physics Process"), "set_process_thread_messages", "get_process_thread_messages");
+
+	ADD_SUBGROUP("Time Scale", "time_scale_");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "time_scale_mode", PROPERTY_HINT_ENUM, "Inherit,Multiply,Override,Full Override"), "set_time_scale_mode", "get_time_scale_mode");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "time_scale", PROPERTY_HINT_RANGE, "0,4,0.01,or_greater"), "set_time_scale", "get_time_scale");
 
 	ADD_GROUP("Physics Interpolation", "physics_interpolation_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "physics_interpolation_mode", PROPERTY_HINT_ENUM, "Inherit,On,Off"), "set_physics_interpolation_mode", "get_physics_interpolation_mode");
@@ -4137,6 +4234,7 @@ Node::Node() {
 
 	data.process_mode = PROCESS_MODE_INHERIT;
 	data.physics_interpolation_mode = PHYSICS_INTERPOLATION_MODE_INHERIT;
+	data.time_scale_mode = TIME_SCALE_INHERIT;
 
 	data.physics_process = false;
 	data.process = false;
@@ -4178,6 +4276,10 @@ Node::~Node() {
 
 	ERR_FAIL_COND(data.parent);
 	ERR_FAIL_COND(data.children_cache.size());
+
+	if (data.time_scale_mode != TIME_SCALE_INHERIT) {
+		time_scale_users.decrement();
+	}
 
 #ifdef DEBUG_ENABLED
 	total_node_count.decrement();

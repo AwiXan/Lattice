@@ -102,6 +102,14 @@ public:
 		PHYSICS_INTERPOLATION_MODE_OFF,
 	};
 
+	// How fast a node's time runs - the delta it gets, and so all it drives.
+	enum TimeScaleMode : unsigned int {
+		TIME_SCALE_INHERIT, // The parent's.
+		TIME_SCALE_MULTIPLY, // The parent's, times its own.
+		TIME_SCALE_OVERRIDE, // Its own; Engine.time_scale still counts.
+		TIME_SCALE_FULL_OVERRIDE, // Its own, Engine.time_scale left out.
+	};
+
 	enum DuplicateFlags {
 		DUPLICATE_SIGNALS = 1,
 		DUPLICATE_GROUPS = 2,
@@ -137,9 +145,20 @@ public:
 		bool operator()(const Node *p_a, const Node *p_b) const { return p_b->is_greater_than(p_a); }
 	};
 
+	struct TimeScaleInTree {
+		float scale = 1.0;
+		bool without_engine = false;
+	};
+	TimeScaleInTree _get_time_scale_in_tree() const;
+
 #ifdef DEBUG_ENABLED
 	static SafeNumeric<uint64_t> total_node_count;
 #endif
+	// Nodes whose time scale is not Inherit: while there are none, a delta is
+	// the tree's. Any change to a time scale, or to a parent while there are
+	// some, starts a new version: what each node kept is stale then.
+	static SafeNumeric<uint32_t> time_scale_users;
+	static SafeNumeric<uint32_t> time_scale_version;
 	enum {
 		UNIQUE_SCENE_ID_UNASSIGNED = 0
 	};
@@ -217,6 +236,13 @@ private:
 		int blocked = 0; // Safeguard that throws an error when attempting to modify the tree in a harmful way while being traversed.
 		StringName name;
 		SceneTree *tree = nullptr;
+		// The scale in the tree - the chain's product, and whether a Full
+		// Override in it leaves Engine.time_scale out - as of a version. One
+		// word, for nodes processed on threads: version << 32, the float's
+		// bits, its sign bit for the Full Override (scales are never below 0).
+		// Next to the tree, which a delta is read with.
+		mutable SafeNumeric<uint64_t> time_scale_cache;
+		float time_scale = 1.0;
 
 		String editor_description;
 
@@ -245,6 +271,7 @@ private:
 		// Keep bitpacked values together to get better packing.
 		ProcessMode process_mode : 3;
 		PhysicsInterpolationMode physics_interpolation_mode : 2;
+		TimeScaleMode time_scale_mode : 2;
 		AutoTranslateMode auto_translate_mode : 2;
 
 		bool physics_process : 1;
@@ -758,6 +785,16 @@ public:
 	bool can_process() const;
 	bool can_process_notification(int p_what) const;
 
+	void set_time_scale_mode(TimeScaleMode p_mode);
+	TimeScaleMode get_time_scale_mode() const { return data.time_scale_mode; }
+	void set_time_scale(float p_scale);
+	float get_time_scale() const { return data.time_scale; }
+	// The speed this node's time runs at: its own time scale and its
+	// parents', and Engine.time_scale unless left out, or a Full Override
+	// leaves it out.
+	double get_effective_time_scale(bool p_include_engine_time_scale = true) const;
+	static bool is_time_scale_used() { return time_scale_users.get() != 0; }
+
 	void set_physics_interpolation_mode(PhysicsInterpolationMode p_mode);
 	PhysicsInterpolationMode get_physics_interpolation_mode() const { return data.physics_interpolation_mode; }
 	_FORCE_INLINE_ bool is_physics_interpolated() const { return data.physics_interpolated; }
@@ -907,6 +944,7 @@ VARIANT_ENUM_CAST(Node::ProcessThreadGroup);
 VARIANT_BITFIELD_CAST(Node::ProcessThreadMessages);
 VARIANT_ENUM_CAST(Node::InternalMode);
 VARIANT_ENUM_CAST(Node::PhysicsInterpolationMode);
+VARIANT_ENUM_CAST(Node::TimeScaleMode);
 VARIANT_ENUM_CAST(Node::AutoTranslateMode);
 
 typedef HashSet<Node *, Node::Comparator> NodeSet;

@@ -256,7 +256,29 @@ real_t GPUParticles2D::get_collision_base_size() const {
 
 void GPUParticles2D::set_speed_scale(double p_scale) {
 	speed_scale = p_scale;
-	RS::get_singleton()->particles_set_speed_scale(particles, p_scale);
+	_update_speed_scale();
+}
+
+void GPUParticles2D::_update_speed_scale() {
+	double scale = speed_scale;
+	if (is_inside_tree()) {
+		if (!can_process()) {
+			scale = 0.0;
+		} else if (Node::is_time_scale_used()) {
+			const TimeScaleInTree time = _get_time_scale_in_tree();
+			scale *= time.scale;
+			// The server's step has Engine.time_scale in it already: a Full
+			// Override takes it out, where it can.
+			const double engine = Engine::get_singleton()->get_time_scale();
+			if (time.without_engine && engine > 0.0) {
+				scale /= engine;
+			}
+		}
+	}
+	if (scale != applied_speed_scale) {
+		applied_speed_scale = scale;
+		RS::get_singleton()->particles_set_speed_scale(particles, scale);
+	}
 }
 
 bool GPUParticles2D::is_emitting() const {
@@ -752,11 +774,8 @@ void GPUParticles2D::_notification(int p_what) {
 			if (sub_emitter != NodePath()) {
 				_attach_sub_emitter();
 			}
-			if (can_process()) {
-				RS::get_singleton()->particles_set_speed_scale(particles, speed_scale);
-			} else {
-				RS::get_singleton()->particles_set_speed_scale(particles, 0);
-			}
+			applied_speed_scale = -1.0;
+			_update_speed_scale();
 			set_process_internal(true);
 			set_physics_process_internal(true);
 			previous_position = get_global_position();
@@ -771,11 +790,7 @@ void GPUParticles2D::_notification(int p_what) {
 		case NOTIFICATION_PAUSED:
 		case NOTIFICATION_UNPAUSED: {
 			if (is_inside_tree()) {
-				if (can_process()) {
-					RS::get_singleton()->particles_set_speed_scale(particles, speed_scale);
-				} else {
-					RS::get_singleton()->particles_set_speed_scale(particles, 0);
-				}
+				_update_speed_scale();
 			}
 		} break;
 
@@ -807,8 +822,11 @@ void GPUParticles2D::_notification(int p_what) {
 		case NOTIFICATION_INTERNAL_PHYSICS_PROCESS: {
 			// Update velocity in physics process, so that velocity calculations remain correct
 			// if the physics tick rate is lower than the rendered framerate (especially without physics interpolation).
-			const Vector3 velocity = Vector3((get_global_position() - previous_position).x, (get_global_position() - previous_position).y, 0.0) /
-					get_physics_process_delta_time();
+			if (Node::is_time_scale_used()) {
+				_update_speed_scale();
+			}
+			const double delta = get_physics_process_delta_time();
+			const Vector3 velocity = delta > 0.0 ? Vector3((get_global_position() - previous_position).x, (get_global_position() - previous_position).y, 0.0) / delta : previous_velocity;
 
 			if (velocity != previous_velocity) {
 				RS::get_singleton()->particles_set_emitter_velocity(particles, velocity);
