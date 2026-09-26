@@ -278,6 +278,7 @@ class SceneTreeDock : public EditorDock {
 	void _quick_open(const String &p_file_path);
 
 	void _tree_rmb(const Vector2 &p_menu_pos);
+	void _popup_node_menu(const Vector2 &p_menu_pos);
 	void _update_tree_menu();
 
 	void _filter_changed(const String &p_filter);
@@ -377,6 +378,10 @@ public:
 	void open_shader_dialog(const Ref<ShaderMaterial> &p_for_material, int p_preferred_mode = -1);
 
 	void open_add_child_dialog();
+	// The menu a right click on a node in the tree opens, for the selection,
+	// from elsewhere (a 3D view): the keyboard stays where it is.
+	void popup_node_menu(const Vector2 &p_screen_position);
+	PopupMenu *get_node_menu() const { return menu; }
 	void open_instance_child_dialog();
 
 	List<Node *> paste_nodes(bool p_paste_as_sibling = false);

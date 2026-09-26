@@ -401,6 +401,13 @@ private:
 	Vector<Node3D *> selection_results;
 	Vector<Node3D *> selection_results_menu;
 	bool clicked_wants_append = false;
+
+	// A right press let go soon, the camera not moved, is a click: it opens
+	// the node menu. Held, it flies.
+	bool rmb_click_pending = false;
+	uint64_t rmb_click_msec = 0;
+	Transform3D rmb_click_camera;
+	void _open_context_menu(const Point2 &p_pos);
 	bool selection_in_progress = false;
 	bool movement_threshold_passed = false;
 

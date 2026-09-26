@@ -977,6 +977,18 @@ void Node3DEditorViewport::_select_clicked(bool p_allow_locked) {
 	}
 }
 
+void Node3DEditorViewport::_open_context_menu(const Point2 &p_pos) {
+	// What is under the mouse is what the menu is for, as a right click in
+	// the scene tree picks its node first; a click on nothing keeps the
+	// selection.
+	clicked = _select_ray(p_pos);
+	clicked_wants_append = false;
+	if (clicked.is_valid()) {
+		_select_clicked(false);
+	}
+	SceneTreeDock::get_singleton()->popup_node_menu(surface->get_screen_position() + p_pos);
+}
+
 ObjectID Node3DEditorViewport::_select_ray(const Point2 &p_pos) const {
 	Vector3 ray = get_ray(p_pos);
 	Vector3 pos = get_ray_pos(p_pos);
@@ -2517,6 +2529,10 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 						break;
 					}
 
+					rmb_click_pending = EDITOR_GET("editors/3d/right_click_menu");
+					rmb_click_msec = OS::get_singleton()->get_ticks_msec();
+					rmb_click_camera = camera->get_global_transform();
+
 					const Key mod = _get_key_modifier(b);
 					if (!view_3d_controller->is_orthogonal() && !(previewing && !pilot_preview_enabled)) {
 						if (mod == _get_key_modifier_setting("editors/3d/freelook/freelook_activation_modifier")) {
@@ -2525,6 +2541,11 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 					}
 				} else {
 					view_3d_controller->set_freelook_enabled(false);
+					// Let go soon, and nothing flown: a click.
+					if (rmb_click_pending && OS::get_singleton()->get_ticks_msec() - rmb_click_msec < 350 && camera->get_global_transform().is_equal_approx(rmb_click_camera)) {
+						_open_context_menu(b->get_position());
+					}
+					rmb_click_pending = false;
 				}
 
 				if (view_3d_controller->is_freelook_enabled() && !surface->has_focus()) {
@@ -13332,6 +13353,9 @@ void Node3DEditor::_update_hints() {
 		const int button = CLAMP((int)EDITOR_GET(way.setting), 0, 4);
 		const String modifier = EditorViewHints::action_key(way.modifier);
 		list.push_back(Hint{ (modifier.is_empty() ? String() : modifier + "+") + EditorViewHints::mouse_button_name(buttons[button]), TTRGET(way.action) });
+	}
+	if (EDITOR_GET("editors/3d/right_click_menu")) {
+		list.push_back(Hint{ EditorViewHints::mouse_button_name(MouseButton::RIGHT), TTR("Menu") });
 	}
 	list.push_back(Hint{ vformat(TTR("%s hold"), EditorViewHints::mouse_button_name(MouseButton::RIGHT)), TTR("Fly") });
 	list.push_back(Hint{ ED_GET_SHORTCUT("spatial_editor/focus_selection")->get_as_text(), TTR("Focus") });
