@@ -440,6 +440,11 @@ static void _print_stalled_stack(uint64_t p_msec) {
 	}
 	out("-- END OF THE STALLED MAIN THREAD --");
 	out("================================================================");
+	// Let the symbols go: loaded, they hold every module's .pdb open, and a
+	// module rebuilt while the editor runs - a GDExtension's, Jenova's - could
+	// not be linked again (LNK1201). Loaded anew for the next stall.
+	SymCleanup(process);
+	stall_symbols_ready = false;
 	// Kept in case it never goes on; a game clears it when it does.
 	OS::get_singleton()->write_crash_report(report);
 }
