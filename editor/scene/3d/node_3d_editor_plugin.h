@@ -1434,6 +1434,9 @@ public:
 		// What a click would select, lit up under the mouse: the editor
 		// setting editors/3d/hover_highlight, for every view.
 		OVERLAY_HOVER_HIGHLIGHT,
+		// The selected camera's picture in a corner of the view: the editor
+		// setting editors/3d/camera_preview_in_corner, for every view.
+		OVERLAY_CAMERA_PREVIEW,
 		OVERLAY_MAX
 	};
 	enum SidebarPage {
