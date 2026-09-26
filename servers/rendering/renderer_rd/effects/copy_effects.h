@@ -36,6 +36,7 @@
 #include "servers/rendering/renderer_rd/shaders/effects/copy.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/copy_to_fb.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/cube_to_dp.glsl.gen.h"
+#include "servers/rendering/renderer_rd/shaders/effects/shadow_cache_copy.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/cube_to_octmap.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/octmap_downsampler.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/octmap_downsampler_raster.glsl.gen.h"
@@ -230,6 +231,20 @@ private:
 		PipelineCacheRD pipeline;
 	} cube_to_dp;
 
+	struct ShadowCacheCopyPushConstant {
+		int32_t dst_origin[2];
+		int32_t src_offset[2];
+		int32_t src_size[2];
+		float clear_depth;
+		float pad;
+	};
+
+	struct ShadowCacheCopy {
+		ShadowCacheCopyShaderRD shader;
+		RID shader_version;
+		PipelineCacheRD pipeline;
+	} shadow_cache_copy;
+
 	// Copy to Octmap
 
 	struct CopyToOctmapPushConstant {
@@ -388,6 +403,10 @@ public:
 	void set_color_raster(RID p_dest_texture, const Color &p_color, const Rect2i &p_region);
 
 	void copy_cubemap_to_dp(RID p_source_rd_texture, RID p_dst_framebuffer, const Rect2 &p_rect, const Vector2 &p_dst_size, float p_z_near, float p_z_far, bool p_dp_flip);
+	// Depth, texel for texel, from p_source_texture into p_dst_rect of a depth
+	// framebuffer: texel (x, y) of the region takes source texel
+	// (x, y) + p_src_offset, or p_clear_depth where there is none.
+	void copy_shadow_depth(RID p_source_texture, RID p_dst_framebuffer, const Rect2i &p_dst_rect, const Vector2i &p_src_offset, const Size2i &p_src_size, float p_clear_depth);
 	void copy_cubemap_to_octmap(RID p_source_rd_texture, RID p_dst_framebuffer, float p_border_size);
 	void octmap_downsample(RID p_source_octmap, RID p_dest_octmap, const Size2i &p_size, float p_border_size);
 	void octmap_downsample_raster(RID p_source_octmap, RID p_dest_framebuffer, const Size2i &p_size, float p_border_size);

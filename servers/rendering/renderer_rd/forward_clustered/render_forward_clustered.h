@@ -452,6 +452,12 @@ private:
 			bool flip_cull;
 
 			uint32_t uniform_buffer_index;
+
+			// A copy between a directional cascade's cache and the atlas, in
+			// place of a draw, when copy_source is set.
+			RID copy_source;
+			Size2i copy_source_size;
+			Vector2i copy_offset;
 		};
 
 		LocalVector<ShadowPass> shadow_passes;
@@ -785,7 +791,16 @@ private:
 
 	/* Render shadows */
 
-	void _render_shadow_pass(RID p_light, RID p_shadow_atlas, int p_pass, const PagedArray<RenderGeometryInstance *> &p_instances, float p_lod_distance_multiplier = 0, float p_screen_mesh_lod_threshold = 0.0, bool p_open_pass = true, bool p_close_pass = true, bool p_clear_region = true, RenderingServerTypes::RenderInfo *p_render_info = nullptr, const Size2i &p_viewport_size = Size2i(1, 1), const Transform3D &p_main_cam_transform = Transform3D());
+	void _render_shadow_pass(RID p_light, RID p_shadow_atlas, int p_pass, const PagedArray<RenderGeometryInstance *> &p_instances, float p_lod_distance_multiplier = 0, float p_screen_mesh_lod_threshold = 0.0, bool p_open_pass = true, bool p_close_pass = true, bool p_clear_region = true, RenderingServerTypes::RenderInfo *p_render_info = nullptr, const Size2i &p_viewport_size = Size2i(1, 1), const Transform3D &p_main_cam_transform = Transform3D(), const RendererSceneRender::RenderShadowData *p_static = nullptr);
+	// A directional cascade's still casters, from its cache (drawn into it
+	// first if it does not hold any more), into p_atlas_rect.
+	void _render_directional_static_cached(RID p_light, int p_pass, const PagedArray<RenderGeometryInstance *> &p_static_instances, uint64_t p_generation, RID p_atlas_fb, const Rect2i &p_atlas_rect, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, bool p_reverse_cull_face, bool p_use_pancake, bool p_flip_y, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, RenderingServerTypes::RenderInfo *p_render_info, const Size2i &p_viewport_size, const Transform3D &p_main_cam_transform);
+	void _render_shadow_copy(RID p_source, const Size2i &p_source_size, RID p_framebuffer, const Rect2i &p_rect, const Vector2i &p_offset);
+	// The still casters over a strip of a cascade that came into it.
+	PagedArrayPool<RenderGeometryInstance *> shadow_cache_strip_pool;
+	PagedArray<RenderGeometryInstance *> shadow_cache_strip_instances;
+	// The view the shadows being drawn are for; none for a reflection probe.
+	ObjectID shadow_cache_owner;
 	void _render_shadow_begin();
 	void _render_shadow_append(RID p_framebuffer, const PagedArray<RenderGeometryInstance *> &p_instances, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, float p_bias, float p_normal_bias, bool p_reverse_cull_face, bool p_use_dp, bool p_use_dp_flip, bool p_use_pancake, float p_lod_distance_multiplier = 0.0, float p_screen_mesh_lod_threshold = 0.0, const Rect2i &p_rect = Rect2i(), bool p_flip_y = false, bool p_clear_region = true, bool p_begin = true, bool p_end = true, RenderingServerTypes::RenderInfo *p_render_info = nullptr, const Size2i &p_viewport_size = Size2i(1, 1), const Transform3D &p_main_cam_transform = Transform3D());
 	void _render_shadow_process();
@@ -866,6 +881,8 @@ public:
 	virtual String get_name() const override;
 
 	virtual bool free(RID p_rid) override;
+
+	virtual bool directional_shadow_cache_supported() const override { return true; }
 
 	virtual void update() override;
 

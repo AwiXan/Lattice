@@ -270,6 +270,9 @@ public:
 
 	virtual void positional_soft_shadow_filter_set_quality(RSE::ShadowQuality p_quality) = 0;
 	virtual void directional_soft_shadow_filter_set_quality(RSE::ShadowQuality p_quality) = 0;
+	// Whether directional shadow passes can take their still casters apart
+	// (RenderShadowData::static_instances) and keep them in a cache.
+	virtual bool directional_shadow_cache_supported() const { return false; }
 	virtual void soft_shadow_set_use_dithering(bool p_dither) = 0;
 
 	virtual RID fog_volume_instance_create(RID p_fog_volume) = 0;
@@ -289,6 +292,13 @@ public:
 		RID light;
 		int pass = 0;
 		PagedArray<RenderGeometryInstance *> instances;
+		// Directional cascades only, when the renderer caches them: casters that
+		// have kept still, drawn once into a cache and copied from it after, and
+		// a number that changes whenever that set may have (see
+		// RendererSceneCull::_shadow_static_touch()). `instances` is the rest.
+		PagedArray<RenderGeometryInstance *> static_instances;
+		uint64_t static_generation = 0;
+		bool cache_static = false;
 	};
 
 	struct RenderHDDAGIData {

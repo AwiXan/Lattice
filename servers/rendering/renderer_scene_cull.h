@@ -291,6 +291,8 @@ public:
 			FLAG_VISIBILITY_DEPENDENCY_FADE_CHILDREN = (1 << 22),
 			FLAG_GEOM_PROJECTOR_SOFTSHADOW_DIRTY = (1 << 23),
 			FLAG_IGNORE_ALL_CULLING = (1 << 24),
+			// Kept still long enough to be drawn into the directional shadow cache.
+			FLAG_SHADOW_STATIC = (1 << 25),
 		};
 
 		uint32_t flags = 0;
@@ -367,6 +369,10 @@ public:
 		PagedArray<InstanceBounds> instance_aabbs;
 		PagedArray<InstanceData> instance_data;
 		VisibilityArray instance_visibility;
+
+		// Changes whenever a caster joins or leaves the static set, so that
+		// directional shadow caches drawn from the old set are redrawn.
+		uint64_t shadow_static_generation = 1;
 
 		Scenario() {
 			indexers[INDEXER_GEOMETRY].set_index(INDEXER_GEOMETRY);
@@ -496,6 +502,13 @@ public:
 
 		uint64_t version; // changes to this, and changes to base increase version
 
+		// Directional shadow caching: a mesh that has kept still for a while is
+		// drawn into the cascades' caches rather than every frame. Any change
+		// takes it out again (RendererSceneCull::_shadow_static_touch()).
+		bool shadow_static = false;
+		uint64_t shadow_static_due = 0;
+		SelfList<Instance> shadow_static_item;
+
 		InstanceBaseData *base_data = nullptr;
 
 		SelfList<InstancePair>::List pairs;
@@ -576,7 +589,8 @@ public:
 
 		Instance() :
 				scenario_item(this),
-				update_item(this) {
+				update_item(this),
+				shadow_static_item(this) {
 			base_type = RSE::INSTANCE_NONE;
 			cast_shadows = RSE::SHADOW_CASTING_SETTING_ON;
 			receive_shadows = true;
@@ -911,6 +925,7 @@ public:
 
 		struct DirectionalShadow {
 			PagedArray<RenderGeometryInstance *> cascade_geometry_instances[RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES];
+			PagedArray<RenderGeometryInstance *> cascade_static_geometry_instances[RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES];
 		} directional_shadows[RendererSceneRender::MAX_DIRECTIONAL_LIGHTS];
 
 		PagedArray<RenderGeometryInstance *> hddagi_region_geometry_instances[HDDAGI_MAX_CASCADES * HDDAGI_MAX_REGIONS_PER_CASCADE];
@@ -929,6 +944,7 @@ public:
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
 					directional_shadows[i].cascade_geometry_instances[j].clear();
+					directional_shadows[i].cascade_static_geometry_instances[j].clear();
 				}
 			}
 
@@ -954,6 +970,7 @@ public:
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
 					directional_shadows[i].cascade_geometry_instances[j].reset();
+					directional_shadows[i].cascade_static_geometry_instances[j].reset();
 				}
 			}
 
@@ -980,6 +997,7 @@ public:
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
 					directional_shadows[i].cascade_geometry_instances[j].merge_unordered(p_cull_result.directional_shadows[i].cascade_geometry_instances[j]);
+					directional_shadows[i].cascade_static_geometry_instances[j].merge_unordered(p_cull_result.directional_shadows[i].cascade_static_geometry_instances[j]);
 				}
 			}
 
@@ -1005,6 +1023,7 @@ public:
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
 					directional_shadows[i].cascade_geometry_instances[j].set_page_pool(p_geometry_instance_pool);
+					directional_shadows[i].cascade_static_geometry_instances[j].set_page_pool(p_geometry_instance_pool);
 				}
 			}
 
@@ -1038,6 +1057,17 @@ public:
 	// Directional shadow cascades drawn over their part of the view's bounding
 	// box only (rendering/lights_and_shadows/directional_shadow/tighter_draw_rect).
 	bool directional_shadow_tighter_draw_rect = false;
+	// Directional shadows cache the casters that keep still
+	// (rendering/lights_and_shadows/directional_shadow/cache_static_casters).
+	bool directional_shadow_cache_static = true;
+	// Meshes waiting to count as still, in order of when they may.
+	mutable SelfList<Instance>::List shadow_static_pending;
+	uint64_t shadow_static_checked_frame = 0;
+	// How many frames a mesh keeps still before its shadow is cached.
+	static constexpr uint64_t SHADOW_STATIC_FRAMES = 30;
+	void _shadow_static_touch(Instance *p_instance) const;
+	bool _shadow_static_eligible(const Instance *p_instance) const;
+	void _shadow_static_promote();
 
 	virtual RID instance_allocate();
 	virtual void instance_initialize(RID p_rid);
@@ -1108,8 +1138,13 @@ public:
 		struct Shadow {
 			RID light_instance;
 			uint32_t caster_mask;
+			// Still casters go to their own lists, for the renderer to cache.
+			bool cache_static = false;
 			struct Cascade {
 				FrustumSign frustum;
+				// The whole square the cascade draws, for still casters, which are
+				// cached and must be there when the camera turns within it.
+				FrustumSign static_frustum;
 
 				Projection projection;
 				Transform3D transform;

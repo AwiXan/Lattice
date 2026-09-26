@@ -3154,6 +3154,13 @@
 		<member name="rendering/lights_and_shadows/directional_shadow/16_bits" type="bool" setter="" getter="" default="true">
 			Use 16 bits for the directional shadow depth map. Enabling this results in shadows having less precision and may result in shadow acne, but can lead to performance improvements on some devices.
 		</member>
+		<member name="rendering/lights_and_shadows/directional_shadow/cache_static_casters" type="bool" setter="" getter="" default="true">
+			If [code]true[/code], [DirectionalLight3D] shadow cascades keep the shadows of meshes that stay still in a cache: they are drawn once, and every frame after, the cache is copied and only moving objects are drawn over it. When the camera moves, the cache moves along with it and only the edge that comes into view is drawn. In scenes made mostly of still geometry, this removes most of the cost of directional shadows.
+			A [MeshInstance3D] counts as still once it has not changed for about half a second (30 frames); moving it, hiding it or changing its mesh or material takes it out again, and the cache is redrawn. Meshes with a skeleton or blend shapes, [MultiMeshInstance3D]s, particles, meshes with a visibility range and materials animated in their shader are always drawn every frame.
+			The cache is redrawn whenever the light turns, so a sun that moves every frame gains nothing from it. It is kept for one view: other viewports and reflection probes draw their shadows as before.
+			[b]Note:[/b] Only supported when using the Forward+ rendering method, and not together with [member rendering/lights_and_shadows/directional_shadow/tighter_draw_rect].
+			[b]Note:[/b] This property is only read when the project starts.
+		</member>
 		<member name="rendering/lights_and_shadows/directional_shadow/size" type="int" setter="" getter="" default="4096">
 			The directional shadow's size in pixels. Higher values will result in sharper shadows, at the cost of performance. The value is rounded up to the nearest power of 2.
 		</member>

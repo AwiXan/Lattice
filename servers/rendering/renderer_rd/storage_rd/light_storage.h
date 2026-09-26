@@ -53,6 +53,28 @@ public:
 		SHADOW_INVALID = 0xFFFFFFFF
 	};
 
+	// A directional light's cascade, its still casters only: drawn once and
+	// copied into the atlas every frame after, moved along as the camera moves
+	// (see RenderForwardClustered::_render_directional_static_cached()). What
+	// it was drawn with says whether it still holds.
+	struct DirectionalShadowCache {
+		RID texture;
+		RID framebuffer;
+		Size2i size;
+		RD::DataFormat format = RD::DATA_FORMAT_MAX;
+		bool valid = false;
+		uint64_t generation = 0;
+		Projection projection;
+		Transform3D transform;
+		float zfar = 0.0;
+		bool pancake = false;
+		// The view it is kept for (its render buffers), and when that last drew
+		// it: another view with a camera of its own would have it redrawn for
+		// both every frame.
+		ObjectID owner;
+		uint64_t owner_frame = 0;
+	};
+
 private:
 	static LightStorage *singleton;
 	uint32_t max_cluster_elements = 512;
@@ -110,6 +132,7 @@ private:
 		RSE::LightType light_type = RSE::LIGHT_DIRECTIONAL;
 
 		ShadowTransform shadow_transform[6];
+		DirectionalShadowCache directional_cache[4];
 
 		AABB aabb;
 		RID self;
@@ -796,6 +819,9 @@ public:
 		LightInstance *li = light_instance_owner.get_or_null(p_light_instance);
 		return li->shadow_transform[p_index].shadow_texel_size;
 	}
+
+	// Cascade p_pass's cache, (re)made for this size and the atlas's format.
+	DirectionalShadowCache *light_instance_get_directional_cache(RID p_light_instance, int p_pass, const Size2i &p_size);
 
 	_FORCE_INLINE_ Rect2 light_instance_get_directional_shadow_draw_norm_rect(RID p_light_instance, int p_index) {
 		LightInstance *li = light_instance_owner.get_or_null(p_light_instance);

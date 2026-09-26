@@ -630,6 +630,13 @@ void LightStorage::light_instance_free(RID p_light) {
 		shadow_atlas->shadow_owners.erase(p_light);
 	}
 
+	for (DirectionalShadowCache &cache : light_instance->directional_cache) {
+		if (cache.texture.is_valid()) {
+			// Its framebuffer goes with it.
+			RD::get_singleton()->free_rid(cache.texture);
+		}
+	}
+
 	if (light_instance->light_type != RSE::LIGHT_DIRECTIONAL) {
 		ForwardIDType forward_id_type = _light_type_to_forward_id_type(light_instance->light_type);
 		ForwardIDStorage::get_singleton()->free_forward_id(forward_id_type, light_instance->forward_id);
@@ -2823,6 +2830,36 @@ uint32_t LightStorage::get_shadow_atlas_depth_usage_bits() {
 }
 
 /* DIRECTIONAL SHADOW */
+
+LightStorage::DirectionalShadowCache *LightStorage::light_instance_get_directional_cache(RID p_light_instance, int p_pass, const Size2i &p_size) {
+	LightInstance *light_instance = light_instance_owner.get_or_null(p_light_instance);
+	ERR_FAIL_NULL_V(light_instance, nullptr);
+	ERR_FAIL_INDEX_V(p_pass, 4, nullptr);
+	if (p_size.width <= 0 || p_size.height <= 0) {
+		return nullptr;
+	}
+	DirectionalShadowCache &cache = light_instance->directional_cache[p_pass];
+	const RD::DataFormat format = get_shadow_atlas_depth_format(directional_shadow.use_16_bits);
+	if (cache.texture.is_null() || cache.size != p_size || cache.format != format) {
+		if (cache.texture.is_valid()) {
+			RD::get_singleton()->free_rid(cache.texture);
+		}
+		RD::TextureFormat tf;
+		tf.format = format;
+		tf.width = p_size.width;
+		tf.height = p_size.height;
+		tf.usage_bits = get_shadow_atlas_depth_usage_bits();
+		cache.texture = RD::get_singleton()->texture_create(tf, RD::TextureView());
+		RD::get_singleton()->set_resource_name(cache.texture, "Directional Shadow Cache");
+		Vector<RID> fb_tex;
+		fb_tex.push_back(cache.texture);
+		cache.framebuffer = RD::get_singleton()->framebuffer_create(fb_tex);
+		cache.size = p_size;
+		cache.format = format;
+		cache.valid = false;
+	}
+	return &cache;
+}
 
 void LightStorage::update_directional_shadow_atlas() {
 	if (directional_shadow.depth.is_null() && directional_shadow.size > 0) {
