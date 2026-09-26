@@ -458,6 +458,39 @@ void EditorScreenshot::_notification(int p_what) {
 							watch_frames = 40;
 							break;
 						}
+					} else if (action == "later:readout" && later_view) {
+						// A move as in Blender, 1.25 along X typed: its numbers beside
+						// the mouse, in the middle of the view. The move's key is given
+						// for this and taken back: it has none by default.
+						Node3DEditorViewport *viewport = later_view->get_editor_viewport(0);
+						Control *surface = viewport->get_surface();
+						const Vector2 at = surface->get_global_rect().get_center();
+						Ref<InputEventMouseMotion> motion;
+						motion.instantiate();
+						motion->set_position(at);
+						motion->set_global_position(at);
+						surface->get_viewport()->push_input(motion);
+						surface->grab_focus();
+						Ref<Shortcut> shortcut = ED_GET_SHORTCUT("spatial_editor/instant_translate");
+						const Array events = shortcut->get_events();
+						Ref<InputEventKey> begin_key;
+						begin_key.instantiate();
+						begin_key->set_keycode(Key::F13);
+						Array only_that;
+						only_that.push_back(begin_key);
+						shortcut->set_events(only_that);
+						for (Key key : { Key::F13, Key::X, Key::KEY_1, Key::PERIOD, Key::KEY_2, Key::KEY_5 }) {
+							for (int pressed = 1; pressed >= 0; pressed--) {
+								Ref<InputEventKey> press;
+								press.instantiate();
+								press->set_keycode(key);
+								press->set_physical_keycode(key);
+								press->set_pressed(pressed == 1);
+								surface->get_viewport()->push_input(press);
+							}
+						}
+						shortcut->set_events(events);
+						print_line("SHOT: readout \"" + viewport->get_transform_readout() + "\"");
 					} else if (action == "later:stall") {
 						// Frozen on purpose, for the stall watchdog to find.
 						print_line("SHOT: stalling for 6 s");
@@ -1240,6 +1273,77 @@ void EditorSelfTest::_view_right_click() {
 		selection->add_node(node);
 	}
 	_check(opened && quiet, vformat("a right click in a 3D view opens the node menu (%s), and does not once switched off (%s)", opened, quiet));
+}
+
+void EditorSelfTest::_view_transform_readout() {
+	int index = -1;
+	EditorPane *pane = _pane_showing("view_3d", &index);
+	Node3DEditor *view = pane ? Object::cast_to<Node3DEditor>(pane->get_panel_at(index)) : nullptr;
+	Node *scene = view ? view->get_edited_scene() : nullptr;
+	Ref<Shortcut> shortcut = ED_GET_SHORTCUT("spatial_editor/instant_translate");
+	if (!scene || shortcut.is_null()) {
+		_check(false, "a 3D view and a scene, for a transform's numbers");
+		return;
+	}
+	pane->set_current_panel(index);
+	Node3DEditorViewport *viewport = view->get_editor_viewport(0);
+	// The view's document the current one, as a click in the view makes it:
+	// the selection a transform moves is the current document's.
+	const int current = EditorNode::get_editor_data().get_edited_scene();
+	for (int i = 0; i < EditorNode::get_editor_data().get_edited_scene_count(); i++) {
+		if (EditorNode::get_editor_data().get_edited_scene_root(i) == scene && i != current) {
+			EditorNode::get_singleton()->set_current_scene_index(i);
+			break;
+		}
+	}
+	Node3D *node = memnew(Node3D);
+	node->set_name("LatticeReadoutTest");
+	scene->add_child(node);
+	EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
+	const List<Node *> kept = selection->get_full_selected_node_list();
+	selection->clear();
+	selection->add_node(node);
+	// Moving by the keyboard as in Blender - G, X, 2.5 - on a key given for the
+	// test (it has none by default; G is the 2D view's pan mode).
+	const Array events = shortcut->get_events();
+	Ref<InputEventKey> begin_key;
+	begin_key.instantiate();
+	begin_key->set_keycode(Key::F13);
+	Array only_that;
+	only_that.push_back(begin_key);
+	shortcut->set_events(only_that);
+	const bool setting_before = EDITOR_GET("editors/3d/transform_readout");
+	EditorSettings::get_singleton()->set("editors/3d/transform_readout", true);
+	Control *surface = viewport->get_surface();
+	surface->grab_focus();
+	const Control *focused = surface->get_viewport()->gui_get_focus_owner();
+	const String focus = focused == surface ? String("the view") : (focused ? String(focused->get_path()) : String("nothing"));
+	String begun;
+	for (Key key : { Key::F13, Key::X, Key::KEY_2, Key::PERIOD, Key::KEY_5 }) {
+		_press_key(surface, key, true);
+		_press_key(surface, key, false);
+		if (key == Key::F13) {
+			begun = viewport->get_transform_readout();
+		}
+	}
+	const String typed = viewport->get_transform_readout();
+	const Vector3 moved = node->get_global_position();
+	_press_key(surface, Key::ESCAPE, true);
+	_press_key(surface, Key::ESCAPE, false);
+	const bool back = node->get_global_position().is_zero_approx() && viewport->get_transform_readout().is_empty();
+	shortcut->set_events(events);
+	EditorSettings::get_singleton()->set("editors/3d/transform_readout", setting_before);
+	selection->clear();
+	scene->remove_child(node);
+	memdelete(node);
+	for (Node *n : kept) {
+		selection->add_node(n);
+	}
+	if (EditorNode::get_editor_data().get_edited_scene() != current) {
+		EditorNode::get_singleton()->set_current_scene_index(current);
+	}
+	_check(typed == "X 2.5| m" && moved.is_equal_approx(Vector3(2.5, 0, 0)) && back,
+			vformat("G X 2.5 in a 3D view: \"%s\" beside the mouse, moved to %s; Escape puts it back and the numbers away (%s) - focus on %s, \"%s\" once begun", typed, moved, back, focus, begun));
 }
 
 void EditorSelfTest::_timeline_open() {
@@ -2762,6 +2866,7 @@ EditorSelfTest::EditorSelfTest() {
 	_add("view hover", callable_mp(this, &EditorSelfTest::_view_hover));
 	_add("view camera preview", callable_mp(this, &EditorSelfTest::_view_camera_preview));
 	_add("view right click", callable_mp(this, &EditorSelfTest::_view_right_click));
+	_add("view transform readout", callable_mp(this, &EditorSelfTest::_view_transform_readout));
 	_add("timeline open", callable_mp(this, &EditorSelfTest::_timeline_open));
 	_add("timeline check", callable_mp(this, &EditorSelfTest::_timeline_check));
 	_add("view sidebar open", callable_mp(this, &EditorSelfTest::_view_sidebar_open));

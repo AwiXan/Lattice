@@ -129,6 +129,7 @@
 #include "scene/resources/3d/sky_material.h"
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/sky.h"
+#include "scene/resources/style_box_flat.h"
 #include "scene/resources/surface_tool.h"
 #include "servers/rendering/rendering_server.h"
 
@@ -3065,6 +3066,8 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 				if (_edit.numeric_next_decimal == 0) {
 					_edit.numeric_next_decimal = -1;
 				}
+				_set_transform_readout_typed();
+				surface->queue_redraw();
 			} else if (keycode == Key::ENTER || keycode == Key::KP_ENTER || keycode == Key::SPACE) {
 				commit_transform();
 			} else {
@@ -4454,6 +4457,8 @@ void Node3DEditorViewport::_draw() {
 		font->draw_string(ci, msgpos + Point2(-1, -1), message, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(0, 0, 0, 0.8));
 		font->draw_string(ci, msgpos, message, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(1, 1, 1, 1));
 	}
+
+	_draw_transform_readout();
 
 	if ((vertex_snap_mode || vertex_snap_dragging) && vertex_snap_has_source) {
 		const float circle_radius = 6.0f * EDSCALE;
@@ -6734,6 +6739,7 @@ void Node3DEditorViewport::begin_transform(TransformMode p_mode, bool instant) {
 			default:
 				break;
 		}
+		_set_transform_readout(p_mode == TRANSFORM_SCALE ? Vector3(1, 1, 1) : Vector3(), 0, spatial_editor->are_local_coords_enabled());
 		update_transform_gizmo_view();
 		set_process_input(instant);
 		surface->queue_redraw();
@@ -6931,6 +6937,13 @@ void Node3DEditorViewport::update_transform(bool p_shift) {
 				// TODO: needed?
 				motion = _edit.original.basis.inverse().xform(motion);
 			}
+			{
+				Vector3 factor = motion;
+				if (spatial_editor->is_snap_enabled()) {
+					factor.snapf(snap);
+				}
+				_set_transform_readout(factor + Vector3(1, 1, 1), snap_step_decimals, local_coords);
+			}
 
 			apply_transform(motion, snap);
 		} break;
@@ -6994,6 +7007,19 @@ void Node3DEditorViewport::update_transform(bool p_shift) {
 			motion_snapped.snapf(snap);
 			// TRANSLATORS: Refers to changing the position of a node in the 3D editor.
 			set_message(vformat(TTR("Translating: %s"), vformat("%.*v", snap_step_decimals, motion_snapped)));
+			{
+				// In metres along the axes the gizmo shows, snapped as
+				// apply_transform will snap them (in the node's own units).
+				Basis axes = local_coords ? spatial_editor->get_gizmo_transform().basis : Basis();
+				if (Math::is_zero_approx(axes.determinant())) {
+					axes = Basis();
+				}
+				Vector3 along = axes.inverse().xform(motion);
+				if (spatial_editor->is_snap_enabled()) {
+					along.snapf(snap);
+				}
+				_set_transform_readout(along * axes.get_scale_abs(), snap_step_decimals, local_coords);
+			}
 			if (local_coords) {
 				motion = spatial_editor->get_gizmo_transform().basis.inverse().xform(motion);
 			}
@@ -7037,6 +7063,7 @@ void Node3DEditorViewport::update_transform(bool p_shift) {
 
 					double angle_deg = Math::rad_to_deg(rotation_angle);
 					set_message(vformat(TTR("Rotating %s degrees."), String::num(angle_deg, 2)));
+					_set_transform_readout(Vector3(angle_deg, 0, 0), spatial_editor->is_snap_enabled() ? Math::range_step_decimals(spatial_editor->get_rotate_snap()) : 1, false);
 
 					apply_transform(rotation_axis, rotation_angle);
 				}
@@ -7124,6 +7151,7 @@ void Node3DEditorViewport::update_transform(bool p_shift) {
 						: _edit.accumulated_rotation_angle;
 			}
 			set_message(vformat(TTR("Rotating %s degrees."), String::num(Math::rad_to_deg(_edit.rotation_angle), snap_step_decimals)));
+			_set_transform_readout(Vector3(Math::rad_to_deg(_edit.rotation_angle), 0, 0), spatial_editor->is_snap_enabled() ? snap_step_decimals : 1, local_coords);
 
 			Vector3 compute_axis = local_coords ? local_axis : global_axis;
 			apply_transform(compute_axis, _edit.rotation_angle);
@@ -7194,11 +7222,194 @@ void Node3DEditorViewport::update_transform_numeric() {
 	}
 
 	apply_transform(motion, extra);
+	_set_transform_readout_typed();
+}
+
+int Node3DEditorViewport::_transform_readout_axes(int r_axes[3]) const {
+	switch (_edit.plane) {
+		case TRANSFORM_X_AXIS:
+			r_axes[0] = 0;
+			return 1;
+		case TRANSFORM_Y_AXIS:
+			r_axes[0] = 1;
+			return 1;
+		case TRANSFORM_Z_AXIS:
+			r_axes[0] = 2;
+			return 1;
+		case TRANSFORM_YZ:
+			r_axes[0] = 1;
+			r_axes[1] = 2;
+			return 2;
+		case TRANSFORM_XZ:
+			r_axes[0] = 0;
+			r_axes[1] = 2;
+			return 2;
+		case TRANSFORM_XY:
+			r_axes[0] = 0;
+			r_axes[1] = 1;
+			return 2;
+		case TRANSFORM_VIEW:
+			break;
+	}
+	r_axes[0] = 0;
+	r_axes[1] = 1;
+	r_axes[2] = 2;
+	return 3;
+}
+
+void Node3DEditorViewport::_set_transform_readout(const Vector3 &p_values, int p_decimals, bool p_local) {
+	transform_readout.clear();
+	if (!EDITOR_GET("editors/3d/transform_readout")) {
+		return;
+	}
+	const auto num = [p_decimals](double p_value) {
+		return String::num(Math::is_zero_approx(p_value) ? 0.0 : p_value, p_decimals);
+	};
+	const auto add = [this](const String &p_text, int p_color) {
+		transform_readout.push_back({ p_text, p_color });
+	};
+	int axes[3];
+	const int count = _transform_readout_axes(axes);
+	switch (_edit.mode) {
+		case TRANSFORM_TRANSLATE: {
+			Vector3 held;
+			for (int i = 0; i < count; i++) {
+				add(String(i ? "   " : "") + String::chr('X' + axes[i]), axes[i]);
+				add(" " + num(p_values[axes[i]]), -1);
+				held[axes[i]] = p_values[axes[i]];
+			}
+			// Along more than one axis: how far in all.
+			add(count > 1 ? "   " + num(held.length()) + " m" : String(" m"), -2);
+		} break;
+		case TRANSFORM_SCALE: {
+			if (_edit.plane == TRANSFORM_VIEW) {
+				add(String(U"\u00d7") + num(p_values.x), -1);
+				break;
+			}
+			for (int i = 0; i < count; i++) {
+				add(String(i ? "   " : "") + String::chr('X' + axes[i]), axes[i]);
+				add(String(U" \u00d7") + num(p_values[axes[i]]), -1);
+			}
+		} break;
+		case TRANSFORM_ROTATE: {
+			if (_edit.is_trackball) {
+				add(TTR("Trackball") + " ", -2);
+			} else if (count == 1) {
+				add(String::chr('X' + axes[0]) + " ", axes[0]);
+			}
+			add(num(p_values.x) + String(U"\u00b0"), -1);
+		} break;
+		case TRANSFORM_NONE: {
+			return;
+		}
+	}
+	if (p_local && _edit.plane != TRANSFORM_VIEW && !_edit.is_trackball) {
+		add("   " + TTR("local"), -2);
+	}
+}
+
+void Node3DEditorViewport::_set_transform_readout_typed() {
+	transform_readout.clear();
+	if (!EDITOR_GET("editors/3d/transform_readout") || _edit.mode == TRANSFORM_NONE) {
+		return;
+	}
+	// As typed: "2." stays "2.", "2.50" keeps its 0.
+	const int decimals = MAX(0, -_edit.numeric_next_decimal - 1);
+	String typed = vformat("%." + itos(decimals) + "f", _edit.numeric_input);
+	if (_edit.numeric_next_decimal == -1) {
+		typed += ".";
+	}
+	if (_edit.numeric_negate) {
+		typed = "-" + typed;
+	}
+	// The axes update_transform_numeric goes along: in the view plane, X
+	// for a move, the view's own for a turn, all alike for a scale.
+	int axes[3];
+	int count = _transform_readout_axes(axes);
+	if (_edit.plane == TRANSFORM_VIEW) {
+		count = _edit.mode == TRANSFORM_TRANSLATE ? 1 : 0;
+	}
+	for (int i = 0; i < count; i++) {
+		transform_readout.push_back({ String::chr('X' + axes[i]), axes[i] });
+	}
+	if (count) {
+		transform_readout.push_back({ " ", -1 });
+	}
+	transform_readout.push_back({ String(_edit.mode == TRANSFORM_SCALE ? U"\u00d7" : U"") + typed, -1 });
+	transform_readout.push_back({ "|", -2 });
+	if (_edit.mode == TRANSFORM_TRANSLATE) {
+		transform_readout.push_back({ " m", -2 });
+	} else if (_edit.mode == TRANSFORM_ROTATE) {
+		transform_readout.push_back({ String(U"\u00b0"), -2 });
+	}
+}
+
+String Node3DEditorViewport::get_transform_readout() const {
+	String text;
+	for (const ReadoutPart &part : transform_readout) {
+		text += part.text;
+	}
+	return text;
+}
+
+void Node3DEditorViewport::_draw_transform_readout() {
+	if (_edit.mode == TRANSFORM_NONE || transform_readout.is_empty()) {
+		return;
+	}
+	// Looks like a tooltip, which it nearly is - with room around the numbers,
+	// which the theme's tooltips need not leave.
+	if (readout_panel.is_null()) {
+		readout_panel.instantiate();
+	}
+	const Ref<StyleBoxFlat> tooltip = get_theme_stylebox(SceneStringName(panel), SNAME("TooltipPanel"));
+	readout_panel->set_bg_color(tooltip.is_valid() ? tooltip->get_bg_color() : Color(0.08, 0.08, 0.09, 0.92));
+	readout_panel->set_corner_radius_all(Math::round(4 * EDSCALE));
+	readout_panel->set_content_margin_individual(7 * EDSCALE, 3 * EDSCALE, 7 * EDSCALE, 3 * EDSCALE);
+	const Ref<StyleBox> panel = readout_panel;
+	const Ref<Font> font = get_theme_font(SceneStringName(font), SNAME("TooltipLabel"));
+	const int font_size = get_theme_font_size(SceneStringName(font_size), SNAME("TooltipLabel"));
+	const Color text_color = get_theme_color(SceneStringName(font_color), SNAME("TooltipLabel"));
+	const Color axis_colors[3] = {
+		get_theme_color(SNAME("axis_x_color"), EditorStringName(Editor)),
+		get_theme_color(SNAME("axis_y_color"), EditorStringName(Editor)),
+		get_theme_color(SNAME("axis_z_color"), EditorStringName(Editor)),
+	};
+	LocalVector<float> widths;
+	float width = 0.0;
+	for (const ReadoutPart &part : transform_readout) {
+		widths.push_back(font->get_string_size(part.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x);
+		width += widths[widths.size() - 1];
+	}
+	const Size2 size = Size2(width, font->get_height(font_size)) + panel->get_minimum_size();
+	const Size2 view = surface->get_size();
+	const Vector2 gap = Vector2(18, 18) * EDSCALE;
+	// Below right of the mouse; on its other side where that would not fit.
+	Point2 pos = _edit.mouse_pos + gap;
+	if (pos.x + size.x > view.x) {
+		pos.x = _edit.mouse_pos.x - gap.x - size.x;
+	}
+	if (pos.y + size.y > view.y) {
+		pos.y = _edit.mouse_pos.y - gap.y - size.y;
+	}
+	pos = pos.clamp(Vector2(), (view - size).max(Vector2()));
+	const RID ci = surface->get_canvas_item();
+	panel->draw(ci, Rect2(pos, size));
+	Point2 at = pos + Vector2(panel->get_margin(SIDE_LEFT), panel->get_margin(SIDE_TOP) + font->get_ascent(font_size));
+	for (uint32_t i = 0; i < transform_readout.size(); i++) {
+		const int c = transform_readout[i].color;
+		Color color = (c >= 0 && c < 3) ? axis_colors[c] : text_color;
+		if (c == -2) {
+			color.a *= 0.55;
+		}
+		font->draw_string(ci, at, transform_readout[i].text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color);
+		at.x += widths[i];
+	}
 }
 
 // Perform cleanup after a transform operation is committed or canceled.
 void Node3DEditorViewport::finish_transform() {
 	_edit.mode = TRANSFORM_NONE;
+	transform_readout.clear();
 	_edit.instant = false;
 	_edit.numeric_input = 0;
 	_edit.numeric_next_decimal = 0;
@@ -13141,7 +13352,7 @@ void Node3DEditor::_view_bar_show_about_to_popup(int p_viewport) {
 	const int order[] = {
 		OVERLAY_ENVIRONMENT, OVERLAY_GRID, OVERLAY_ORIGIN, OVERLAY_GIZMOS, OVERLAY_TRANSFORM_GIZMO, -1,
 		OVERLAY_INFORMATION, OVERLAY_FRAME_TIME, -1,
-		OVERLAY_HOVER_HIGHLIGHT, OVERLAY_CAMERA_PREVIEW, OVERLAY_KEY_HINTS
+		OVERLAY_HOVER_HIGHLIGHT, OVERLAY_CAMERA_PREVIEW, OVERLAY_TRANSFORM_READOUT, OVERLAY_KEY_HINTS
 	};
 	for (int overlay : order) {
 		if (overlay < 0) {
@@ -13735,7 +13946,7 @@ void Node3DEditor::toggle_overlay_in(int p_overlay, int p_viewport) {
 	ERR_FAIL_INDEX(p_overlay, count);
 	ERR_FAIL_INDEX(p_viewport, (int)VIEWPORTS_COUNT);
 	const OverlayItem &item = items[p_overlay];
-	if (p_overlay == OVERLAY_KEY_HINTS || p_overlay == OVERLAY_HOVER_HIGHLIGHT || p_overlay == OVERLAY_CAMERA_PREVIEW || item.layout_option >= 0) {
+	if (p_overlay == OVERLAY_KEY_HINTS || p_overlay == OVERLAY_HOVER_HIGHLIGHT || p_overlay == OVERLAY_CAMERA_PREVIEW || p_overlay == OVERLAY_TRANSFORM_READOUT || item.layout_option >= 0) {
 		// The view's own - or the editor's - whichever viewport asks.
 		_overlays_id_pressed(p_overlay);
 		return;
@@ -13779,6 +13990,7 @@ const Node3DEditor::OverlayItem *Node3DEditor::_overlay_items(int &r_count) {
 		// The editor's: an editor setting.
 		{ TTRC("Highlight on Hover"), -1, -1 },
 		{ TTRC("Selected Camera Preview"), -1, -1 },
+		{ TTRC("Transform Numbers"), -1, -1 },
 	};
 	static_assert(std::size(items) == OVERLAY_MAX);
 	r_count = std::size(items);
@@ -13798,6 +14010,9 @@ bool Node3DEditor::_overlay_shown_in(int p_overlay, int p_viewport) const {
 	}
 	if (p_overlay == OVERLAY_CAMERA_PREVIEW) {
 		return EDITOR_GET("editors/3d/camera_preview_in_corner");
+	}
+	if (p_overlay == OVERLAY_TRANSFORM_READOUT) {
+		return EDITOR_GET("editors/3d/transform_readout");
 	}
 	if (item.layout_option >= 0) {
 		const PopupMenu *popup = view_layout_menu->get_popup();
@@ -13844,6 +14059,9 @@ void Node3DEditor::_overlays_id_pressed(int p_overlay) {
 		EditorSettings::get_singleton()->set("editors/3d/camera_preview_in_corner", show);
 		EditorSettings::get_singleton()->save();
 		update_camera_preview();
+	} else if (p_overlay == OVERLAY_TRANSFORM_READOUT) {
+		EditorSettings::get_singleton()->set("editors/3d/transform_readout", show);
+		EditorSettings::get_singleton()->save();
 	} else if (item.layout_option >= 0) {
 		_menu_item_activated(item.layout_option);
 	} else {

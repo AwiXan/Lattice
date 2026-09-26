@@ -50,6 +50,7 @@ class Button;
 class CheckBox;
 class ColorPickerButton;
 class ConfirmationDialog;
+class StyleBoxFlat;
 class DirectionalLight3D;
 class EditorData;
 class EditorSelection;
@@ -413,6 +414,19 @@ private:
 	uint64_t rmb_click_msec = 0;
 	Transform3D rmb_click_camera;
 	void _open_context_menu(const Point2 &p_pos);
+
+	// The numbers of the transform under way, beside the mouse, in parts:
+	// each coloured as its axis (0 to 2), plainly (-1) or dimmed (-2).
+	struct ReadoutPart {
+		String text;
+		int color = -1;
+	};
+	LocalVector<ReadoutPart> transform_readout;
+	Ref<StyleBoxFlat> readout_panel;
+	int _transform_readout_axes(int r_axes[3]) const;
+	void _set_transform_readout(const Vector3 &p_values, int p_decimals, bool p_local);
+	void _set_transform_readout_typed();
+	void _draw_transform_readout();
 	bool selection_in_progress = false;
 	bool movement_threshold_passed = false;
 
@@ -664,6 +678,8 @@ public:
 	// How far the ring of the p_index-th lit mesh grows, in its own units.
 	real_t get_hover_rim_grow(int p_index) const;
 	Control *get_surface() const { return surface; }
+	// The numbers beside the mouse while transforming, as one line of text.
+	String get_transform_readout() const;
 	bool is_view_type_top() const;
 	static int get_display_normal_id() { return VIEW_DISPLAY_NORMAL; }
 	Camera3D *get_camera_3d() { return camera; } // return the default camera object.
@@ -1444,6 +1460,9 @@ public:
 		// The selected camera's picture in a corner of the view: the editor
 		// setting editors/3d/camera_preview_in_corner, for every view.
 		OVERLAY_CAMERA_PREVIEW,
+		// The numbers of a transform beside the mouse: the editor setting
+		// editors/3d/transform_readout, for every view.
+		OVERLAY_TRANSFORM_READOUT,
 		OVERLAY_MAX
 	};
 	enum SidebarPage {
