@@ -612,6 +612,11 @@ bool SceneTreeDock::_track_inherit(const String &p_target_scene_path, Node *p_de
 }
 
 void SceneTreeDock::_tool_selected(int p_tool, bool p_confirm_override) {
+	if (p_tool >= NODE_MENU_EXTRA_ID && node_menu_item_pressed.is_valid()) {
+		// An item the view the menu was opened in added.
+		node_menu_item_pressed.call(p_tool);
+		return;
+	}
 	current_option = p_tool;
 
 	switch (p_tool) {
@@ -3901,11 +3906,16 @@ void SceneTreeDock::_add_children_to_popup(Object *p_obj, int p_depth) {
 
 void SceneTreeDock::_tree_rmb(const Vector2 &p_menu_pos) {
 	scene_tree->get_scene_tree()->grab_focus(true);
+	node_menu_add_items = Callable();
+	node_menu_item_pressed = Callable();
 	_popup_node_menu(p_menu_pos);
 }
 
-void SceneTreeDock::popup_node_menu(const Vector2 &p_screen_position) {
+void SceneTreeDock::popup_node_menu(const Vector2 &p_screen_position, const Callable &p_add_items, const Callable &p_item_pressed) {
+	node_menu_add_items = p_add_items;
+	node_menu_item_pressed = p_item_pressed;
 	_popup_node_menu(p_screen_position);
+	node_menu_add_items = Callable();
 }
 
 void SceneTreeDock::_popup_node_menu(const Vector2 &p_menu_pos) {
@@ -3923,6 +3933,9 @@ void SceneTreeDock::_popup_node_menu(const Vector2 &p_menu_pos) {
 		menu->add_icon_shortcut(get_editor_theme_icon(SNAME("Add")), ED_GET_SHORTCUT("scene_tree/add_child_node"), TOOL_NEW);
 		menu->add_icon_shortcut(get_editor_theme_icon(SNAME("Instance")), ED_GET_SHORTCUT("scene_tree/instantiate_scene"), TOOL_INSTANTIATE);
 		EditorContextMenuPluginManager::get_singleton()->add_options_from_plugins(menu, EditorContextMenuPlugin::CONTEXT_SLOT_SCENE_TREE, PackedStringArray());
+		if (node_menu_add_items.is_valid()) {
+			node_menu_add_items.call(menu);
+		}
 
 		menu->reset_size();
 		menu->set_position(p_menu_pos);
@@ -4205,6 +4218,9 @@ void SceneTreeDock::_popup_node_menu(const Vector2 &p_menu_pos) {
 		p_paths.push_back(node_path);
 	}
 	EditorContextMenuPluginManager::get_singleton()->add_options_from_plugins(menu, EditorContextMenuPlugin::CONTEXT_SLOT_SCENE_TREE, p_paths);
+	if (node_menu_add_items.is_valid()) {
+		node_menu_add_items.call(menu);
+	}
 
 	menu->reset_size();
 	menu->set_position(p_menu_pos);

@@ -75,6 +75,7 @@
 #include "editor/scene/3d/node_3d_editor_chrome.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
+#include "scene/gui/color_rect.h"
 #include "editor/scene/canvas_item_editor_chrome.h"
 #include "editor/scene/editor_scene_panel.h"
 #include "editor/script/editor_script_panel.h"
@@ -1619,6 +1620,73 @@ void EditorSelfTest::_view_2d_open() {
 	}
 }
 
+void EditorSelfTest::_view_2d_right_click() {
+	int index = -1;
+	EditorPane *pane = _pane_showing("view_2d", &index);
+	CanvasItemEditor *view = pane ? Object::cast_to<CanvasItemEditor>(pane->get_panel_at(index)) : nullptr;
+	if (pane) {
+		pane->set_current_panel(index);
+	}
+	Node *scene = EditorNode::get_singleton()->get_edited_scene();
+	PopupMenu *menu = SceneTreeDock::get_singleton()->get_node_menu();
+	if (!view || !scene || !menu) {
+		_check(false, "a 2D view and a scene, for a right click in it");
+		return;
+	}
+	Control *surface = view->get_viewport_control();
+	const Vector2 at = surface->get_global_rect().get_center();
+	// Under the click, whatever the 2D view looks at: a rect far bigger than it.
+	ColorRect *rect = memnew(ColorRect);
+	rect->set_name("LatticeRightClickTest");
+	scene->add_child(rect);
+	// Owned by the scene, as what a click picks has to be.
+	rect->set_owner(scene);
+	rect->set_global_position(view->get_canvas_transform().affine_inverse().xform(surface->get_size() / 2) - Vector2(1e5, 1e5));
+	rect->set_size(Vector2(2e5, 2e5));
+	EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
+	const List<Node *> kept = selection->get_full_selected_node_list();
+	selection->clear();
+	auto right = [&]() {
+		Ref<InputEventMouseButton> click;
+		click.instantiate();
+		click->set_button_index(MouseButton::RIGHT);
+		click->set_position(at);
+		click->set_global_position(at);
+		click->set_pressed(true);
+		click->set_button_mask(MouseButtonMask::RIGHT);
+		surface->get_viewport()->push_input(click);
+		click = click->duplicate();
+		click->set_pressed(false);
+		click->set_button_mask(MouseButtonMask::NONE);
+		surface->get_viewport()->push_input(click);
+	};
+	const bool setting_before = EDITOR_GET("editors/2d/right_click_menu");
+	EditorSettings::get_singleton()->set("editors/2d/right_click_menu", true);
+	menu->hide();
+	right();
+	const bool opened = menu->is_visible();
+	const bool picked = selection->is_selected(rect);
+	// The 2D menu's own items, at the end.
+	bool here = false;
+	for (int i = 0; i < menu->get_item_count(); i++) {
+		here = here || menu->get_item_id(i) == SceneTreeDock::NODE_MENU_EXTRA_ID + CanvasItemEditor::ADD_NODE;
+	}
+	menu->hide();
+	// Switched off: the 2D menu, as before.
+	EditorSettings::get_singleton()->set("editors/2d/right_click_menu", false);
+	right();
+	const bool quiet = !menu->is_visible();
+	_hide_popups();
+	EditorSettings::get_singleton()->set("editors/2d/right_click_menu", setting_before);
+	selection->clear();
+	scene->remove_child(rect);
+	memdelete(rect);
+	for (Node *node : kept) {
+		selection->add_node(node);
+	}
+	_check(opened && picked && here && quiet, vformat("a right click on a node in a 2D view picks it (%s) and opens the node menu (%s) with the 2D items at its end (%s); switched off, the 2D menu (%s)", picked, opened, here, quiet));
+}
+
 void EditorSelfTest::_view_2d_check() {
 	CanvasItemEditor *view = ObjectDB::get_instance<CanvasItemEditor>(view_2d);
 	if (!view) {
@@ -2695,6 +2763,7 @@ EditorSelfTest::EditorSelfTest() {
 	_add("addon mirror check", callable_mp(this, &EditorSelfTest::_addon_mirror_check));
 	_add("view 2d open", callable_mp(this, &EditorSelfTest::_view_2d_open));
 	_add("view 2d check", callable_mp(this, &EditorSelfTest::_view_2d_check));
+	_add("view 2d right click", callable_mp(this, &EditorSelfTest::_view_2d_right_click));
 	_add("script drag out open", callable_mp(this, &EditorSelfTest::_script_drag_out_open));
 	_add("script drag out drop", callable_mp(this, &EditorSelfTest::_script_drag_out_drop));
 	_add("script drag out close", callable_mp(this, &EditorSelfTest::_script_drag_out_close));

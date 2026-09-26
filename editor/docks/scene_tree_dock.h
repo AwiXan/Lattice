@@ -279,6 +279,8 @@ class SceneTreeDock : public EditorDock {
 
 	void _tree_rmb(const Vector2 &p_menu_pos);
 	void _popup_node_menu(const Vector2 &p_menu_pos);
+	Callable node_menu_add_items;
+	Callable node_menu_item_pressed;
 	void _update_tree_menu();
 
 	void _filter_changed(const String &p_filter);
@@ -380,7 +382,10 @@ public:
 	void open_add_child_dialog();
 	// The menu a right click on a node in the tree opens, for the selection,
 	// from elsewhere (a 3D view): the keyboard stays where it is.
-	void popup_node_menu(const Vector2 &p_screen_position);
+	// A view can add items of its own at the end, given p_add_items(menu);
+	// their ids from NODE_MENU_EXTRA_ID up go to p_item_pressed(id).
+	static constexpr int NODE_MENU_EXTRA_ID = 100000;
+	void popup_node_menu(const Vector2 &p_screen_position, const Callable &p_add_items = Callable(), const Callable &p_item_pressed = Callable());
 	PopupMenu *get_node_menu() const { return menu; }
 	void open_instance_child_dialog();
 

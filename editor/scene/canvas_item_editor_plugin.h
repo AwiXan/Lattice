@@ -484,6 +484,11 @@ private:
 	void _find_canvas_items_in_rect(const Rect2 &p_rect, Node *p_node, List<CanvasItem *> *r_items, const Transform2D &p_parent_xform = Transform2D(), const Transform2D &p_canvas_xform = Transform2D());
 
 	bool _select_click_on_item(CanvasItem *item, Point2 p_click_pos, bool p_append);
+	// The right click menu's items, ids from p_id_base up; also put at the
+	// end of the node menu when a right click lands on a node.
+	void _fill_add_node_menu(PopupMenu *p_menu, int p_id_base);
+	void _add_node_menu_items_to(PopupMenu *p_menu);
+	void _node_menu_item_pressed(int p_id);
 
 	ConfirmationDialog *snap_dialog = nullptr;
 
