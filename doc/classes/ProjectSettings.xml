@@ -3072,8 +3072,13 @@
 			If [code]true[/code], disables the threaded optimization feature from the NVIDIA drivers, which are known to cause stuttering in most OpenGL applications.
 			[b]Note:[/b] This setting only works on Windows, as threaded optimization is disabled by default on other platforms.
 		</member>
+		<member name="rendering/global_illumination/gi/resolution" type="int" setter="" getter="" default="1" keywords="size">
+			The resolution [VoxelGI] and DynamicGI ([member Environment.dynamic_gi_enabled]) buffers are rendered at, relative to the viewport's 3D resolution: [b]Full[/b], [b]Half[/b] (e.g. 960×540 when the viewport size is 1920×1080), [b]Quarter[/b] (480×270) or [b]Eighth[/b] (240×135). Lower resolutions improve performance significantly, at the cost of softer indirect light and reflections; below half, GI is brought back up to half with a pass that keeps it from bleeding over the edges of objects. [LightmapGI] rendering is not affected by this setting.
+			[b]Note:[/b] This property is only read when the project starts. To change the GI resolution at run-time, call [method RenderingServer.gi_set_resolution] instead.
+		</member>
 		<member name="rendering/global_illumination/gi/use_half_resolution" type="bool" setter="" getter="" default="true" keywords="size">
 			If [code]true[/code], renders [VoxelGI] and DynamicGI ([member Environment.dynamic_gi_enabled]) buffers at halved resolution (e.g. 960×540 when the viewport size is 1920×1080). This improves performance significantly when VoxelGI or DynamicGI is enabled, at the cost of artifacts that may be visible on polygon edges. The loss in quality becomes less noticeable as the viewport resolution increases. [LightmapGI] rendering is not affected by this setting.
+			[b]Note:[/b] Superseded by [member rendering/global_illumination/gi/resolution], and kept for projects made before it: turning this off renders GI at full resolution while that is left at [b]Half[/b].
 			[b]Note:[/b] This property is only read when the project starts. To set half-resolution GI at run-time, call [method RenderingServer.gi_set_use_half_resolution] instead.
 		</member>
 		<member name="rendering/global_illumination/hddagi/frames_to_converge" type="int" setter="" getter="" default="1">

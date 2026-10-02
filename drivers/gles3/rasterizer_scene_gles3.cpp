@@ -4398,6 +4398,9 @@ void RasterizerSceneGLES3::_render_buffers_debug_draw(Ref<RenderSceneBuffersGLES
 void RasterizerSceneGLES3::gi_set_use_half_resolution(bool p_enable) {
 }
 
+void RasterizerSceneGLES3::gi_set_resolution(RSE::GIResolution p_resolution) {
+}
+
 void RasterizerSceneGLES3::screen_space_roughness_limiter_set_active(bool p_enable, float p_amount, float p_curve) {
 }
 

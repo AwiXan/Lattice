@@ -1042,6 +1042,10 @@ public:
 	virtual double get_frame_setup_time_cpu() const = 0;
 
 	virtual void gi_set_use_half_resolution(bool p_enable) = 0;
+	virtual void gi_set_resolution(RSE::GIResolution p_resolution) = 0;
+	// From rendering/global_illumination/gi/resolution - or use_half_resolution
+	// turned off, in projects from before it.
+	static RSE::GIResolution gi_get_project_resolution();
 
 	/* TESTING */
 
@@ -1158,6 +1162,7 @@ VARIANT_ENUM_CAST_EXT(RSE::LightDirectionalSkyMode, RenderingServer::LightDirect
 VARIANT_ENUM_CAST_EXT(RSE::LightProjectorFilter, RenderingServer::LightProjectorFilter);
 VARIANT_ENUM_CAST_EXT(RSE::ReflectionProbeUpdateMode, RenderingServer::ReflectionProbeUpdateMode);
 VARIANT_ENUM_CAST_EXT(RSE::ReflectionProbeAmbientMode, RenderingServer::ReflectionProbeAmbientMode);
+VARIANT_ENUM_CAST_EXT(RSE::GIResolution, RenderingServer::GIResolution);
 VARIANT_ENUM_CAST_EXT(RSE::VoxelGIQuality, RenderingServer::VoxelGIQuality);
 VARIANT_ENUM_CAST_EXT(RSE::DecalTexture, RenderingServer::DecalTexture);
 VARIANT_ENUM_CAST_EXT(RSE::DecalFilter, RenderingServer::DecalFilter);

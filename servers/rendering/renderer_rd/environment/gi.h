@@ -37,6 +37,7 @@
 #include "servers/rendering/renderer_rd/environment/sky.h"
 #include "servers/rendering/renderer_rd/pipeline_deferred_rd.h"
 #include "servers/rendering/renderer_rd/shaders/environment/gi.glsl.gen.h"
+#include "servers/rendering/renderer_rd/shaders/environment/gi_upsample.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/environment/hddagi_debug.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/environment/hddagi_debug_probes.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/environment/hddagi_direct_light.glsl.gen.h"
@@ -63,6 +64,15 @@
 #define RB_TEX_AMBIENT_REFLECTION_BLEND_FILTERED SNAME("ambient_reflection_blend_filtered")
 
 #define RB_TEX_REFLECTION_U32_FILTERED SNAME("reflection_u32_filtered")
+
+// GI worked out below half resolution, brought up to half for the scene to
+// read in place of the buffers above.
+#define RB_TEX_AMBIENT_UPSAMPLED SNAME("ambient_upsampled")
+#define RB_TEX_REFLECTION_UPSAMPLED SNAME("reflection_upsampled")
+#define RB_TEX_AMBIENT_REFLECTION_BLEND_UPSAMPLED SNAME("ambient_reflection_blend_upsampled")
+
+#define RB_TEX_AMBIENT_UPSAMPLED_U32 SNAME("ambient_upsampled_u32")
+#define RB_TEX_REFLECTION_UPSAMPLED_U32 SNAME("reflection_upsampled_u32")
 
 // Forward declare RenderDataRD and RendererSceneRenderRD so we can pass it into some of our methods, these classes are pretty tightly bound
 class RenderDataRD;
@@ -494,7 +504,10 @@ public:
 		RID full_mask;
 
 		/* GI buffers */
+		// What the scene reads is at half size - upsampled to it below half.
 		bool using_half_size_gi = false;
+		// The buffers GI is worked out in hold one pixel in 1 << this each way.
+		uint32_t resolution_shift = 0;
 
 		RID scene_data_ubo;
 
@@ -838,7 +851,7 @@ public:
 
 		float z_near;
 		float z_far;
-		uint32_t pad;
+		uint32_t res_shift;
 		float occlusion_bias;
 	};
 
@@ -870,7 +883,9 @@ public:
 
 	RID default_voxel_gi_buffer;
 
-	bool half_resolution = false;
+	// GI is worked out for one pixel in 1 << resolution_shift each way: 0 at
+	// full resolution, 1 at half, 2 at a quarter, 3 at an eighth.
+	uint32_t resolution_shift = 0;
 	GiShaderRD shader;
 	RID shader_version;
 	PipelineDeferredRD pipelines[SHADER_SPECIALIZATION_VARIATIONS][MODE_MAX];
@@ -895,12 +910,31 @@ public:
 		float proj_info[4];
 
 		int32_t filter_dir[2];
-		uint32_t pad[2];
+		uint32_t res_shift;
+		uint32_t pad;
 	};
 
 	HddagiFilterShaderRD filter_shader;
 	RID filter_shader_version;
 	RID filter_pipelines[FILTER_SHADER_SPECIALIZATION_VARIATIONS][MODE_MAX];
+
+	struct UpsamplePushConstant {
+		uint32_t orthogonal;
+		float z_near;
+		float z_far;
+		uint32_t view_index;
+
+		float proj_info[4];
+
+		int32_t src_size[2];
+		uint32_t src_shift;
+		uint32_t pad;
+	};
+
+	GiUpsampleShaderRD upsample_shader;
+	RID upsample_shader_version;
+	// Without and with the full projection matrix.
+	RID upsample_pipelines[2];
 
 	GI();
 	~GI();

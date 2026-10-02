@@ -1200,7 +1200,12 @@ bool RendererSceneRenderRD::_render_buffers_can_be_storage() {
 }
 
 void RendererSceneRenderRD::gi_set_use_half_resolution(bool p_enable) {
-	gi.half_resolution = p_enable;
+	gi.resolution_shift = p_enable ? 1 : 0;
+}
+
+void RendererSceneRenderRD::gi_set_resolution(RSE::GIResolution p_resolution) {
+	ERR_FAIL_INDEX(p_resolution, RSE::GI_RESOLUTION_MAX);
+	gi.resolution_shift = p_resolution; // How many times GI is halved each way.
 }
 
 void RendererSceneRenderRD::positional_soft_shadow_filter_set_quality(RSE::ShadowQuality p_quality) {

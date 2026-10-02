@@ -602,8 +602,7 @@ void EditorNode::_update_from_settings() {
 	RS::get_singleton()->environment_set_volumetric_fog_filter_active(bool(GLOBAL_GET("rendering/environment/volumetric_fog/use_filter")));
 	RS::get_singleton()->canvas_set_shadow_texture_size(GLOBAL_GET("rendering/2d/shadow_atlas/size"));
 
-	bool use_half_res_gi = GLOBAL_GET("rendering/global_illumination/gi/use_half_resolution");
-	RS::get_singleton()->gi_set_use_half_resolution(use_half_res_gi);
+	RS::get_singleton()->gi_set_resolution(RenderingServer::gi_get_project_resolution());
 
 	bool use_debanding = GLOBAL_GET("rendering/anti_aliasing/quality/use_debanding");
 	get_viewport()->set_use_debanding(use_debanding);

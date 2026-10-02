@@ -344,6 +344,7 @@ public:
 	virtual Ref<RenderSceneBuffers> render_buffers_create() = 0;
 
 	virtual void gi_set_use_half_resolution(bool p_enable) = 0;
+	virtual void gi_set_resolution(RSE::GIResolution p_resolution) = 0;
 
 	virtual void set_debug_draw_mode(RSE::ViewportDebugDraw p_debug_draw) = 0;
 

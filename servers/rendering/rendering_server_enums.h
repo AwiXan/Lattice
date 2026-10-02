@@ -347,6 +347,17 @@ enum DecalFilter {
 	DECAL_FILTER_LINEAR_MIPMAPS_ANISOTROPIC,
 };
 
+/* GI API (affects VoxelGI and HDDAGI) */
+
+// The values are how many times GI is halved each way.
+enum GIResolution {
+	GI_RESOLUTION_FULL,
+	GI_RESOLUTION_HALF,
+	GI_RESOLUTION_QUARTER,
+	GI_RESOLUTION_EIGHTH,
+	GI_RESOLUTION_MAX,
+};
+
 /* VOXEL GI API */
 
 enum VoxelGIQuality {

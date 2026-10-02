@@ -38,6 +38,7 @@
 #include "servers/rendering/renderer_rd/storage_rd/render_scene_buffers_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
+#include "servers/rendering/rendering_server.h"
 #include "servers/rendering/rendering_server_globals.h"
 
 // Debug recreating everything every frame.
@@ -3112,6 +3113,9 @@ GI::~GI() {
 	if (filter_shader_version.is_valid()) {
 		filter_shader.version_free(filter_shader_version);
 	}
+	if (upsample_shader_version.is_valid()) {
+		upsample_shader.version_free(upsample_shader_version);
+	}
 	if (hddagi_shader.debug_probes_shader.is_valid()) {
 		hddagi_shader.debug_probes.version_free(hddagi_shader.debug_probes_shader);
 	}
@@ -3349,6 +3353,23 @@ void GI::init(SkyRD *p_sky) {
 			}
 		}
 	}
+	{
+		Vector<String> upsample_modes;
+		upsample_modes.push_back("");
+		upsample_shader.initialize(upsample_modes);
+		upsample_shader_version = upsample_shader.version_create();
+
+		Vector<RD::PipelineSpecializationConstant> specialization_constants;
+		RD::PipelineSpecializationConstant sc;
+		sc.type = RD::PIPELINE_SPECIALIZATION_CONSTANT_TYPE_BOOL;
+		sc.constant_id = 0; // Use the full projection matrix.
+		specialization_constants.push_back(sc);
+
+		for (int v = 0; v < 2; v++) {
+			specialization_constants.ptrw()[0].bool_value = v == 1;
+			upsample_pipelines[v] = RD::get_singleton()->compute_pipeline_create(upsample_shader.version_get_shader(upsample_shader_version, 0), specialization_constants);
+		}
+	}
 
 	{
 		String defines = "\n#define LIGHTPROBE_OCT_SIZE " + itos(HDDAGI::LIGHTPROBE_OCT_SIZE) + "\n#define OCCLUSION_OCT_SIZE " + itos(HDDAGI::OCCLUSION_OCT_SIZE) + "\n";
@@ -3393,7 +3414,7 @@ void GI::init(SkyRD *p_sky) {
 		}
 	}
 	default_voxel_gi_buffer = RD::get_singleton()->uniform_buffer_create(sizeof(VoxelGIData) * MAX_VOXEL_GI_INSTANCES);
-	half_resolution = GLOBAL_GET("rendering/global_illumination/gi/use_half_resolution");
+	resolution_shift = RenderingServer::gi_get_project_resolution();
 }
 
 void GI::free() {
@@ -3567,18 +3588,19 @@ void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_nor
 
 	Size2i internal_size = p_render_buffers->get_internal_size();
 
-	if (rbgi->using_half_size_gi != half_resolution) {
+	if (rbgi->resolution_shift != resolution_shift) {
 		p_render_buffers->clear_context(RB_SCOPE_GI);
 	}
 
+	// One texel for each block of 1 << shift pixels, the last ones cut by the
+	// edge of the screen included.
+	const uint32_t shift = resolution_shift;
+	const Size2i size = Size2i((internal_size.x + (1 << shift) - 1) >> shift, (internal_size.y + (1 << shift) - 1) >> shift);
+	// Below half resolution GI is brought up to half: the scene reads it there.
+	const bool upsample = shift > 1;
+	const Size2i upsampled_size = Size2i((internal_size.x + 1) >> 1, (internal_size.y + 1) >> 1);
+
 	if (!p_render_buffers->has_texture(RB_SCOPE_GI, RB_TEX_AMBIENT)) {
-		Size2i size = internal_size;
-
-		if (half_resolution) {
-			size.x >>= 1;
-			size.y >>= 1;
-		}
-
 		RD::TextureFormat tf;
 		tf.format = RD::DATA_FORMAT_R32_UINT;
 		tf.width = size.x;
@@ -3611,7 +3633,22 @@ void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_nor
 		p_render_buffers->create_texture_view(RB_SCOPE_GI, RB_TEX_REFLECTION_U32, RB_TEX_REFLECTION, tv);
 		p_render_buffers->create_texture_view(RB_SCOPE_GI, RB_TEX_REFLECTION_U32_FILTERED, RB_TEX_REFLECTION_FILTERED, tv);
 
-		rbgi->using_half_size_gi = half_resolution;
+		if (upsample) {
+			tf.width = upsampled_size.x;
+			tf.height = upsampled_size.y;
+			tf_blend.width = upsampled_size.x;
+			tf_blend.height = upsampled_size.y;
+
+			p_render_buffers->create_texture_from_format(RB_SCOPE_GI, RB_TEX_AMBIENT_UPSAMPLED_U32, tf);
+			p_render_buffers->create_texture_from_format(RB_SCOPE_GI, RB_TEX_REFLECTION_UPSAMPLED_U32, tf);
+			p_render_buffers->create_texture_from_format(RB_SCOPE_GI, RB_TEX_AMBIENT_REFLECTION_BLEND_UPSAMPLED, tf_blend);
+
+			p_render_buffers->create_texture_view(RB_SCOPE_GI, RB_TEX_AMBIENT_UPSAMPLED_U32, RB_TEX_AMBIENT_UPSAMPLED, tv);
+			p_render_buffers->create_texture_view(RB_SCOPE_GI, RB_TEX_REFLECTION_UPSAMPLED_U32, RB_TEX_REFLECTION_UPSAMPLED, tv);
+		}
+
+		rbgi->resolution_shift = shift;
+		rbgi->using_half_size_gi = shift > 0;
 	}
 
 	// Setup our scene data
@@ -3667,6 +3704,7 @@ void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_nor
 	push_constant.proj_info[1] = -2.0f / (internal_size.y * projections[0].columns[1][1]);
 	push_constant.proj_info[2] = (1.0f - projections[0].columns[2][0]) / projections[0].columns[0][0];
 	push_constant.proj_info[3] = (1.0f + projections[0].columns[2][1]) / projections[0].columns[1][1];
+	push_constant.res_shift = shift;
 
 	bool use_hddagi = p_render_buffers->has_custom_data(RB_SCOPE_HDDAGI);
 	bool use_voxel_gi_instances = push_constant.max_voxel_gi_instances > 0;
@@ -3683,7 +3721,7 @@ void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_nor
 	const bool use_full_projection_matrix = p_view_count > 1 || p_view_projections[0].get_z_far() > p_view_projections[0].get_z_near() * 1e6;
 
 	uint32_t pipeline_specialization = 0;
-	if (rbgi->using_half_size_gi) {
+	if (shift > 0) {
 		pipeline_specialization |= SHADER_SPECIALIZATION_HALF_RES;
 	}
 	if (use_full_projection_matrix) {
@@ -3762,16 +3800,12 @@ void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_nor
 		RD::get_singleton()->compute_list_bind_uniform_set(compute_list, uniform_set, 0);
 		RD::get_singleton()->compute_list_set_push_constant(compute_list, &push_constant, sizeof(PushConstant));
 
-		if (rbgi->using_half_size_gi) {
-			RD::get_singleton()->compute_list_dispatch_threads(compute_list, internal_size.x >> 1, internal_size.y >> 1, 1);
-		} else {
-			RD::get_singleton()->compute_list_dispatch_threads(compute_list, internal_size.x, internal_size.y, 1);
-		}
+		RD::get_singleton()->compute_list_dispatch_threads(compute_list, size.x, size.y, 1);
 	}
 
 	if (use_hddagi && hddagi->using_reflection_filter) {
 		uint32_t filter_pipeline_specialization = 0;
-		if (rbgi->using_half_size_gi) {
+		if (shift > 0) {
 			filter_pipeline_specialization |= FILTER_SHADER_SPECIALIZATION_HALF_RES;
 		}
 		if (use_full_projection_matrix) {
@@ -3786,8 +3820,10 @@ void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_nor
 		filter_push_constant.proj_info[1] = push_constant.proj_info[1];
 		filter_push_constant.proj_info[2] = push_constant.proj_info[2];
 		filter_push_constant.proj_info[3] = push_constant.proj_info[3];
+		filter_push_constant.res_shift = shift;
+		filter_push_constant.pad = 0;
 
-		RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, filter_pipelines[filter_pipeline_specialization][rbgi->using_half_size_gi ? FILTER_MODE_BILATERAL_HALF_SIZE : FILTER_MODE_BILATERAL]);
+		RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, filter_pipelines[filter_pipeline_specialization][shift > 0 ? FILTER_MODE_BILATERAL_HALF_SIZE : FILTER_MODE_BILATERAL]);
 
 		for (int i = 0; i < 2; i++) {
 			RD::get_singleton()->compute_list_add_barrier(compute_list);
@@ -3812,12 +3848,47 @@ void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_nor
 				RD::get_singleton()->compute_list_set_push_constant(compute_list, &filter_push_constant, sizeof(FilterPushConstant));
 				RD::get_singleton()->compute_list_bind_uniform_set(compute_list, uniform_set, 0);
 
-				if (rbgi->using_half_size_gi) {
-					RD::get_singleton()->compute_list_dispatch_threads(compute_list, internal_size.x >> 1, internal_size.y >> 1, 1);
-				} else {
-					RD::get_singleton()->compute_list_dispatch_threads(compute_list, internal_size.x, internal_size.y, 1);
-				}
+				RD::get_singleton()->compute_list_dispatch_threads(compute_list, size.x, size.y, 1);
 			}
+		}
+	}
+
+	if (upsample) {
+		RD::get_singleton()->compute_list_add_barrier(compute_list);
+
+		UpsamplePushConstant upsample_push_constant;
+		upsample_push_constant.orthogonal = push_constant.orthogonal;
+		upsample_push_constant.z_near = push_constant.z_near;
+		upsample_push_constant.z_far = push_constant.z_far;
+		for (int i = 0; i < 4; i++) {
+			upsample_push_constant.proj_info[i] = push_constant.proj_info[i];
+		}
+		upsample_push_constant.src_size[0] = size.x;
+		upsample_push_constant.src_size[1] = size.y;
+		upsample_push_constant.src_shift = shift;
+		upsample_push_constant.pad = 0;
+
+		RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, upsample_pipelines[use_full_projection_matrix ? 1 : 0]);
+
+		for (uint32_t v = 0; v < p_view_count; v++) {
+			RID uniform_set = UniformSetCacheRD::get_singleton()->get_cache(
+					upsample_shader.version_get_shader(upsample_shader_version, 0),
+					0,
+					RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 0, p_render_buffers->get_depth_texture(v)),
+					RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 1, p_normal_roughness_slices[v]),
+					RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 2, p_render_buffers->get_texture_slice(RB_SCOPE_GI, RB_TEX_AMBIENT, v, 0)),
+					RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 3, p_render_buffers->get_texture_slice(RB_SCOPE_GI, RB_TEX_REFLECTION, v, 0)),
+					RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 4, p_render_buffers->get_texture_slice(RB_SCOPE_GI, RB_TEX_AMBIENT_REFLECTION_BLEND, v, 0)),
+					RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 5, p_render_buffers->get_texture_slice(RB_SCOPE_GI, RB_TEX_AMBIENT_UPSAMPLED_U32, v, 0)),
+					RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 6, p_render_buffers->get_texture_slice(RB_SCOPE_GI, RB_TEX_REFLECTION_UPSAMPLED_U32, v, 0)),
+					RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 7, p_render_buffers->get_texture_slice(RB_SCOPE_GI, RB_TEX_AMBIENT_REFLECTION_BLEND_UPSAMPLED, v, 0)),
+					RD::Uniform(RD::UNIFORM_TYPE_SAMPLER, 8, RendererRD::MaterialStorage::get_singleton()->sampler_rd_get_default(RSE::CANVAS_ITEM_TEXTURE_FILTER_NEAREST, RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED)),
+					RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 9, rbgi->scene_data_ubo));
+
+			upsample_push_constant.view_index = v;
+			RD::get_singleton()->compute_list_set_push_constant(compute_list, &upsample_push_constant, sizeof(UpsamplePushConstant));
+			RD::get_singleton()->compute_list_bind_uniform_set(compute_list, uniform_set, 0);
+			RD::get_singleton()->compute_list_dispatch_threads(compute_list, upsampled_size.x, upsampled_size.y, 1);
 		}
 	}
 	RD::get_singleton()->compute_list_end();

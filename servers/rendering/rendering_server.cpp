@@ -81,6 +81,15 @@ Dictionary RenderingServer::get_shader_compilation_info() const {
 }
 RenderingServer *(*RenderingServer::create_func)() = nullptr;
 
+RSE::GIResolution RenderingServer::gi_get_project_resolution() {
+	RSE::GIResolution resolution = RSE::GIResolution(CLAMP(int(GLOBAL_GET("rendering/global_illumination/gi/resolution")), 0, RSE::GI_RESOLUTION_MAX - 1));
+	if (resolution == RSE::GI_RESOLUTION_HALF && !bool(GLOBAL_GET("rendering/global_illumination/gi/use_half_resolution"))) {
+		// How projects from before the resolution setting asked for full.
+		resolution = RSE::GI_RESOLUTION_FULL;
+	}
+	return resolution;
+}
+
 RenderingServer *RenderingServer::get_singleton() {
 	return singleton;
 }
@@ -2707,6 +2716,13 @@ void RenderingServer::_bind_methods() {
 	/* GI API (affects VoxelGI and HDDAGI) */
 
 	ClassDB::bind_method(D_METHOD("gi_set_use_half_resolution", "half_resolution"), &RenderingServer::gi_set_use_half_resolution);
+	ClassDB::bind_method(D_METHOD("gi_set_resolution", "resolution"), &RenderingServer::gi_set_resolution);
+
+	BIND_ENUM_CONSTANT(RSE::GI_RESOLUTION_FULL);
+	BIND_ENUM_CONSTANT(RSE::GI_RESOLUTION_HALF);
+	BIND_ENUM_CONSTANT(RSE::GI_RESOLUTION_QUARTER);
+	BIND_ENUM_CONSTANT(RSE::GI_RESOLUTION_EIGHTH);
+	BIND_ENUM_CONSTANT(RSE::GI_RESOLUTION_MAX);
 
 	/* VOXEL GI API */
 
@@ -3770,6 +3786,7 @@ void RenderingServer::init() {
 	GLOBAL_DEF_RST("rendering/reflections/specular_occlusion/enabled", true);
 
 	GLOBAL_DEF("rendering/global_illumination/gi/use_half_resolution", true);
+	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/global_illumination/gi/resolution", PROPERTY_HINT_ENUM, "Full,Half,Quarter,Eighth"), RSE::GI_RESOLUTION_HALF);
 
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/global_illumination/voxel_gi/quality", PROPERTY_HINT_ENUM, "Low (4 Cones - Fast),High (6 Cones - Slow)"), 0);
 

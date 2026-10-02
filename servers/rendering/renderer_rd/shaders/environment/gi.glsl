@@ -128,7 +128,7 @@ layout(push_constant, std430) uniform Params {
 
 	float z_near;
 	float z_far;
-	uint pad;
+	uint res_shift; // GI for one pixel in 1 << res_shift each way, with sc_half_res.
 	float occlusion_bias;
 }
 params;
@@ -1109,7 +1109,7 @@ void main() {
 
 		// Currently we use a 16x16 texel, possibly some day make this configurable.
 		if (sc_half_res) {
-			vrs_pos = pos >> 3;
+			vrs_pos = pos >> (4 - int(params.res_shift));
 		} else {
 			vrs_pos = pos >> 4;
 		}
@@ -1131,7 +1131,7 @@ void main() {
 
 	if (thread_active) {
 		if (sc_half_res) {
-			pos <<= 1;
+			pos <<= params.res_shift;
 		}
 
 		if (any(greaterThanEqual(pos, scene_data.screen_size))) { //too large, do nothing
@@ -1231,7 +1231,7 @@ void main() {
 
 	if (thread_active) {
 		if (sc_half_res) {
-			pos >>= 1;
+			pos >>= params.res_shift;
 		}
 
 		uint ambient_rgbe = rgbe_encode(ambient_light.rgb);

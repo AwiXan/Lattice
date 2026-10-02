@@ -1806,11 +1806,19 @@
 				[/codeblock]
 			</description>
 		</method>
+		<method name="gi_set_resolution">
+			<return type="void" />
+			<param index="0" name="resolution" type="int" enum="RenderingServer.GIResolution" />
+			<description>
+				Sets the resolution [VoxelGI] and DynamicGI ([member Environment.dynamic_gi_enabled]) are rendered at, relative to the viewport's 3D resolution. Lower resolutions are faster, at the cost of softer indirect light and reflections; GI below half resolution is brought back up to half with a pass that keeps it from bleeding over the edges of objects. Takes effect on the next frame, without a restart. [LightmapGI] rendering is not affected by this setting. Equivalent to [member ProjectSettings.rendering/global_illumination/gi/resolution].
+			</description>
+		</method>
 		<method name="gi_set_use_half_resolution">
 			<return type="void" />
 			<param index="0" name="half_resolution" type="bool" />
 			<description>
 				If [param half_resolution] is [code]true[/code], renders [VoxelGI] and DynamicGI ([member Environment.dynamic_gi_enabled]) buffers at halved resolution on each axis (e.g. 960×540 when the viewport size is 1920×1080). This improves performance significantly when VoxelGI or DynamicGI is enabled, at the cost of artifacts that may be visible on polygon edges. The loss in quality becomes less noticeable as the viewport resolution increases. [LightmapGI] rendering is not affected by this setting. Equivalent to [member ProjectSettings.rendering/global_illumination/gi/use_half_resolution].
+				[b]Note:[/b] Same as [method gi_set_resolution] with [constant GI_RESOLUTION_HALF] or [constant GI_RESOLUTION_FULL], which can go lower still.
 			</description>
 		</method>
 		<method name="global_shader_parameter_add">
@@ -5309,6 +5317,21 @@
 		</constant>
 		<constant name="DECAL_FILTER_LINEAR_MIPMAPS_ANISOTROPIC" value="5" enum="DecalFilter">
 			Linear filter for decals (use for non-pixel art decals). Anisotropic mipmaps are used for rendering, which means decals at a distance will look smooth and sharp when viewed from oblique angles. This looks better compared to isotropic mipmaps, but is slower. The level of anisotropic filtering is defined by [member ProjectSettings.rendering/textures/default_filters/anisotropic_filtering_level].
+		</constant>
+		<constant name="GI_RESOLUTION_FULL" value="0" enum="GIResolution">
+			GI is rendered at the viewport's 3D resolution. Slowest, but sharpest.
+		</constant>
+		<constant name="GI_RESOLUTION_HALF" value="1" enum="GIResolution">
+			GI is rendered at half resolution on each axis (e.g. 960×540 when the viewport size is 1920×1080).
+		</constant>
+		<constant name="GI_RESOLUTION_QUARTER" value="2" enum="GIResolution">
+			GI is rendered at a quarter of the resolution on each axis (e.g. 480×270 when the viewport size is 1920×1080), then brought up to half.
+		</constant>
+		<constant name="GI_RESOLUTION_EIGHTH" value="3" enum="GIResolution">
+			GI is rendered at an eighth of the resolution on each axis (e.g. 240×135 when the viewport size is 1920×1080), then brought up to half. Fastest, with the softest indirect light and reflections.
+		</constant>
+		<constant name="GI_RESOLUTION_MAX" value="4" enum="GIResolution">
+			Represents the size of the [enum GIResolution] enum.
 		</constant>
 		<constant name="VOXEL_GI_QUALITY_LOW" value="0" enum="VoxelGIQuality">
 			Low [VoxelGI] rendering quality using 4 cones.

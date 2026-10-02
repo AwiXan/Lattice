@@ -47,7 +47,8 @@ layout(push_constant, std430) uniform Params {
 	vec4 proj_info;
 
 	ivec2 filter_dir;
-	uvec2 pad;
+	uint res_shift; // Reflections for one pixel in 1 << res_shift each way, with sc_half_res.
+	uint pad;
 }
 params;
 
@@ -115,7 +116,7 @@ void main() {
 
 	ivec2 depth_pos = pos;
 	if (sc_half_res) {
-		depth_pos <<= 1;
+		depth_pos <<= params.res_shift;
 	}
 
 	vec4 normal_roughness = fetch_normal_and_roughness(depth_pos);
@@ -130,13 +131,20 @@ void main() {
 	float total_weight = 0;
 	float diffuse_blend = texelFetch(sampler2D(blend_buffer, linear_sampler), pos, 0).r;
 
-	for (int i = -RADIUS; i <= RADIUS; i++) {
+#ifdef HALF_SIZE
+	// Over the same stretch of the screen below half resolution too.
+	int radius = max(1, RADIUS >> (int(params.res_shift) - 1));
+#else
+	int radius = RADIUS;
+#endif
+
+	for (int i = -radius; i <= radius; i++) {
 		ivec2 read_pos = pos + params.filter_dir * i;
 		vec4 specular;
 		specular.rgb = texelFetch(sampler2D(specular_buffer, linear_sampler), read_pos, 0).rgb;
 		specular.a = texelFetch(sampler2D(blend_buffer, linear_sampler), read_pos, 0).g;
 		if (sc_half_res) {
-			read_pos <<= 1;
+			read_pos <<= params.res_shift;
 		}
 		float d = reconstruct_position(read_pos).z;
 		vec4 nr = fetch_normal_and_roughness(read_pos);
