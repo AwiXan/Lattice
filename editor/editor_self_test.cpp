@@ -2953,6 +2953,119 @@ void EditorSelfTest::_animation_keying_check() {
 	}
 }
 
+static Vector3 _sample_vector3(const Ref<Animation> &p_animation, const String &p_path, double p_time) {
+	// What a value track, or the Bezier tracks of its components, give at a time.
+	const int value_track = p_animation->find_track(NodePath(p_path), Animation::TYPE_VALUE);
+	if (value_track >= 0) {
+		return p_animation->value_track_interpolate(value_track, p_time);
+	}
+	Vector3 value;
+	const char *components[] = { "x", "y", "z" };
+	for (int i = 0; i < 3; i++) {
+		const int track = p_animation->find_track(NodePath(p_path + ":" + components[i]), Animation::TYPE_BEZIER);
+		value[i] = track >= 0 ? p_animation->bezier_track_interpolate(track, p_time) : real_t(Math::NaN);
+	}
+	return value;
+}
+
+static real_t _greatest_difference(const Vector<Vector3> &p_a, const Vector<Vector3> &p_b) {
+	real_t difference = p_a.size() == p_b.size() ? 0 : real_t(Math::INF);
+	for (int i = 0; i < p_a.size() && i < p_b.size(); i++) {
+		const Vector3 d = (p_a[i] - p_b[i]).abs();
+		difference = MAX(difference, MAX(d.x, MAX(d.y, d.z)));
+		if (Math::is_nan(d.x + d.y + d.z)) {
+			difference = real_t(Math::INF);
+		}
+	}
+	return difference;
+}
+
+void EditorSelfTest::_animation_track_conversion() {
+	// A value track to Bezier curves and back, drawing the same curve all
+	// along; undone and redone; and baked, keeping the shape handles gave.
+	Node *root = EditorNode::get_singleton()->get_edited_scene();
+	if (!root || !ObjectDB::get_instance(keyed_node)) {
+		_check(false, "the keyed node is still in the scene");
+		return;
+	}
+	AnimationTrackEditor *track_editor = AnimationPlayerEditor::get_singleton()->get_track_editor();
+	Ref<Animation> animation;
+	animation.instantiate();
+	animation->set_length(2.0);
+	const int cubic = animation->add_track(Animation::TYPE_VALUE);
+	animation->track_set_path(cubic, NodePath("Keyed:position"));
+	animation->track_set_interpolation_type(cubic, Animation::INTERPOLATION_CUBIC);
+	animation->track_insert_key(cubic, 0.0, Vector3(0, 0, 0));
+	animation->track_insert_key(cubic, 0.4, Vector3(1, 2, -1));
+	animation->track_insert_key(cubic, 1.1, Vector3(-0.5, 0.5, 3));
+	animation->track_insert_key(cubic, 1.6, Vector3(2, -1, 0));
+	const int linear = animation->add_track(Animation::TYPE_VALUE);
+	animation->track_set_path(linear, NodePath("Keyed:rotation:y"));
+	animation->track_set_interpolation_type(linear, Animation::INTERPOLATION_LINEAR);
+	animation->track_insert_key(linear, 0.2, 0.5);
+	animation->track_insert_key(linear, 1.0, -1.0);
+	animation->track_insert_key(linear, 1.5, 2.0);
+	track_editor->set_animation(animation, false);
+	track_editor->set_root(root);
+
+	Vector<Vector3> original;
+	Vector<Vector3> original_rotation;
+	for (int i = 0; i <= 36; i++) {
+		original.push_back(_sample_vector3(animation, "Keyed:position", i * 0.05));
+		original_rotation.push_back(Vector3(animation->value_track_interpolate(linear, i * 0.05), 0, 0));
+	}
+	auto samples = [&](const String &p_path) {
+		Vector<Vector3> result;
+		for (int i = 0; i <= 36; i++) {
+			result.push_back(_sample_vector3(animation, p_path, i * 0.05));
+		}
+		return result;
+	};
+	auto rotation_samples = [&]() {
+		Vector<Vector3> result;
+		const int value = animation->find_track(NodePath("Keyed:rotation:y"), Animation::TYPE_VALUE);
+		const int bezier = animation->find_track(NodePath("Keyed:rotation:y"), Animation::TYPE_BEZIER);
+		for (int i = 0; i <= 36; i++) {
+			const real_t y = value >= 0 ? real_t(animation->value_track_interpolate(value, i * 0.05)) : (bezier >= 0 ? animation->bezier_track_interpolate(bezier, i * 0.05) : real_t(Math::NaN));
+			result.push_back(Vector3(y, 0, 0));
+		}
+		return result;
+	};
+
+	track_editor->convert_track(cubic);
+	_check(animation->get_track_count() == 4 && animation->track_get_type(0) == Animation::TYPE_BEZIER && animation->track_get_path(2) == NodePath("Keyed:position:z"), "a value track becomes a Bezier track for each component of its value");
+	_check(_greatest_difference(samples("Keyed:position"), original) < 0.001, "drawing the same curve as the cubic track did");
+
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	const int history = undo_redo->get_history_id_for_object(animation.ptr());
+	undo_redo->undo_history(history);
+	_check(animation->get_track_count() == 2 && animation->track_get_type(0) == Animation::TYPE_VALUE && animation->track_get_key_count(0) == 4 && animation->track_get_interpolation_type(0) == Animation::INTERPOLATION_CUBIC && _greatest_difference(samples("Keyed:position"), original) < 0.0001, "undone, the value track is back as it was");
+	undo_redo->redo_history(history);
+	_check(animation->get_track_count() == 4 && animation->track_get_type(0) == Animation::TYPE_BEZIER, "and redone");
+
+	track_editor->convert_track(1);
+	_check(animation->get_track_count() == 2 && animation->track_get_type(0) == Animation::TYPE_VALUE && animation->track_get_path(0) == NodePath("Keyed:position") && animation->track_get_key_count(0) == 4, "the Bezier tracks of a value's components become one value track again");
+	_check(_greatest_difference(samples("Keyed:position"), original) < 0.001, "drawing the same curve still");
+
+	track_editor->convert_track(1);
+	_check(animation->track_get_type(1) == Animation::TYPE_BEZIER && animation->track_get_path(1) == NodePath("Keyed:rotation:y") && _greatest_difference(rotation_samples(), original_rotation) < 0.001, "a linear track of a number becomes one Bezier track, of straight lines");
+	track_editor->convert_track(1);
+	_check(animation->track_get_type(1) == Animation::TYPE_VALUE && animation->track_get_path(1) == NodePath("Keyed:rotation:y") && animation->track_get_interpolation_type(1) == Animation::INTERPOLATION_LINEAR && _greatest_difference(rotation_samples(), original_rotation) < 0.001, "and back, a component animated alone stays a value track of its own");
+
+	// A curve shaped by hand, which no interpolation of its keys draws: baked.
+	track_editor->convert_track(0);
+	const int x = animation->find_track(NodePath("Keyed:position:x"), Animation::TYPE_BEZIER);
+	if (x >= 0) {
+		animation->bezier_track_set_key_out_handle(x, 1, Vector2(0.2, 3.0));
+	}
+	const Vector<Vector3> shaped = samples("Keyed:position");
+	track_editor->convert_track(0, true);
+	const int baked = animation->find_track(NodePath("Keyed:position"), Animation::TYPE_VALUE);
+	_check(x >= 0 && baked >= 0 && animation->track_get_key_count(baked) > 30 && _greatest_difference(samples("Keyed:position"), shaped) < 0.05, "baked, the value track keeps the shape the handles gave the curve");
+
+	track_editor->set_animation(Ref<Animation>(), true);
+}
+
 void EditorSelfTest::_finish() {
 	remove_error_handler(&error_handler);
 	const uint32_t error_count = errors.get();
@@ -3119,6 +3232,7 @@ EditorSelfTest::EditorSelfTest() {
 	_add("script stand-in", callable_mp(this, &EditorSelfTest::_script_stand_in));
 	_add("animation keying prepare", callable_mp(this, &EditorSelfTest::_animation_keying_prepare));
 	_add("animation keying check", callable_mp(this, &EditorSelfTest::_animation_keying_check));
+	_add("animation track conversion", callable_mp(this, &EditorSelfTest::_animation_track_conversion));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
 }
 

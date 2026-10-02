@@ -3257,6 +3257,10 @@ void AnimationTrackEdit::gui_input(const Ref<InputEvent> &p_event) {
 				callable_mp(this, &AnimationTrackEdit::_popup_key_context_menu).call_deferred(hovering_key_idx, popup_pos);
 				accept_event();
 			}
+		} else if (pos.x < timeline->get_name_limit() && !read_only && editor->can_convert_track(track)) {
+			// On the name: what can be done with the track as a whole.
+			_popup_track_context_menu(get_screen_position() + get_local_mouse_position());
+			accept_event();
 		}
 	}
 
@@ -3618,8 +3622,37 @@ void AnimationTrackEdit::_popup_key_context_menu(int p_hovering_key_idx, Vector2
 		menu->add_separator();
 		menu->add_icon_item(get_editor_theme_icon(SNAME("Remove")), TTR("Delete Key(s)"), MENU_KEY_DELETE);
 	}
+	if (editor->can_convert_track(track)) {
+		menu->add_separator();
+		_add_convert_items();
+	}
 	menu->reset_size();
 
+	menu->set_position(p_popup_pos);
+	menu->popup();
+}
+
+void AnimationTrackEdit::_add_convert_items() {
+	if (animation->track_get_type(track) == Animation::TYPE_VALUE) {
+		menu->add_icon_item(get_editor_theme_icon(SNAME("KeyBezier")), TTR("Convert to Bezier Curves"), MENU_CONVERT_TO_BEZIER);
+		menu->set_item_tooltip(-1, TTR("Replaces the track with a Bezier track for each component of its value, drawing the same curve, which can then be shaped in the Bezier editor."));
+	} else {
+		menu->add_icon_item(get_editor_theme_icon(SNAME("KeyValue")), TTR("Convert to Value Track"), MENU_CONVERT_TO_VALUE);
+		menu->set_item_tooltip(-1, TTR("Replaces this curve with a value track keyed where the curve is. When every component of the value has a curve, they all become one value track for the whole value."));
+		menu->add_icon_item(get_editor_theme_icon(SNAME("KeyValue")), TTR("Convert to Value Track (Baked)"), MENU_CONVERT_TO_VALUE_BAKED);
+		menu->set_item_tooltip(-1, TTR("As Convert to Value Track, with a key at every step of the animation as well, which keeps the shape the handles gave the curves."));
+	}
+}
+
+void AnimationTrackEdit::_popup_track_context_menu(Vector2 p_popup_pos) {
+	if (!menu) {
+		menu = memnew(PopupMenu);
+		add_child(menu);
+		menu->connect(SceneStringName(id_pressed), callable_mp(this, &AnimationTrackEdit::_menu_selected));
+	}
+	menu->clear();
+	_add_convert_items();
+	menu->reset_size();
 	menu->set_position(p_popup_pos);
 	menu->popup();
 }
@@ -3710,6 +3743,11 @@ void AnimationTrackEdit::_menu_selected(int p_index) {
 			undo_redo->add_undo_method(animation.ptr(), "audio_track_set_use_blend", track, animation->audio_track_is_use_blend(track));
 			undo_redo->commit_action();
 			queue_redraw();
+		} break;
+		case MENU_CONVERT_TO_BEZIER:
+		case MENU_CONVERT_TO_VALUE:
+		case MENU_CONVERT_TO_VALUE_BAKED: {
+			editor->convert_track(track, p_index == MENU_CONVERT_TO_VALUE_BAKED);
 		} break;
 	}
 }
@@ -6614,6 +6652,288 @@ void AnimationTrackEditor::_bezier_track_set_key_handle_mode_at_time(Animation *
 	int index = p_anim->track_find_key(p_track, p_time, Animation::FIND_MODE_APPROX);
 	ERR_FAIL_COND(index < 0);
 	_bezier_track_set_key_handle_mode(p_anim, p_track, index, p_mode, p_set_mode);
+}
+
+////////////// Converting tracks between value and Bezier.
+//
+// Both animate numbers. A value track's keys hold the property's whole value -
+// a Vector3, a Color - and its curve is what its interpolation makes of them; a
+// Bezier track holds one number, in a curve shaped by hand in the Bezier
+// editor, so a vector is a track for each component.
+//
+// The conversions go into actions whose undo operations run last to first.
+
+void AnimationTrackEditor::_add_undo_restore_track(Animation *p_anim, int p_track) {
+	// Added right after the do operation that removes the track; run last to
+	// first, they bring it back, then what it was, then its keys, and then -
+	// once every key is in, as they are numbered - their handle modes.
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	const Animation::TrackType type = p_anim->track_get_type(p_track);
+	const int key_count = p_anim->track_get_key_count(p_track);
+	if (type == Animation::TYPE_BEZIER) {
+		for (int i = 0; i < key_count; i++) {
+			undo_redo->add_undo_method(this, "_bezier_track_set_key_handle_mode", p_anim, p_track, i, p_anim->bezier_track_get_key_handle_mode(p_track, i), Animation::HANDLE_SET_MODE_NONE);
+		}
+	}
+	for (int i = 0; i < key_count; i++) {
+		const real_t transition = type == Animation::TYPE_VALUE ? p_anim->track_get_key_transition(p_track, i) : real_t(1.0);
+		undo_redo->add_undo_method(p_anim, "track_insert_key", p_track, p_anim->track_get_key_time(p_track, i), p_anim->track_get_key_value(p_track, i), transition);
+	}
+	if (type == Animation::TYPE_VALUE) {
+		undo_redo->add_undo_method(p_anim, "value_track_set_update_mode", p_track, p_anim->value_track_get_update_mode(p_track));
+	}
+	undo_redo->add_undo_method(p_anim, "track_set_interpolation_loop_wrap", p_track, p_anim->track_get_interpolation_loop_wrap(p_track));
+	undo_redo->add_undo_method(p_anim, "track_set_interpolation_type", p_track, p_anim->track_get_interpolation_type(p_track));
+	undo_redo->add_undo_method(p_anim, "track_set_imported", p_track, p_anim->track_is_imported(p_track));
+	undo_redo->add_undo_method(p_anim, "track_set_enabled", p_track, p_anim->track_is_enabled(p_track));
+	undo_redo->add_undo_method(p_anim, "track_set_path", p_track, p_anim->track_get_path(p_track));
+	undo_redo->add_undo_method(p_anim, "add_track", type, p_track);
+}
+
+static bool _is_value_track_convertible_to_bezier(const Ref<Animation> &p_anim, int p_track) {
+	if (p_track < 0 || p_track >= p_anim->get_track_count() || p_anim->track_get_type(p_track) != Animation::TYPE_VALUE || p_anim->track_get_key_count(p_track) == 0) {
+		return false;
+	}
+	// A curve cannot jump: a stepped track stays one.
+	if (p_anim->value_track_get_update_mode(p_track) == Animation::UPDATE_DISCRETE || p_anim->track_get_interpolation_type(p_track) == Animation::INTERPOLATION_NEAREST) {
+		return false;
+	}
+	bool valid = false;
+	_get_bezier_subindices_for_type(p_anim->track_get_key_value(p_track, 0).get_type(), &valid);
+	return valid;
+}
+
+int AnimationTrackEditor::_convert_value_track_to_bezier(Animation *p_anim, int p_track) {
+	const int key_count = p_anim->track_get_key_count(p_track);
+	bool valid = false;
+	const Vector<String> subindices = _get_bezier_subindices_for_type(p_anim->track_get_key_value(p_track, 0).get_type(), &valid);
+	ERR_FAIL_COND_V(!valid || key_count == 0, 0);
+
+	const String path = String(p_anim->track_get_path(p_track));
+	const Animation::InterpolationType interpolation = p_anim->track_get_interpolation_type(p_track);
+	const bool linear = interpolation == Animation::INTERPOLATION_LINEAR || interpolation == Animation::INTERPOLATION_LINEAR_ANGLE;
+	const bool angle = interpolation == Animation::INTERPOLATION_LINEAR_ANGLE || interpolation == Animation::INTERPOLATION_CUBIC_ANGLE;
+	const bool enabled = p_anim->track_is_enabled(p_track);
+
+	LocalVector<double> times;
+	times.resize(key_count);
+	for (int k = 0; k < key_count; k++) {
+		times[k] = p_anim->track_get_key_time(p_track, k);
+	}
+
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	undo_redo->add_do_method(p_anim, "remove_track", p_track);
+	_add_undo_restore_track(p_anim, p_track);
+
+	LocalVector<real_t> values;
+	values.resize(key_count);
+	for (int i = 0; i < subindices.size(); i++) {
+		const int new_track = p_track + i;
+		undo_redo->add_do_method(p_anim, "add_track", Animation::TYPE_BEZIER, new_track);
+		undo_redo->add_do_method(p_anim, "track_set_path", new_track, path + subindices[i]);
+		undo_redo->add_do_method(p_anim, "track_set_enabled", new_track, enabled);
+		undo_redo->add_undo_method(p_anim, "remove_track", new_track);
+
+		for (int k = 0; k < key_count; k++) {
+			const Variant key = p_anim->track_get_key_value(p_track, k);
+			bool ok = true;
+			real_t value = subindices[i].is_empty() ? real_t(key) : real_t(key.get_named(StringName(subindices[i].substr(1)), ok));
+			if (angle && k > 0) {
+				// The track turned the short way round; a curve goes the way
+				// its numbers do, so they are made to go that way.
+				value = values[k - 1] + Math::angle_difference(values[k - 1], value);
+			}
+			values[k] = value;
+		}
+
+		for (int k = 0; k < key_count; k++) {
+			// Handles that draw the curve the track had. Straight lines for a
+			// linear one. For a cubic one the slope its interpolation gives at
+			// each key - the slopes on either side, each weighed by the time
+			// across the other; flat at the first and the last key - a third
+			// of the way to the neighbouring keys: the same curve.
+			Vector2 in_handle;
+			Vector2 out_handle;
+			if (!linear && k > 0 && k < key_count - 1) {
+				const double before = times[k] - times[k - 1];
+				const double after = times[k + 1] - times[k];
+				const double slope = ((values[k] - values[k - 1]) / before * after + (values[k + 1] - values[k]) / after * before) / (before + after);
+				in_handle = Vector2(-before / 3.0, -before / 3.0 * slope);
+				out_handle = Vector2(after / 3.0, after / 3.0 * slope);
+			} else if (!linear) {
+				in_handle = Vector2(k > 0 ? (times[k - 1] - times[k]) / 3.0 : 0.0, 0);
+				out_handle = Vector2(k < key_count - 1 ? (times[k + 1] - times[k]) / 3.0 : 0.0, 0);
+			}
+			Array bezier_key = { values[k], in_handle.x, in_handle.y, out_handle.x, out_handle.y };
+			undo_redo->add_do_method(p_anim, "track_insert_key", new_track, times[k], bezier_key);
+		}
+		for (int k = 0; k < key_count; k++) {
+			undo_redo->add_do_method(this, "_bezier_track_set_key_handle_mode", p_anim, new_track, k, linear ? Animation::HANDLE_MODE_LINEAR : Animation::HANDLE_MODE_BALANCED, Animation::HANDLE_SET_MODE_NONE);
+		}
+	}
+	return subindices.size();
+}
+
+int AnimationTrackEditor::_convert_bezier_tracks_to_value(Animation *p_anim, int p_track, bool p_bake) {
+	// The tracks of the components of one value, when this one is of a
+	// component and every component has one: which only the node can tell,
+	// from the type of the value. A component animated alone stays alone - a
+	// value track of its own - rather than the others being keyed too.
+	struct Part {
+		int track = -1;
+		StringName component;
+	};
+	LocalVector<Part> parts;
+	const NodePath path = p_anim->track_get_path(p_track);
+	const Vector<StringName> subnames = path.get_subnames();
+	Node *node = root ? root->get_node_or_null(NodePath(path.get_names(), path.is_absolute())) : nullptr;
+	NodePath value_path = path;
+	Variant value;
+	if (node && subnames.size() >= 2) {
+		const Vector<StringName> value_subnames = subnames.slice(0, subnames.size() - 1);
+		bool valid = false;
+		const Variant current = node->get_indexed(value_subnames, &valid);
+		bool has_components = false;
+		const Vector<String> components = _get_bezier_subindices_for_type(current.get_type(), &has_components);
+		if (valid && has_components && components.has(":" + String(subnames[subnames.size() - 1]))) {
+			const NodePath whole_path = NodePath(path.get_names(), value_subnames, path.is_absolute());
+			for (const String &component : components) {
+				const int track = p_anim->find_track(NodePath(String(whole_path) + component), Animation::TYPE_BEZIER);
+				if (track >= 0 && p_anim->track_get_key_count(track) > 0) {
+					parts.push_back({ track, StringName(component.substr(1)) });
+				}
+			}
+			if (parts.size() == uint32_t(components.size())) {
+				value_path = whole_path;
+				value = current;
+			} else {
+				parts.clear();
+			}
+		}
+	}
+	bool to_int = false;
+	if (parts.is_empty()) {
+		// A number of its own.
+		parts.push_back({ p_track, StringName() });
+		if (node) {
+			bool valid = false;
+			to_int = node->get_indexed(subnames, &valid).get_type() == Variant::INT && valid;
+		}
+	}
+
+	// Keys where any of the curves has one - and, baked, every step between
+	// too, which keeps the shape the handles gave the curves.
+	LocalVector<double> times;
+	bool curved = false;
+	for (const Part &part : parts) {
+		for (int k = 0; k < p_anim->track_get_key_count(part.track); k++) {
+			times.push_back(p_anim->track_get_key_time(part.track, k));
+			curved = curved || p_anim->bezier_track_get_key_handle_mode(part.track, k) != Animation::HANDLE_MODE_LINEAR || p_anim->bezier_track_get_key_in_handle(part.track, k).y != 0 || p_anim->bezier_track_get_key_out_handle(part.track, k).y != 0;
+		}
+	}
+	ERR_FAIL_COND_V(times.is_empty(), -1);
+	times.sort();
+	if (p_bake) {
+		const double bake_step = p_anim->get_step() > 0 ? p_anim->get_step() : 1.0 / 30.0;
+		const double first = times[0];
+		const double last = times[times.size() - 1];
+		for (double time = first + bake_step; time < last - bake_step * 0.5; time += bake_step) {
+			times.push_back(time);
+		}
+		times.sort();
+	}
+	LocalVector<double> unique_times;
+	for (const double time : times) {
+		if (unique_times.is_empty() || !Math::is_equal_approx(unique_times[unique_times.size() - 1], time)) {
+			unique_times.push_back(time);
+		}
+	}
+
+	// Taken out last first, the value track goes where the first was.
+	LocalVector<int> tracks;
+	for (const Part &part : parts) {
+		tracks.push_back(part.track);
+	}
+	tracks.sort();
+	const int at = tracks[0];
+	const bool enabled = p_anim->track_is_enabled(at);
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	for (int i = int(tracks.size()) - 1; i >= 0; i--) {
+		undo_redo->add_do_method(p_anim, "remove_track", tracks[i]);
+		_add_undo_restore_track(p_anim, tracks[i]);
+	}
+	undo_redo->add_do_method(p_anim, "add_track", Animation::TYPE_VALUE, at);
+	undo_redo->add_do_method(p_anim, "track_set_path", at, value_path);
+	undo_redo->add_do_method(p_anim, "track_set_enabled", at, enabled);
+	undo_redo->add_do_method(p_anim, "value_track_set_update_mode", at, Animation::UPDATE_CONTINUOUS);
+	undo_redo->add_do_method(p_anim, "track_set_interpolation_type", at, curved && !p_bake ? Animation::INTERPOLATION_CUBIC : Animation::INTERPOLATION_LINEAR);
+	undo_redo->add_undo_method(p_anim, "remove_track", at);
+	for (const double time : unique_times) {
+		Variant key;
+		if (parts[0].component == StringName()) {
+			const real_t number = p_anim->bezier_track_interpolate(parts[0].track, time);
+			key = to_int ? Variant(int64_t(Math::round(number))) : Variant(number);
+		} else {
+			key = value;
+			for (const Part &part : parts) {
+				bool valid = false;
+				key.set_named(part.component, p_anim->bezier_track_interpolate(part.track, time), valid);
+			}
+		}
+		undo_redo->add_do_method(p_anim, "track_insert_key", at, time, key);
+	}
+	return at;
+}
+
+bool AnimationTrackEditor::can_convert_track(int p_track) const {
+	if (animation.is_null() || read_only || p_track < 0 || p_track >= animation->get_track_count()) {
+		return false;
+	}
+	switch (animation->track_get_type(p_track)) {
+		case Animation::TYPE_VALUE:
+			return _is_value_track_convertible_to_bezier(animation, p_track);
+		case Animation::TYPE_BEZIER:
+			return animation->track_get_key_count(p_track) > 0;
+		default:
+			return false;
+	}
+}
+
+void AnimationTrackEditor::convert_track(int p_track, bool p_bake) {
+	ERR_FAIL_COND(!can_convert_track(p_track));
+	const bool to_bezier = animation->track_get_type(p_track) == Animation::TYPE_VALUE;
+
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	undo_redo->create_action(to_bezier ? TTR("Convert Track to Bezier Curves") : TTR("Convert Bezier Curves to Value Track"), UndoRedo::MERGE_DISABLE, animation.ptr(), true);
+	undo_redo->add_do_method(this, "_clear_selection", false);
+	undo_redo->add_undo_method(this, "_clear_selection", false);
+
+	// What is in RESET goes the same way, or the value the animation starts
+	// from would come from other tracks than the animation's.
+	Ref<Animation> reset;
+	AnimationPlayer *player = AnimationPlayerEditor::get_singleton()->get_player();
+	if (player && player->has_animation(SceneStringName(RESET)) && !is_global_library_read_only()) {
+		reset = player->get_animation(SceneStringName(RESET));
+		if (reset == animation) {
+			reset.unref();
+		}
+	}
+	const NodePath path = animation->track_get_path(p_track);
+
+	if (to_bezier) {
+		_convert_value_track_to_bezier(animation.ptr(), p_track);
+		const int reset_track = reset.is_valid() ? reset->find_track(path, Animation::TYPE_VALUE) : -1;
+		if (_is_value_track_convertible_to_bezier(reset, reset_track)) {
+			_convert_value_track_to_bezier(reset.ptr(), reset_track);
+		}
+	} else {
+		_convert_bezier_tracks_to_value(animation.ptr(), p_track, p_bake);
+		const int reset_track = reset.is_valid() ? reset->find_track(path, Animation::TYPE_BEZIER) : -1;
+		if (reset_track >= 0 && reset->track_get_key_count(reset_track) > 0) {
+			_convert_bezier_tracks_to_value(reset.ptr(), reset_track, false);
+		}
+	}
+	undo_redo->commit_action();
 }
 
 void AnimationTrackEditor::_anim_duplicate_keys(float p_ofs, bool p_ofs_valid, int p_track) {

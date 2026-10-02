@@ -267,6 +267,7 @@ class EditorSelfTest : public Node {
 	void _worlds_one_view_closed();
 	void _animation_keying_prepare();
 	void _animation_keying_check();
+	void _animation_track_conversion();
 	void _finish();
 
 	// Kept between steps.
