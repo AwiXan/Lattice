@@ -5244,7 +5244,10 @@ void AnimationTrackEditor::_update_tracks() {
 		if (srpos != -1) {
 			String base = animation->get_path().substr(0, srpos);
 			if (ResourceLoader::get_resource_type(base) == "PackedScene") {
-				if (!get_tree()->get_edited_scene_root() || get_tree()->get_edited_scene_root()->get_scene_file_path() != base) {
+				// The editor's scene rather than this editor's tree's: the same
+				// scene, and there even while this editor is out of the tree.
+				Node *edited_scene = EditorNode::get_singleton()->get_edited_scene();
+				if (!edited_scene || edited_scene->get_scene_file_path() != base) {
 					file_read_only = true;
 				}
 			} else {

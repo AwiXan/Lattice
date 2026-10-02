@@ -3033,6 +3033,63 @@ void EditorSelfTest::_animation_track_conversion() {
 	track_editor->set_animation(Ref<Animation>(), true);
 }
 
+void EditorSelfTest::_animation_dock_lent() {
+	// The Animation panel opened in a pane - as a saved layout opens it at
+	// start - with the scene holding one player, of an animation saved in a
+	// scene: the dock was shown while out of the tree, found the player then,
+	// and the track editor asked a tree it was not in for the edited scene.
+	Node *root = EditorNode::get_singleton()->get_edited_scene();
+	if (!root) {
+		_check(false, "a scene is open to lend the Animation panel over");
+		return;
+	}
+	// One player, and none edited: the players earlier steps added go.
+	for (const Variant &found : root->find_children("*", "AnimationPlayer", true, false)) {
+		Node *old_player = Object::cast_to<Node>(found);
+		old_player->get_parent()->remove_child(old_player);
+		memdelete(old_player);
+	}
+	AnimationPlayer *player = memnew(AnimationPlayer);
+	player->set_name("LentPlayer");
+	root->add_child(player);
+	player->set_owner(root);
+	Ref<Animation> animation;
+	animation.instantiate();
+	animation->set_path_cache("res://scene_a.tscn::Animation_lent");
+	Ref<AnimationLibrary> library;
+	library.instantiate();
+	library->add_animation("lent", animation);
+	player->add_animation_library(StringName(), library);
+	player->set_assigned_animation("lent");
+
+	const StringName animation_type = _type_titled("Animation");
+	EditorPane *open = _pane_showing(animation_type);
+	if (open) {
+		_tree()->close_pane(open);
+	}
+	EditorPaneTree::Place place;
+	place.neighbor = _tree()->get_first_pane()->get_instance_id();
+	place.vertical = true;
+	place.ratio = 0.6;
+	EditorPane *pane = _tree()->make_pane_at(place);
+	if (pane) {
+		pane->add_panel(animation_type);
+	}
+	_check(pane && _pane_showing(animation_type) == pane, "the Animation panel lent to a pane, with one player in the scene, opens without crashing");
+	lent_animation_pane = pane ? pane->get_instance_id() : ObjectID();
+}
+
+void EditorSelfTest::_animation_dock_lent_finds_player() {
+	// In the tree now, it looks for the scene's player as it did when shown.
+	AnimationPlayer *player = AnimationPlayerEditor::get_singleton()->get_player();
+	_check(player && player->get_name() == StringName("LentPlayer"), "and once in its pane, it edits the scene's one player");
+	EditorPane *pane = Object::cast_to<EditorPane>(ObjectDB::get_instance(lent_animation_pane));
+	if (pane) {
+		_tree()->close_pane(pane);
+	}
+	AnimationPlayerEditor::get_singleton()->get_track_editor()->set_animation(Ref<Animation>(), true);
+}
+
 void EditorSelfTest::_finish() {
 	remove_error_handler(&error_handler);
 	const uint32_t error_count = errors.get();
@@ -3199,6 +3256,8 @@ EditorSelfTest::EditorSelfTest() {
 	_add("animation keying prepare", callable_mp(this, &EditorSelfTest::_animation_keying_prepare));
 	_add("animation keying check", callable_mp(this, &EditorSelfTest::_animation_keying_check));
 	_add("animation track conversion", callable_mp(this, &EditorSelfTest::_animation_track_conversion));
+	_add("animation dock lent", callable_mp(this, &EditorSelfTest::_animation_dock_lent));
+	_add("animation dock lent finds player", callable_mp(this, &EditorSelfTest::_animation_dock_lent_finds_player));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
 }
 

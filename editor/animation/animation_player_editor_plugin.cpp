@@ -62,7 +62,11 @@
 ///////////////////////////////////
 
 void AnimationPlayerEditor::_find_player() {
-	if (!is_visible() || player) {
+	// Not out of the tree either: a dock lent to a pane is shown while taken
+	// out of where it was, before the pane has it, and editing a player then
+	// went on to the track editor asking a tree it was not in for the scene.
+	// It looks again on entering the tree.
+	if (!is_visible() || player || !is_inside_tree()) {
 		return;
 	}
 
@@ -150,6 +154,8 @@ void AnimationPlayerEditor::_notification(int p_what) {
 
 		case NOTIFICATION_ENTER_TREE: {
 			get_tree()->connect(SNAME("node_removed"), callable_mp(this, &AnimationPlayerEditor::_node_removed));
+			// Shown before it got here, as a dock lent to a pane is.
+			callable_mp(this, &AnimationPlayerEditor::_find_player).call_deferred();
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
@@ -272,7 +278,7 @@ void AnimationPlayerEditor::go_to_nearest_keyframe(bool p_backward) {
 	int track_count = anim->get_track_count();
 	bool bezier_active = track_editor->is_bezier_editor_active();
 
-	Node *root = get_tree()->get_edited_scene_root();
+	Node *root = EditorNode::get_singleton()->get_edited_scene();
 	EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
 
 	Vector<int> selected_tracks;
@@ -472,7 +478,7 @@ void AnimationPlayerEditor::_animation_selected(int p_which) {
 			Node *root = player->get_node_or_null(player->get_root_node());
 
 			// Player shouldn't access parent if it's the scene root.
-			if (!root || (player == get_tree()->get_edited_scene_root() && player->get_root_node() == NodePath(".."))) {
+			if (!root || (player == EditorNode::get_singleton()->get_edited_scene() && player->get_root_node() == NodePath(".."))) {
 				NodePath cached_root_path = player->get_path_to(get_cached_root_node());
 				if (player->get_node_or_null(cached_root_path) != nullptr) {
 					player->set_root_node(cached_root_path);
