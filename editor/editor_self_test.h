@@ -268,6 +268,8 @@ class EditorSelfTest : public Node {
 	void _animation_keying_prepare();
 	void _animation_keying_check();
 	void _animation_track_conversion();
+	void _animation_dock_lent();
+	void _animation_dock_lent_finds_player();
 	void _finish();
 
 	// Kept between steps.
@@ -279,6 +281,7 @@ class EditorSelfTest : public Node {
 	Ref<Animation> keyed_animation;
 	bool keying_inspector_added = false;
 	bool animation_panel_opened = false;
+	ObjectID lent_animation_pane;
 
 protected:
 	void _notification(int p_what);
