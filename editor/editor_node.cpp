@@ -2633,7 +2633,26 @@ void EditorNode::save_scene_list(const HashSet<String> &p_scene_paths) {
 		Node *scene = editor_data.get_edited_scene_root(i);
 
 		if (scene && p_scene_paths.has(scene->get_scene_file_path())) {
+			if (scene->get_scene_file_path() == saving_scene) {
+				// Asked from inside the save of that very scene: by a built-in
+				// script of it, changed once more after the scene was written -
+				// formatted on save. Saved again when this save is over, rather
+				// than inside it, which _save_scene() refuses.
+				callable_mp(this, &EditorNode::_save_scene_again).call_deferred(saving_scene);
+				continue;
+			}
 			_save_scene(scene->get_scene_file_path(), i);
+		}
+	}
+}
+
+void EditorNode::_save_scene_again(const String &p_path) {
+	// By path: by the time this runs the scene may be at another index, or closed.
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		Node *scene = editor_data.get_edited_scene_root(i);
+		if (scene && scene->get_scene_file_path() == p_path) {
+			_save_scene(p_path, i);
+			return;
 		}
 	}
 }
