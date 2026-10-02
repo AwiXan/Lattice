@@ -90,7 +90,9 @@ public:
 	LocalVector<int> cube_shadows;
 	LocalVector<int> shadows;
 	LocalVector<int> directional_shadows;
-	LocalVector<int> contact_shadows;
+	// Light instances with a screen space contact shadow this frame, by layer:
+	// the directional ones first, then omni, spot and area lights.
+	LocalVector<RID> sscs_lights;
 
 	/* GI info */
 	const RendererSceneRender::RenderHDDAGIData *render_hddagi_regions = nullptr;

@@ -443,6 +443,22 @@ half sample_directional_soft_shadow(texture2D shadow, vec3 pssm_coord, vec2 tex_
 
 #endif // SHADOWS_DISABLED
 
+#ifdef SCREEN_SPACE_CONTACT_SHADOWS_AVAILABLE
+// The screen space contact shadow of an omni or spot light, when it is given
+// one this frame (only a few nearest the camera are).
+half light_contact_shadow(uint sscs_index, vec2 screen_uv) {
+	if (sscs_index == 0xFFFFFFFFu || !bool(implementation_data.ss_effects_flags & SCREEN_SPACE_EFFECTS_FLAGS_USE_SSCS)) {
+		return half(1.0);
+	}
+#ifdef USE_MULTIVIEW
+	float layer = float(sscs_index * 2u + uint(ViewIndex));
+#else
+	float layer = float(sscs_index);
+#endif
+	return half(textureLod(sampler2DArray(sscs_buffer, SAMPLER_LINEAR_CLAMP), vec3(screen_uv, layer), 0.0).r);
+}
+#endif
+
 half get_omni_attenuation(float distance, float inv_range, float decay) {
 	float nd = distance * inv_range;
 	nd *= nd;
@@ -609,6 +625,10 @@ void light_process_omni(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 			shadow = mix(half(1.0), sample_omni_pcf_shadow(shadow_atlas, omni_lights.data[idx].soft_shadow_scale / shadow_sample.z, pos, uv_rect, flip_offset, depth, taa_frame_count), half(omni_lights.data[idx].shadow_opacity));
 		}
 	}
+#endif
+
+#ifdef SCREEN_SPACE_CONTACT_SHADOWS_AVAILABLE
+	shadow = min(shadow, light_contact_shadow(omni_lights.data[idx].sscs_index, screen_uv));
 #endif
 
 	vec3 color = omni_lights.data[idx].color;
@@ -859,6 +879,10 @@ void light_process_spot(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 	}
 #endif // SHADOWS_DISABLED
 
+#ifdef SCREEN_SPACE_CONTACT_SHADOWS_AVAILABLE
+	shadow = min(shadow, light_contact_shadow(spot_lights.data[idx].sscs_index, screen_uv));
+#endif
+
 	vec3 color = spot_lights.data[idx].color;
 
 #ifdef LIGHT_TRANSMITTANCE_USED
@@ -1092,6 +1116,10 @@ void light_process_area(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 			shadow = mix(half(1.0), sample_omni_pcf_shadow(shadow_atlas, area_lights.data[idx].soft_shadow_scale / shadow_sample.z, pos, uv_rect, vec2(0), depth, taa_frame_count), half(area_lights.data[idx].shadow_opacity));
 		}
 	}
+#endif
+#ifdef SCREEN_SPACE_CONTACT_SHADOWS_AVAILABLE
+	// Cast from the middle of the area, as from a point.
+	shadow = min(shadow, light_contact_shadow(area_lights.data[idx].sscs_index, screen_uv));
 #endif
 	light_attenuation_ltc = light_attenuation_ltc * shadow;
 	half light_attenuation = light_attenuation_raw * shadow;

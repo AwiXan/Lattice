@@ -3150,7 +3150,11 @@
 			If [code]true[/code], screen-space contact shadows are enabled. These catch small-scale shadows that shadow maps miss, such as foliage, crevices, and the contact points where objects meet surfaces. Contact shadows are also cast by objects that have their [member GeometryInstance3D.cast_shadow] property set to [constant GeometryInstance3D.SHADOW_CASTING_SETTING_OFF], which can be useful for performance reasons.
 			[b]Note:[/b] Only objects visible on screen can cast screen-space contact shadows. Objects outside the viewport, occluded by other geometry, or using the [member GeometryInstance3D.cast_shadow] property set to [constant GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY] will not contribute.
 			[b]Note:[/b] Screen-space contact shadows are only supported in the Forward+ renderer, not Mobile or Compatibility.
-			[b]Note:[/b] Screen-space contact shadows only affect [DirectionalLight3D] nodes that have shadows enabled. The [DirectionalLight3D] node must also have [member Light3D.shadow_contact_shadows_allow] set to [code]true[/code].
+			[b]Note:[/b] Screen-space contact shadows only affect lights that have shadows enabled and [member Light3D.shadow_contact_shadows_allow] set to [code]true[/code]: every such [DirectionalLight3D], and as many [OmniLight3D], [SpotLight3D] and [AreaLight3D] nodes as [member rendering/lights_and_shadows/contact_shadow/max_positional_lights] allows.
+		</member>
+		<member name="rendering/lights_and_shadows/contact_shadow/max_positional_lights" type="int" setter="" getter="" default="4">
+			The maximum number of [OmniLight3D], [SpotLight3D] and [AreaLight3D] nodes that cast screen-space contact shadows in a frame. Each one is a pass over the whole screen, so the ones nearest to the camera are chosen: a light the camera is within the range of first. Set to [code]0[/code] to have only [DirectionalLight3D] nodes cast contact shadows.
+			An [AreaLight3D] casts contact shadows from its center, as a point light would.
 		</member>
 		<member name="rendering/lights_and_shadows/contact_shadow/shadow_length" type="int" setter="" getter="" default="1">
 			Controls the maximum distance contact shadows can be cast from their caster. Higher settings sample further along the shadow ray, at a moderate performance cost. Note that the effective maximum distance depends on the distance between the camera and object, as well as the 3D rendering resolution (determined by the viewport resolution multiplied by [member rendering/scaling_3d/scale]).

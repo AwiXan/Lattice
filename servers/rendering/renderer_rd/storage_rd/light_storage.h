@@ -183,7 +183,8 @@ private:
 		float specular_amount;
 		float shadow_opacity;
 
-		float pad[2];
+		uint32_t sscs_index; // layer of its screen space contact shadow, 0xFFFFFFFF for none
+		float pad;
 		float atlas_rect[4]; // in omni, used for atlas uv, in spot, used for projector uv
 		float shadow_matrix[16];
 		float shadow_bias;

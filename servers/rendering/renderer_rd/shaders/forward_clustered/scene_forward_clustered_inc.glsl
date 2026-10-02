@@ -493,6 +493,10 @@ layout(set = 1, binding = 38) uniform texture2D ssr_mip_level_buffer;
 layout(set = 1, binding = 39) uniform texture2DArray sscs_buffer;
 #endif // USE_MULTIVIEW
 
+// The lights' code shared with the Mobile renderer reads screen space contact
+// shadows where there are any.
+#define SCREEN_SPACE_CONTACT_SHADOWS_AVAILABLE
+
 #endif
 
 vec4 normal_roughness_compatibility(vec4 p_normal_roughness) {
