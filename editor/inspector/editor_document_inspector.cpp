@@ -121,6 +121,28 @@ void EditorDocumentInspector::_object_id_selected(ObjectID p_id) {
 	InspectorDock::get_inspector_singleton()->emit_signal(SNAME("object_id_selected"), p_id);
 }
 
+void EditorDocumentInspector::_sync_keying() {
+	// The Animation editor turns the key buttons on for the dock's inspector,
+	// which this panel stands in for, so they follow it here - in the panel on
+	// the document the animation is being made in, the current one, only.
+	EditorInspector *dock_inspector = InspectorDock::get_inspector_singleton();
+	bool keying = dock_inspector && dock_inspector->is_keying();
+	if (keying && bound_document_id >= 0) {
+		EditorData &editor_data = EditorNode::get_editor_data();
+		const int index = editor_data.get_scene_index_by_history_id(bound_document_id);
+		keying = index < 0 || index == editor_data.get_edited_scene();
+	}
+	inspector->set_keying(keying);
+}
+
+void EditorDocumentInspector::_property_keyed(const String &p_keyed, const Variant &p_value, bool p_advance) {
+	// A key button pressed here. The Animation editor listens to the dock's
+	// inspector: passed on there, with the editor on this panel's document,
+	// whose node the key is for.
+	_activate();
+	InspectorDock::get_inspector_singleton()->emit_signal(SNAME("property_keyed"), p_keyed, p_value, p_advance);
+}
+
 bool EditorDocumentInspector::_replace_in_toolbar(Node *p_original, Control *p_to) {
 	if (Object::cast_to<EditorInspector>(p_original)) {
 		// Never the inside of an inspector: its buttons are its properties.
@@ -202,9 +224,10 @@ void EditorDocumentInspector::_notification(int p_what) {
 			_update();
 			// The copied buttons follow the dock's - which of them can be
 			// pressed depends on what is being inspected - and nothing says
-			// when that changes either.
+			// when that changes either. Nor when the key buttons come and go.
 			if (is_visible_in_tree()) {
 				toolbar_mirror.sync();
+				_sync_keying();
 			}
 		} break;
 	}
@@ -243,6 +266,7 @@ EditorDocumentInspector::EditorDocumentInspector() {
 	inspector->set_v_size_flags(SIZE_EXPAND_FILL);
 	inspector->connect("resource_selected", callable_mp(this, &EditorDocumentInspector::_resource_selected));
 	inspector->connect("object_id_selected", callable_mp(this, &EditorDocumentInspector::_object_id_selected));
+	inspector->connect("property_keyed", callable_mp(this, &EditorDocumentInspector::_property_keyed));
 	add_child(inspector);
 
 	set_process(true);

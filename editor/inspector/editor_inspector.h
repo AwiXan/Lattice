@@ -920,6 +920,7 @@ public:
 	Object *get_next_edited_object();
 
 	void set_keying(bool p_active);
+	bool is_keying() const { return keying; }
 	void set_read_only(bool p_read_only);
 	void set_mark_unsaved(bool p_mark) { mark_unsaved = p_mark; }
 

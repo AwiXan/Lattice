@@ -34,6 +34,7 @@
 #include "core/templates/local_vector.h"
 #include "core/templates/safe_refcount.h"
 #include "scene/main/node.h"
+#include "scene/resources/animation.h"
 
 class Control;
 class EditorPane;
@@ -263,6 +264,8 @@ class EditorSelfTest : public Node {
 	void _worlds_check();
 	void _worlds_after_camera_moved();
 	void _worlds_one_view_closed();
+	void _animation_keying_prepare();
+	void _animation_keying_check();
 	void _finish();
 
 	// Kept between steps.
@@ -270,6 +273,10 @@ class EditorSelfTest : public Node {
 	int panes_before_shader = 0;
 	real_t shader_ratio = 0;
 	ObjectID animation_player;
+	ObjectID keyed_node;
+	Ref<Animation> keyed_animation;
+	bool keying_inspector_added = false;
+	bool animation_panel_opened = false;
 
 protected:
 	void _notification(int p_what);
