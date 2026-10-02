@@ -85,6 +85,8 @@
 #include "editor/scene/scene_tree_editor.h"
 #include "editor/settings/editor_command_palette.h"
 #include "editor/themes/editor_scale.h"
+#include "editor/animation/animation_player_editor_plugin.h"
+#include "editor/animation/animation_track_editor.h"
 #include "scene/animation/animation_player.h"
 #include "scene/gui/button.h"
 #include "scene/gui/flow_container.h"
@@ -2861,6 +2863,96 @@ void EditorSelfTest::_worlds_one_view_closed() {
 	_check(Node3DEditor::world_has_grid_and_origin(world_a) && Node3DEditor::count_preview_suns_in(world_a) == 1, "closing one of two views of a scene leaves the other with its grid and preview sun");
 }
 
+void EditorSelfTest::_animation_keying_prepare() {
+	// Keying from an Inspector panel. The Animation editor turns the key
+	// buttons on for the dock's inspector, which the panel stands in for.
+	Node *root = EditorNode::get_singleton()->get_edited_scene();
+	_check(root != nullptr, "a scene is open to animate in");
+	if (!root) {
+		return;
+	}
+	AnimationPlayer *player = memnew(AnimationPlayer);
+	player->set_name("KeyingPlayer");
+	root->add_child(player);
+	player->set_owner(root);
+	Node3D *keyed = memnew(Node3D);
+	keyed->set_name("Keyed");
+	root->add_child(keyed);
+	keyed->set_owner(root);
+	keyed_node = keyed->get_instance_id();
+
+	keyed_animation.instantiate();
+	keyed_animation->set_length(2.0);
+	// The property has a track already, so keying it asks nothing.
+	const int track = keyed_animation->add_track(Animation::TYPE_VALUE);
+	keyed_animation->track_set_path(track, NodePath("Keyed:position"));
+	keyed_animation->track_insert_key(track, 0.0, Vector3());
+	Ref<AnimationLibrary> library;
+	if (player->has_animation_library(StringName())) {
+		library = player->get_animation_library(StringName());
+	} else {
+		library.instantiate();
+		player->add_animation_library(StringName(), library);
+	}
+	library->add_animation("keyed", keyed_animation);
+
+	keying_inspector_added = !_find_document_inspector(_tree());
+	if (keying_inspector_added) {
+		_tree()->get_first_pane()->add_panel("inspector");
+	}
+	// The Animation panel, opened as a user would - selecting the player does
+	// not pull it out - in a pane of its own below, beside the Inspector.
+	const StringName animation_type = _type_titled("Animation");
+	animation_panel_opened = _pane_showing(animation_type) == nullptr;
+	if (animation_panel_opened) {
+		EditorPaneTree::Place place;
+		place.neighbor = _tree()->get_first_pane()->get_instance_id();
+		place.vertical = true;
+		place.ratio = 0.6;
+		EditorPane *pane = _tree()->make_pane_at(place);
+		if (pane) {
+			pane->add_panel(animation_type);
+		}
+	}
+	EditorNode::get_singleton()->push_item(player);
+	AnimationPlayerEditor *animation_editor = AnimationPlayerEditor::get_singleton();
+	animation_editor->get_track_editor()->set_animation(keyed_animation, false);
+	animation_editor->get_track_editor()->set_root(root);
+	EditorNode::get_singleton()->edit_node(keyed);
+}
+
+void EditorSelfTest::_animation_keying_check() {
+	AnimationTrackEditor *track_editor = AnimationPlayerEditor::get_singleton()->get_track_editor();
+	EditorDocumentInspector *panel = _find_document_inspector(_tree());
+	if (panel) {
+		panel->notification(NOTIFICATION_PROCESS);
+	}
+	_check(track_editor->is_visible_in_tree(), "the Animation editor is shown");
+	_check(track_editor->has_keying(), "with an animation open, the selected node can be keyed");
+	_check(panel && panel->get_inspector()->is_keying(), "and the Inspector panel shows the key buttons");
+	// A key button pressed there keys the property, at the time the timeline is at.
+	const int keys = keyed_animation.is_valid() ? keyed_animation->track_get_key_count(0) : 0;
+	track_editor->set_anim_pos(1.0);
+	if (panel) {
+		panel->get_inspector()->emit_signal(SNAME("property_keyed"), "position", Vector3(1, 2, 3), false);
+	}
+	_check(keyed_animation.is_valid() && keyed_animation->track_get_key_count(0) == keys + 1, "a key button pressed in the Inspector panel keys the property");
+	// Left as it was found.
+	EditorPane *animation_pane = animation_panel_opened ? _pane_showing(_type_titled("Animation")) : nullptr;
+	if (animation_pane) {
+		_tree()->close_pane(animation_pane);
+	}
+	if (keying_inspector_added && panel) {
+		EditorPane *pane = Object::cast_to<EditorPane>(panel->get_parent());
+		for (int i = 0; pane && i < pane->get_panel_count(); i++) {
+			if (pane->get_panel_at(i) == panel) {
+				pane->close_panel(i);
+				break;
+			}
+		}
+	}
+}
+
 void EditorSelfTest::_finish() {
 	remove_error_handler(&error_handler);
 	const uint32_t error_count = errors.get();
@@ -3025,6 +3117,8 @@ EditorSelfTest::EditorSelfTest() {
 	_add("script brought here", callable_mp(this, &EditorSelfTest::_script_brought_here));
 	_add("script left open", callable_mp(this, &EditorSelfTest::_script_left_open));
 	_add("script stand-in", callable_mp(this, &EditorSelfTest::_script_stand_in));
+	_add("animation keying prepare", callable_mp(this, &EditorSelfTest::_animation_keying_prepare));
+	_add("animation keying check", callable_mp(this, &EditorSelfTest::_animation_keying_check));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
 }
 
