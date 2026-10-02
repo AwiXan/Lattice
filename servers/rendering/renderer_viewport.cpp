@@ -1299,7 +1299,10 @@ void RendererViewport::viewport_set_scenario(RID p_viewport, RID p_scenario) {
 	Viewport *viewport = viewport_owner.get_or_null(p_viewport);
 	ERR_FAIL_NULL(viewport);
 
-	if (viewport->scenario.is_valid()) {
+	// A scenario freed while the viewport was still on it - its World3D went
+	// away first, as when a scene with a SubViewport of its own world closes -
+	// took this viewport's mask with it: nothing is left to remove.
+	if (viewport->scenario.is_valid() && RSG::scene->is_scenario(viewport->scenario)) {
 		RSG::scene->scenario_remove_viewport_visibility_mask(viewport->scenario, p_viewport);
 	}
 
