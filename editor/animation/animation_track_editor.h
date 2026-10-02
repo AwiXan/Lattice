@@ -445,6 +445,9 @@ class AnimationTrackEdit : public Control {
 		MENU_KEY_LOOKUP,
 		MENU_USE_BLEND_ENABLED,
 		MENU_USE_BLEND_DISABLED,
+		MENU_CONVERT_TO_BEZIER,
+		MENU_CONVERT_TO_VALUE,
+		MENU_CONVERT_TO_VALUE_BAKED,
 	};
 
 	AnimationTimelineEdit *timeline = nullptr;
@@ -484,6 +487,8 @@ class AnimationTrackEdit : public Control {
 
 	void _menu_selected(int p_index);
 	void _popup_key_context_menu(int p_hovering_key_idx, Vector2 p_popup_pos);
+	void _popup_track_context_menu(Vector2 p_popup_pos);
+	void _add_convert_items();
 
 	void _path_submitted(const String &p_text);
 	void _play_position_draw();
@@ -800,6 +805,10 @@ class AnimationTrackEditor : public VBoxContainer {
 	void _bezier_track_set_key_handle_mode(Animation *p_anim, int p_track, int p_index, Animation::HandleMode p_mode, Animation::HandleSetMode p_set_mode = Animation::HANDLE_SET_MODE_NONE);
 	void _bezier_track_set_key_handle_mode_at_time(Animation *p_anim, int p_track, float p_time, Animation::HandleMode p_mode, Animation::HandleSetMode p_set_mode = Animation::HANDLE_SET_MODE_NONE);
 
+	void _add_undo_restore_track(Animation *p_anim, int p_track);
+	int _convert_value_track_to_bezier(Animation *p_anim, int p_track);
+	int _convert_bezier_tracks_to_value(Animation *p_anim, int p_track, bool p_bake);
+
 	////////////// edit menu stuff
 
 	ConfirmationDialog *bake_dialog = nullptr;
@@ -992,6 +1001,10 @@ public:
 	void resolve_insertion_offset(float &r_offset) const;
 	bool is_bezier_editor_active() const;
 	bool can_add_reset_key() const;
+	// A value track to Bezier curves, a curve - with the others of the same
+	// value - to a value track; baked, keyed at every step to keep its shape.
+	bool can_convert_track(int p_track) const;
+	void convert_track(int p_track, bool p_bake = false);
 	void _on_filter_updated(const String &p_filter);
 	float get_moving_selection_offset() const;
 	float snap_time(float p_value, bool p_relative = false);
