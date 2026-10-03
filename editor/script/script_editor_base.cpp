@@ -459,16 +459,26 @@ bool TextEditorBase::_edit_option(int p_op) {
 			tx->set_line_wrapping_mode(wrap == TextEdit::LINE_WRAPPING_BOUNDARY ? TextEdit::LINE_WRAPPING_NONE : TextEdit::LINE_WRAPPING_BOUNDARY);
 		} break;
 		case SEARCH_FIND: {
-			code_editor->get_find_replace_bar()->popup_search();
+			// An editor between owners - a script on its way out of or back from
+			// a panel - may have no find bar for a moment.
+			if (FindReplaceBar *find_bar = code_editor->get_find_replace_bar()) {
+				find_bar->popup_search();
+			}
 		} break;
 		case SEARCH_FIND_NEXT: {
-			code_editor->get_find_replace_bar()->search_next();
+			if (FindReplaceBar *find_bar = code_editor->get_find_replace_bar()) {
+				find_bar->search_next();
+			}
 		} break;
 		case SEARCH_FIND_PREV: {
-			code_editor->get_find_replace_bar()->search_prev();
+			if (FindReplaceBar *find_bar = code_editor->get_find_replace_bar()) {
+				find_bar->search_prev();
+			}
 		} break;
 		case SEARCH_REPLACE: {
-			code_editor->get_find_replace_bar()->popup_replace();
+			if (FindReplaceBar *find_bar = code_editor->get_find_replace_bar()) {
+				find_bar->popup_replace();
+			}
 		} break;
 		case SEARCH_IN_FILES: {
 			String selected_text = tx->get_selected_text();

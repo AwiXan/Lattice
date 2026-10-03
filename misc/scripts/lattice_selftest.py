@@ -83,6 +83,68 @@ RECOVERED_SCENE = """[gd_scene format=3]
 """
 
 
+# The self-test runs with the editor settings of whoever uses the build - an
+# editor has one place for them - and changes these while it runs. It puts
+# them back itself, but the editor saves its settings at times of its own,
+# and a run cut short by a crash or a timeout left the self-test's values
+# there: every script opened in a panel of its own afterwards. So they are
+# put back from here as well, whatever happened.
+TOUCHED_SETTINGS = (
+    "text_editor/behavior/files/open_scripts_in_own_panels",
+    "editors/2d/right_click_menu",
+    "editors/3d/right_click_menu",
+    "editors/3d/transform_readout",
+)
+
+
+def editor_settings_files(editor):
+    # A self-contained build keeps them in editor_data beside it; otherwise
+    # they are the user's, shared by every build of the fork.
+    paths = glob.glob(os.path.join(os.path.dirname(os.path.abspath(editor)), "editor_data", "editor_settings-*.tres"))
+    if os.environ.get("APPDATA"):
+        paths += glob.glob(os.path.join(os.environ["APPDATA"], "Lattice", "editor_settings-*.tres"))
+    return paths
+
+
+def save_touched_settings(editor):
+    saved = {}
+    for path in editor_settings_files(editor):
+        with open(path, "rb") as f:
+            lines = f.read().split(b"\n")
+        saved[path] = {
+            key: next((line for line in lines if line.startswith(key.encode() + b" = ")), None)
+            for key in TOUCHED_SETTINGS
+        }
+    return saved
+
+
+def put_back_touched_settings(saved):
+    for path, before in saved.items():
+        if not os.path.exists(path):
+            continue
+        with open(path, "rb") as f:
+            lines = f.read().split(b"\n")
+        changed = []
+        for key, line in before.items():
+            at = next((i for i, current in enumerate(lines) if current.startswith(key.encode() + b" = ")), None)
+            if line is None and at is not None:
+                del lines[at]
+            elif line is not None and at is None:
+                end = len(lines)
+                while end > 0 and not lines[end - 1].strip():
+                    end -= 1
+                lines.insert(end, line)
+            elif line is not None and lines[at] != line:
+                lines[at] = line
+            else:
+                continue
+            changed.append(key)
+        if changed:
+            with open(path, "wb") as f:
+                f.write(b"\n".join(lines))
+            print("Put back what the self-test had left of %s in %s" % (", ".join(changed), path))
+
+
 def find_editor():
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     candidates = glob.glob(os.path.join(root, "bin", "godot.*.editor.*"))
@@ -107,6 +169,14 @@ def main():
         print("No editor binary found; build one or pass --editor.")
         return 2
 
+    saved = save_touched_settings(editor)
+    try:
+        return run(args, editor)
+    finally:
+        put_back_touched_settings(saved)
+
+
+def run(args, editor):
     project = tempfile.mkdtemp(prefix="lattice-selftest-")
     for name, text in PROJECT_FILES.items():
         with open(os.path.join(project, name), "w", encoding="utf-8", newline="\n") as f:
