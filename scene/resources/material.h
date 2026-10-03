@@ -321,6 +321,13 @@ public:
 		EMISSION_OP_MAX
 	};
 
+	enum ShadowCatcher {
+		SHADOW_CATCHER_DISABLED,
+		SHADOW_CATCHER_SHADOWS,
+		SHADOW_CATCHER_SHADOWS_AND_REFLECTIONS,
+		SHADOW_CATCHER_MAX
+	};
+
 	enum DistanceFadeMode {
 		DISTANCE_FADE_DISABLED,
 		DISTANCE_FADE_PIXEL_ALPHA,
@@ -374,6 +381,7 @@ private:
 		uint64_t detail_blend_mode : Math::get_num_bits(BLEND_MODE_MAX - 1);
 		uint64_t roughness_channel : Math::get_num_bits(TEXTURE_CHANNEL_MAX - 1);
 		uint64_t emission_op : Math::get_num_bits(EMISSION_OP_MAX - 1);
+		uint64_t shadow_catcher : Math::get_num_bits(SHADOW_CATCHER_MAX - 1);
 		uint64_t distance_fade : Math::get_num_bits(DISTANCE_FADE_MAX - 1);
 
 		// stencil
@@ -495,6 +503,7 @@ private:
 		mk.proximity_fade = proximity_fade_enabled;
 		mk.distance_fade = distance_fade;
 		mk.emission_op = emission_op;
+		mk.shadow_catcher = shadow_catcher;
 		mk.alpha_antialiasing_mode = alpha_antialiasing_mode;
 		mk.orm = orm;
 
@@ -675,6 +684,7 @@ private:
 	DiffuseMode diffuse_mode = DIFFUSE_BURLEY;
 	BillboardMode billboard_mode;
 	EmissionOperator emission_op = EMISSION_OP_ADD;
+	ShadowCatcher shadow_catcher = SHADOW_CATCHER_DISABLED;
 
 	TextureChannel metallic_texture_channel;
 	TextureChannel roughness_texture_channel;
@@ -920,6 +930,9 @@ public:
 	void set_emission_operator(EmissionOperator p_op);
 	EmissionOperator get_emission_operator() const;
 
+	void set_shadow_catcher(ShadowCatcher p_mode);
+	ShadowCatcher get_shadow_catcher() const;
+
 	void set_stencil_mode(StencilMode p_stencil_mode);
 	StencilMode get_stencil_mode() const;
 
@@ -984,6 +997,7 @@ VARIANT_ENUM_CAST(BaseMaterial3D::SpecularMode)
 VARIANT_ENUM_CAST(BaseMaterial3D::BillboardMode)
 VARIANT_ENUM_CAST(BaseMaterial3D::TextureChannel)
 VARIANT_ENUM_CAST(BaseMaterial3D::EmissionOperator)
+VARIANT_ENUM_CAST(BaseMaterial3D::ShadowCatcher)
 VARIANT_ENUM_CAST(BaseMaterial3D::DistanceFadeMode)
 VARIANT_ENUM_CAST(BaseMaterial3D::StencilMode)
 VARIANT_ENUM_CAST(BaseMaterial3D::StencilFlags)

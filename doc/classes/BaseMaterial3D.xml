@@ -392,6 +392,11 @@
 		<member name="shading_mode" type="int" setter="set_shading_mode" getter="get_shading_mode" enum="BaseMaterial3D.ShadingMode" default="1">
 			Sets whether the shading takes place, per-pixel, per-vertex or unshaded. Per-vertex lighting is faster, making it the best choice for mobile applications, however it looks considerably worse than per-pixel. Unshaded rendering is the fastest, but disables all interactions with lights.
 		</member>
+		<member name="shadow_catcher" type="int" setter="set_shadow_catcher" getter="get_shadow_catcher" enum="BaseMaterial3D.ShadowCatcher" default="0">
+			Makes the material a shadow catcher: the surface itself is not drawn, only the shadows cast on it, which darken what is behind it (the sky, a panorama or other objects). Useful to ground objects on a photographed background. How dark a shadow gets follows the light: it is what the shadow takes away of all the light the surface gets, ambient light included, so a shadow under a strong lamp is deep and one at the edge of the lamp's range fades out, as on a lit surface. The alpha of [member albedo_color] and of [member albedo_texture] scales the shadows. Shadow catchers are drawn in the transparent pass and cast no shadows themselves.
+			[b]Note:[/b] Unlike [member shadow_to_opacity], the surface does not darken where a light merely grows weaker with distance or angle.
+			[b]Note:[/b] Only supported in the Forward+ and Mobile renderers. The Compatibility renderer falls back to [member shadow_to_opacity].
+		</member>
 		<member name="shadow_to_opacity" type="bool" setter="set_flag" getter="get_flag" default="false">
 			If [code]true[/code], enables the "shadow to opacity" render mode where lighting modifies the alpha so shadowed areas are opaque and non-shadowed areas are transparent. Useful for overlaying shadows onto a camera feed in AR.
 		</member>
@@ -862,6 +867,16 @@
 		</constant>
 		<constant name="EMISSION_OP_MULTIPLY" value="1" enum="EmissionOperator">
 			Multiplies the emission color by the color from the emission texture.
+		</constant>
+		<constant name="SHADOW_CATCHER_DISABLED" value="0" enum="ShadowCatcher">
+			The material is not a shadow catcher.
+		</constant>
+		<constant name="SHADOW_CATCHER_SHADOWS" value="1" enum="ShadowCatcher">
+			Only the shadows cast on the surface are drawn. In custom [code]spatial[/code] shaders, use [code]render_mode shadow_catcher;[/code].
+		</constant>
+		<constant name="SHADOW_CATCHER_SHADOWS_AND_REFLECTIONS" value="2" enum="ShadowCatcher">
+			The shadows cast on the surface are drawn, and what the surface reflects is added: the highlights of the lights and, by a screen-space trace, the objects on screen around it. The environment is not reflected, as it is in the background already. [member roughness], [member metallic] and [member metallic_specular] shape the reflections as on any material. The trace costs about as much per pixel of the surface as screen-space reflections do, and reflects only what is in the depth buffer when the surface is drawn: opaque objects, and transparent ones that write depth and have a lower [member Material.render_priority] (see [member ProjectSettings.rendering/environment/refraction/max_layers]). In custom [code]spatial[/code] shaders, use [code]render_mode shadow_catcher, shadow_catcher_reflections;[/code].
+			[b]Note:[/b] The screen-space trace is only supported in the Forward+ renderer, and not in XR. The Mobile renderer adds the highlights of the lights only.
 		</constant>
 		<constant name="DISTANCE_FADE_DISABLED" value="0" enum="DistanceFadeMode">
 			Do not use distance fade.

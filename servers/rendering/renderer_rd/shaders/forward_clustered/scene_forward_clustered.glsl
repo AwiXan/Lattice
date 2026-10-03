@@ -1118,6 +1118,101 @@ layout(location = 2) out vec2 motion_vector;
 
 #include "../scene_forward_gi_inc.glsl"
 
+#if defined(USE_SHADOW_CATCHER) && defined(SHADOW_CATCHER_REFLECTIONS)
+// What a shadow catcher reflects of its surroundings: only what is on screen,
+// as the rest is in the background it is drawn over. The reflected view is
+// marched across the screen against the depth copy, and what it lands on is
+// read from the screen copy - blurrier the rougher the surface and the farther
+// the hit.
+vec3 shadow_catcher_screen_reflection(vec3 p_vertex, vec3 p_normal, vec3 p_view, float p_roughness, mat4 p_projection, mat4 p_inv_projection, float p_z_near) {
+#ifdef USE_MULTIVIEW
+	return vec3(0.0);
+#else // USE_MULTIVIEW
+	const int STEPS = 48;
+	const int REFINE_STEPS = 5;
+
+	vec3 ray_dir = reflect(-p_view, p_normal);
+	// Coming back at the camera, it would land on sides the screen does not show.
+	float fade = 1.0 - smoothstep(0.0, 0.35, ray_dir.z);
+	if (fade <= 0.0) {
+		return vec3(0.0);
+	}
+
+	// As far as the surface is from the camera, and never behind it.
+	float depth = -p_vertex.z;
+	vec3 ray_origin = p_vertex + p_normal * (depth * 0.002);
+	float ray_length = depth;
+	if (ray_dir.z > 0.0) {
+		ray_length = min(ray_length, (depth - p_z_near) * 0.95 / ray_dir.z);
+	}
+	vec3 ray_end = ray_origin + ray_dir * ray_length;
+
+	// Both ends on screen: screen position and z over w are linear along the
+	// screen, w itself is not.
+	vec4 clip_origin = p_projection * vec4(ray_origin, 1.0);
+	vec4 clip_end = p_projection * vec4(ray_end, 1.0);
+	float k_origin = 1.0 / clip_origin.w;
+	float k_end = 1.0 / clip_end.w;
+	vec2 uv_origin = clip_origin.xy * k_origin * 0.5 + 0.5;
+	vec2 uv_end = clip_end.xy * k_end * 0.5 + 0.5;
+	float z_origin = ray_origin.z * k_origin;
+	float z_end = ray_end.z * k_end;
+
+	// From a depth to the view's z.
+	vec4 unproject = vec4(p_inv_projection[2][2], p_inv_projection[3][2], p_inv_projection[2][3], p_inv_projection[3][3]);
+
+	// How far behind what the screen shows the ray may be and still have hit it.
+	float thickness = ray_length * (1.5 / float(STEPS) + 0.03);
+
+	const vec3 magic = vec3(0.06711056, 0.00583715, 52.9829189);
+	float jitter = fract(magic.z * fract(dot(gl_FragCoord.xy, magic.xy)));
+
+	float hit = -1.0;
+	float before = 0.0;
+	for (int i = 0; i < STEPS; i++) {
+		float along = (float(i) + 0.5 + jitter) / float(STEPS);
+		vec2 uv = mix(uv_origin, uv_end, along);
+		if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
+			break;
+		}
+		float ray_z = mix(z_origin, z_end, along) / mix(k_origin, k_end, along);
+		float scene_depth = textureLod(sampler2D(depth_buffer, SAMPLER_NEAREST_CLAMP), uv, 0.0).r;
+		float scene_z = (unproject.x * scene_depth + unproject.y) / (unproject.z * scene_depth + unproject.w);
+		float behind = scene_z - ray_z;
+		if (behind > 0.0 && behind < thickness) {
+			hit = along;
+			break;
+		}
+		before = along;
+	}
+	if (hit < 0.0) {
+		return vec3(0.0);
+	}
+
+	// Narrowed down to where it went in.
+	for (int i = 0; i < REFINE_STEPS; i++) {
+		float along = (before + hit) * 0.5;
+		vec2 uv = mix(uv_origin, uv_end, along);
+		float ray_z = mix(z_origin, z_end, along) / mix(k_origin, k_end, along);
+		float scene_depth = textureLod(sampler2D(depth_buffer, SAMPLER_NEAREST_CLAMP), uv, 0.0).r;
+		float scene_z = (unproject.x * scene_depth + unproject.y) / (unproject.z * scene_depth + unproject.w);
+		if (scene_z - ray_z > 0.0) {
+			hit = along;
+		} else {
+			before = along;
+		}
+	}
+
+	vec2 hit_uv = mix(uv_origin, uv_end, hit);
+	vec2 edge = smoothstep(vec2(0.0), vec2(0.08), hit_uv) * (1.0 - smoothstep(vec2(0.92), vec2(1.0), hit_uv));
+	fade *= edge.x * edge.y * (1.0 - smoothstep(0.8, 1.0, hit));
+
+	float lod = p_roughness * 7.0 * clamp(hit * 2.0 + 0.2, 0.0, 1.0);
+	return textureLod(sampler2D(color_buffer, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP), hit_uv, lod).rgb * fade;
+#endif // USE_MULTIVIEW
+}
+#endif // USE_SHADOW_CATCHER && SHADOW_CATCHER_REFLECTIONS
+
 #endif //!defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED)
 
 #ifndef MODE_RENDER_DEPTH
@@ -2297,6 +2392,10 @@ void fragment_shader(in SceneData scene_data) {
 		indirect_specular_light *= specular_occlusion;
 #endif // BENT_NORMAL_MAP_USED
 #endif // SPECULAR_OCCLUSION_DISABLED
+#ifdef USE_SHADOW_CATCHER
+		// The light from all around fills the shadows on a catcher as on anything else.
+		shadow_catcher_add_light(vec3(ambient_light), 1.0, 1.0);
+#endif
 		ambient_light *= albedo.rgb;
 
 		if (bool(implementation_data.ss_effects_flags & SCREEN_SPACE_EFFECTS_FLAGS_USE_SSIL)) {
@@ -2341,6 +2440,14 @@ void fragment_shader(in SceneData scene_data) {
 			// Alpha is premultiplied.
 			indirect_specular_light = indirect_specular_light * (1.0 - ssr.a) + ssr.rgb;
 		}
+
+#ifdef USE_SHADOW_CATCHER
+#ifdef SHADOW_CATCHER_REFLECTIONS
+		indirect_specular_light = shadow_catcher_screen_reflection(vertex, normal, view, roughness, projection_matrix, inv_projection_matrix, scene_data.z_near);
+#else
+		indirect_specular_light = vec3(0.0);
+#endif
+#endif // USE_SHADOW_CATCHER
 	}
 #endif // AMBIENT_LIGHT_DISABLED
 
@@ -2798,6 +2905,9 @@ void fragment_shader(in SceneData scene_data) {
 
 			float size_A = sc_use_directional_soft_shadows() ? directional_lights.data[i].size : 0.0;
 
+#ifdef USE_SHADOW_CATCHER
+			shadow_catcher_add_light(directional_lights.data[i].color * directional_lights.data[i].energy, max(dot(vec3(normal), directional_lights.data[i].direction), 0.0) * (1.0 / M_PI), float(shadow));
+#endif
 			light_compute(normal, directional_lights.data[i].direction, normalize(view), size_A,
 #ifndef DEBUG_DRAW_PSSM_SPLITS
 					directional_lights.data[i].color * directional_lights.data[i].energy,
@@ -3014,6 +3124,11 @@ void fragment_shader(in SceneData scene_data) {
 		}
 	}
 #endif // !USE_VERTEX_LIGHTING
+
+#ifdef USE_SHADOW_CATCHER
+	// What the shadows take of the light on the surface, it takes of what is behind it.
+	alpha *= (shadow_catcher_lit > 1e-6 ? clamp(1.0 - shadow_catcher_shadowed / shadow_catcher_lit, 0.0, 1.0) : 0.0);
+#endif
 #endif //!defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED)
 
 #ifdef USE_SHADOW_TO_OPACITY
@@ -3267,13 +3382,27 @@ void fragment_shader(in SceneData scene_data) {
 
 #ifdef MODE_UNSHADED
 	frag_color = vec4(albedo, alpha);
+#elif defined(USE_SHADOW_CATCHER)
+	// Over what is behind, by premultiplied alpha: its alpha is how much the
+	// shadows darken that, its color what it reflects.
+#ifdef SHADOW_CATCHER_REFLECTIONS
+	frag_color = vec4(emission + direct_specular_light + indirect_specular_light, alpha);
+#else
+	frag_color = vec4(emission, alpha);
+#endif
 #else
 	frag_color = vec4(emission + ambient_light + diffuse_light + direct_specular_light + indirect_specular_light, alpha);
 //frag_color = vec4(1.0);
 #endif //USE_NO_SHADING
 
 #ifndef FOG_DISABLED
+#if defined(USE_SHADOW_CATCHER) && !defined(MODE_UNSHADED)
+	// Fog hides the shadows and the reflections, and adds none of its own to
+	// what is behind.
+	frag_color *= fog.a;
+#else
 	frag_color.rgb = frag_color.rgb * fog.a + fog.rgb;
+#endif
 #endif //!FOG_DISABLED
 
 #if defined(PREMUL_ALPHA_USED) && !defined(MODE_RENDER_DEPTH)

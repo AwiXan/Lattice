@@ -247,6 +247,10 @@ public:
 		bool uses_point_size = false;
 		bool uses_alpha = false;
 		bool uses_blend_alpha = false;
+		// shadow_catcher: only the shadows cast on it are drawn, over what is behind;
+		// with shadow_catcher_reflections, what it reflects too.
+		bool uses_shadow_catcher = false;
+		bool uses_shadow_catcher_reflections = false;
 		bool uses_alpha_clip = false;
 		bool uses_alpha_antialiasing = false;
 		bool uses_depth_prepass_alpha = false;

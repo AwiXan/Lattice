@@ -65,6 +65,8 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 	uses_alpha_clip = false;
 	uses_alpha_antialiasing = false;
 	uses_blend_alpha = false;
+	uses_shadow_catcher = false;
+	uses_shadow_catcher_reflections = false;
 	uses_depth_prepass_alpha = false;
 	uses_discard = false;
 	uses_roughness = false;
@@ -119,6 +121,8 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 	actions.render_mode_values["cull_back"] = Pair<int *, int>(&cull_mode, RSE::CULL_MODE_BACK);
 
 	actions.render_mode_flags["unshaded"] = &unshaded;
+	actions.render_mode_flags["shadow_catcher"] = &uses_shadow_catcher;
+	actions.render_mode_flags["shadow_catcher_reflections"] = &uses_shadow_catcher_reflections;
 	actions.render_mode_flags["wireframe"] = &wireframe;
 	actions.render_mode_flags["particle_trails"] = &uses_particle_trails;
 	actions.render_mode_flags["world_vertex_coords"] = &uses_world_coordinates;
@@ -248,6 +252,12 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 	// If any form of Alpha Antialiasing is enabled, set the blend mode to alpha to coverage.
 	if (alpha_antialiasing_mode != ALPHA_ANTIALIASING_OFF) {
 		blend_mode = BLEND_MODE_ALPHA_TO_COVERAGE;
+	}
+
+	if (uses_shadow_catcher) {
+		// Drawn over what is behind: that is darkened by its alpha, and what it
+		// reflects is added.
+		blend_mode = BLEND_MODE_PREMULTIPLIED_ALPHA;
 	}
 
 	uses_blend_alpha = blend_mode_uses_blend_alpha(BlendMode(blend_mode));
@@ -850,6 +860,8 @@ void SceneShaderForwardMobile::init(const String p_defines) {
 		actions.render_mode_defines["shadows_disabled"] = "#define SHADOWS_DISABLED\n";
 		actions.render_mode_defines["ambient_light_disabled"] = "#define AMBIENT_LIGHT_DISABLED\n";
 		actions.render_mode_defines["shadow_to_opacity"] = "#define USE_SHADOW_TO_OPACITY\n";
+		actions.render_mode_defines["shadow_catcher"] = "#define USE_SHADOW_CATCHER\n";
+		actions.render_mode_defines["shadow_catcher_reflections"] = "#define SHADOW_CATCHER_REFLECTIONS\n";
 		actions.render_mode_defines["unshaded"] = "#define MODE_UNSHADED\n";
 
 		bool force_vertex_shading = GLOBAL_GET("rendering/shading/overrides/force_vertex_shading");

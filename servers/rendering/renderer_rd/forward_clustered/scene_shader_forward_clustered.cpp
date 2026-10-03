@@ -54,6 +54,8 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 
 	blend_mode = BLEND_MODE_MIX;
 	uses_oit = false;
+	uses_shadow_catcher = false;
+	uses_shadow_catcher_reflections = false;
 	depth_test_disabledi = 0;
 	depth_test_invertedi = 0;
 	alpha_antialiasing_mode = ALPHA_ANTIALIASING_OFF;
@@ -105,6 +107,8 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	actions.render_mode_values["blend_mul"] = Pair<int *, int>(&blend_mode, BLEND_MODE_MUL);
 	actions.render_mode_values["blend_premul_alpha"] = Pair<int *, int>(&blend_mode, BLEND_MODE_PREMULTIPLIED_ALPHA);
 	actions.render_mode_flags["blend_oit"] = &uses_oit;
+	actions.render_mode_flags["shadow_catcher"] = &uses_shadow_catcher;
+	actions.render_mode_flags["shadow_catcher_reflections"] = &uses_shadow_catcher_reflections;
 
 	actions.render_mode_values["alpha_to_coverage"] = Pair<int *, int>(&alpha_antialiasing_mode, ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE);
 	actions.render_mode_values["alpha_to_coverage_and_one"] = Pair<int *, int>(&alpha_antialiasing_mode, ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE_AND_TO_ONE);
@@ -204,6 +208,12 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	uses_screen_texture_mipmaps = gen_code.uses_screen_texture_mipmaps;
 	uses_screen_texture = gen_code.uses_screen_texture;
 	uses_depth_texture = gen_code.uses_depth_texture;
+	if (uses_shadow_catcher && uses_shadow_catcher_reflections) {
+		// What it reflects is looked up on the screen.
+		uses_screen_texture = true;
+		uses_screen_texture_mipmaps = true;
+		uses_depth_texture = true;
+	}
 	uses_normal_texture = gen_code.uses_normal_roughness_texture;
 	uses_vertex_time = gen_code.uses_vertex_time;
 	uses_fragment_time = gen_code.uses_fragment_time;
@@ -245,6 +255,12 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	// If any form of Alpha Antialiasing is enabled, set the blend mode to alpha to coverage.
 	if (alpha_antialiasing_mode != ALPHA_ANTIALIASING_OFF) {
 		blend_mode = BLEND_MODE_ALPHA_TO_COVERAGE;
+	}
+
+	if (uses_shadow_catcher) {
+		// Drawn over what is behind: that is darkened by its alpha, and what it
+		// reflects is added.
+		blend_mode = BLEND_MODE_PREMULTIPLIED_ALPHA;
 	}
 
 	// Order-independent surfaces are all drawn in the transparent pass, opaque or not.
@@ -912,6 +928,8 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 		actions.render_mode_defines["particle_trails"] = "#define USE_PARTICLE_TRAILS\n";
 		actions.render_mode_defines["depth_prepass_alpha"] = "#define USE_OPAQUE_PREPASS\n";
 		actions.render_mode_defines["blend_oit"] = "#define BLEND_OIT_USED\n";
+		actions.render_mode_defines["shadow_catcher"] = "#define USE_SHADOW_CATCHER\n";
+		actions.render_mode_defines["shadow_catcher_reflections"] = "#define SHADOW_CATCHER_REFLECTIONS\n";
 
 		actions.render_mode_defines["depth_draw_never"] = "#define DEPTH_DRAW_NEVER_USED\n";
 		actions.render_mode_defines["depth_draw_always"] = "#define DEPTH_DRAW_ALWAYS_USED\n";

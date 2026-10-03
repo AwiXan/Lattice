@@ -300,6 +300,20 @@ void light_compute(hvec3 N, hvec3 L, hvec3 V, half A, hvec3 light_color, bool is
 #endif // LIGHT_CODE_USED
 }
 
+#ifdef USE_SHADOW_CATCHER
+// A shadow catcher darkens what is behind it by what shadows take of the light
+// on it. Two sums are kept for that, as plain Lambert luminance: the light it
+// gets, and the light it gets with the shadows.
+float shadow_catcher_lit = 0.0;
+float shadow_catcher_shadowed = 0.0;
+
+void shadow_catcher_add_light(vec3 p_color, float p_diffuse, float p_shadow) {
+	float light = dot(p_color, vec3(0.2126, 0.7152, 0.0722)) * p_diffuse;
+	shadow_catcher_lit += light;
+	shadow_catcher_shadowed += light * p_shadow;
+}
+#endif // USE_SHADOW_CATCHER
+
 #ifndef SHADOWS_DISABLED
 
 // Interleaved Gradient Noise
@@ -732,6 +746,9 @@ void light_process_omni(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 	}
 
 	vec3 light_rel_vec_norm = light_rel_vec / light_length;
+#ifdef USE_SHADOW_CATCHER
+	shadow_catcher_add_light(vec3(color), float(omni_attenuation) * max(dot(vec3(normal), vec3(light_rel_vec_norm)), 0.0) * (1.0 / M_PI), float(shadow));
+#endif
 	light_compute(normal, hvec3(light_rel_vec_norm), eye_vec, size, hvec3(color), false, omni_attenuation * shadow, f0, roughness, metallic, half(omni_lights.data[idx].specular_amount), albedo, alpha, screen_uv, energy_compensation,
 #ifdef LIGHT_BACKLIGHT_USED
 			backlight,
@@ -932,6 +949,9 @@ void light_process_spot(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 		}
 	}
 
+#ifdef USE_SHADOW_CATCHER
+	shadow_catcher_add_light(vec3(color), float(spot_attenuation) * max(dot(vec3(normal), vec3(light_rel_vec_norm)), 0.0) * (1.0 / M_PI), float(shadow));
+#endif
 	light_compute(normal, hvec3(light_rel_vec_norm), eye_vec, size, hvec3(color), false, spot_attenuation * shadow, f0, roughness, metallic, half(spot_lights.data[idx].specular_amount), albedo, alpha, screen_uv, energy_compensation,
 #ifdef LIGHT_BACKLIGHT_USED
 			backlight,
@@ -1121,6 +1141,10 @@ void light_process_area(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 	// Cast from the middle of the area, as from a point.
 	shadow = min(shadow, light_contact_shadow(area_lights.data[idx].sscs_index, screen_uv));
 #endif
+#ifdef USE_SHADOW_CATCHER
+	// Without the shadow, for where the diffuse light of the area is known.
+	float shadow_catcher_attenuation = float(light_attenuation_ltc);
+#endif
 	light_attenuation_ltc = light_attenuation_ltc * shadow;
 	half light_attenuation = light_attenuation_raw * shadow;
 	hvec3 color = hvec3(area_lights.data[idx].color);
@@ -1279,6 +1303,9 @@ void light_process_area(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 		diffuse_light += diffuse_brdf_NL * isotropic_light_color * color * area * light_attenuation * cc_attenuation;
 #else
 		diffuse_light += half(ltc_diffuse) * hvec3(ltc_diffuse_tex_color) * color * light_attenuation_ltc * cc_attenuation;
+#ifdef USE_SHADOW_CATCHER
+		shadow_catcher_add_light(vec3(color), float(ltc_diffuse) * shadow_catcher_attenuation, float(shadow));
+#endif
 #endif // DIFFUSE_TOON
 
 #if defined(LIGHT_BACKLIGHT_USED)

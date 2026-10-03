@@ -248,6 +248,10 @@ public:
 		bool uses_blend_alpha = false;
 		// blend_oit: drawn order-independent, after the sorted transparent surfaces.
 		bool uses_oit = false;
+		// shadow_catcher: only the shadows cast on it are drawn, over what is behind;
+		// with shadow_catcher_reflections, what it reflects too.
+		bool uses_shadow_catcher = false;
+		bool uses_shadow_catcher_reflections = false;
 		bool uses_alpha_clip = false;
 		bool uses_alpha_antialiasing = false;
 		bool uses_depth_prepass_alpha = false;

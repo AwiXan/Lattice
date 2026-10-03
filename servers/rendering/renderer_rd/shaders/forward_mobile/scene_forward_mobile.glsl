@@ -1986,7 +1986,15 @@ void main() {
 	indirect_specular_light *= specular_occlusion;
 #endif // BENT_NORMAL_MAP_USED
 #endif // USE_SPECULAR_OCCLUSION
+#ifdef USE_SHADOW_CATCHER
+	// The light from all around fills the shadows on a catcher as on anything else.
+	shadow_catcher_add_light(vec3(ambient_light), 1.0, 1.0);
+#endif
 	ambient_light *= albedo.rgb;
+#ifdef USE_SHADOW_CATCHER
+	// Of its surroundings a catcher reflects nothing here: only lights.
+	indirect_specular_light = hvec3(0.0);
+#endif
 
 #endif // !AMBIENT_LIGHT_DISABLED
 
@@ -2270,6 +2278,9 @@ void main() {
 
 			float size_A = sc_use_light_soft_shadows() ? directional_lights.data[i].size : 0.0;
 
+#ifdef USE_SHADOW_CATCHER
+			shadow_catcher_add_light(directional_lights.data[i].color * directional_lights.data[i].energy, max(dot(vec3(normal), directional_lights.data[i].direction), 0.0) * (1.0 / M_PI), float(shadow));
+#endif
 			light_compute(normal, hvec3(directional_lights.data[i].direction), view, saturateHalf(size_A),
 					hvec3(directional_lights.data[i].color * directional_lights.data[i].energy * tint),
 					true, shadow, f0, roughness, metallic, half(directional_lights.data[i].specular), albedo, alpha,
@@ -2398,6 +2409,11 @@ void main() {
 	}
 #endif // !VERTEX_LIGHTING
 
+#ifdef USE_SHADOW_CATCHER
+	// What the shadows take of the light on the surface, it takes of what is behind it.
+	alpha *= half(shadow_catcher_lit > 1e-6 ? clamp(1.0 - shadow_catcher_shadowed / shadow_catcher_lit, 0.0, 1.0) : 0.0);
+#endif
+
 #endif //!defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED)
 
 #ifdef USE_SHADOW_TO_OPACITY
@@ -2480,13 +2496,27 @@ void main() {
 
 #ifdef MODE_UNSHADED
 	hvec4 out_color = hvec4(albedo, alpha);
+#elif defined(USE_SHADOW_CATCHER)
+	// Over what is behind, by premultiplied alpha: its alpha is how much the
+	// shadows darken that, its color what it reflects.
+#ifdef SHADOW_CATCHER_REFLECTIONS
+	hvec4 out_color = hvec4(emission + direct_specular_light + indirect_specular_light, alpha);
+#else
+	hvec4 out_color = hvec4(emission, alpha);
+#endif
 #else // MODE_UNSHADED
 	hvec4 out_color = hvec4(emission + ambient_light + diffuse_light + direct_specular_light + indirect_specular_light, alpha);
 #endif // MODE_UNSHADED
 
 #ifndef FOG_DISABLED
+#if defined(USE_SHADOW_CATCHER) && !defined(MODE_UNSHADED)
+	// Fog hides the shadows and the reflections, and adds none of its own to
+	// what is behind.
+	out_color *= half(1.0) - fog.a;
+#else
 	// Draw "fixed" fog before volumetric fog to ensure volumetric fog can appear in front of the sky.
 	out_color.rgb = mix(out_color.rgb, fog.rgb, fog.a);
+#endif
 #endif // !FOG_DISABLED
 
 	// On mobile we use a UNORM buffer with 10bpp which results in a range from 0.0 - 1.0 resulting in HDR breaking

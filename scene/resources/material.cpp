@@ -866,6 +866,12 @@ void BaseMaterial3D::_update_shader() {
 	if (flags[FLAG_USE_SHADOW_TO_OPACITY]) {
 		code += ", shadow_to_opacity";
 	}
+	if (shadow_catcher != SHADOW_CATCHER_DISABLED) {
+		code += ", shadow_catcher";
+		if (shadow_catcher == SHADOW_CATCHER_SHADOWS_AND_REFLECTIONS) {
+			code += ", shadow_catcher_reflections";
+		}
+	}
 	if (flags[FLAG_DISABLE_FOG]) {
 		code += ", fog_disabled";
 	}
@@ -1908,7 +1914,7 @@ void fragment() {)";
 	ALPHA = 1.0;
 )";
 
-	} else if (transparency != TRANSPARENCY_DISABLED || flags[FLAG_USE_SHADOW_TO_OPACITY] || (distance_fade == DISTANCE_FADE_PIXEL_ALPHA) || proximity_fade_enabled) {
+	} else if (transparency != TRANSPARENCY_DISABLED || flags[FLAG_USE_SHADOW_TO_OPACITY] || shadow_catcher != SHADOW_CATCHER_DISABLED || (distance_fade == DISTANCE_FADE_PIXEL_ALPHA) || proximity_fade_enabled) {
 		code += "	ALPHA *= albedo.a * albedo_tex.a;\n";
 	}
 	if (transparency == TRANSPARENCY_ALPHA_HASH) {
@@ -3365,6 +3371,19 @@ BaseMaterial3D::EmissionOperator BaseMaterial3D::get_emission_operator() const {
 	return emission_op;
 }
 
+void BaseMaterial3D::set_shadow_catcher(ShadowCatcher p_mode) {
+	ERR_FAIL_INDEX(p_mode, SHADOW_CATCHER_MAX);
+	if (shadow_catcher == p_mode) {
+		return;
+	}
+	shadow_catcher = p_mode;
+	_queue_shader_change();
+}
+
+BaseMaterial3D::ShadowCatcher BaseMaterial3D::get_shadow_catcher() const {
+	return shadow_catcher;
+}
+
 RID BaseMaterial3D::get_rid() const {
 	const_cast<BaseMaterial3D *>(this)->_update_shader();
 	const_cast<BaseMaterial3D *>(this)->_check_material_rid();
@@ -3737,6 +3756,9 @@ void BaseMaterial3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_emission_operator", "operator"), &BaseMaterial3D::set_emission_operator);
 	ClassDB::bind_method(D_METHOD("get_emission_operator"), &BaseMaterial3D::get_emission_operator);
 
+	ClassDB::bind_method(D_METHOD("set_shadow_catcher", "mode"), &BaseMaterial3D::set_shadow_catcher);
+	ClassDB::bind_method(D_METHOD("get_shadow_catcher"), &BaseMaterial3D::get_shadow_catcher);
+
 	ClassDB::bind_method(D_METHOD("set_ao_light_affect", "amount"), &BaseMaterial3D::set_ao_light_affect);
 	ClassDB::bind_method(D_METHOD("get_ao_light_affect"), &BaseMaterial3D::get_ao_light_affect);
 
@@ -3967,6 +3989,7 @@ void BaseMaterial3D::_bind_methods() {
 	ADD_GROUP("Shadows", "");
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "disable_receive_shadows"), "set_flag", "get_flag", FLAG_DONT_RECEIVE_SHADOWS);
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "shadow_to_opacity"), "set_flag", "get_flag", FLAG_USE_SHADOW_TO_OPACITY);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "shadow_catcher", PROPERTY_HINT_ENUM, "Disabled,Shadows,Shadows and Reflections"), "set_shadow_catcher", "get_shadow_catcher");
 
 	ADD_GROUP("Billboard", "billboard_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "billboard_mode", PROPERTY_HINT_ENUM, "Disabled,Enabled,Y-Billboard,Particle Billboard"), "set_billboard_mode", "get_billboard_mode");
@@ -4144,6 +4167,10 @@ void BaseMaterial3D::_bind_methods() {
 
 	BIND_ENUM_CONSTANT(EMISSION_OP_ADD);
 	BIND_ENUM_CONSTANT(EMISSION_OP_MULTIPLY);
+
+	BIND_ENUM_CONSTANT(SHADOW_CATCHER_DISABLED);
+	BIND_ENUM_CONSTANT(SHADOW_CATCHER_SHADOWS);
+	BIND_ENUM_CONSTANT(SHADOW_CATCHER_SHADOWS_AND_REFLECTIONS);
 
 	BIND_ENUM_CONSTANT(DISTANCE_FADE_DISABLED);
 	BIND_ENUM_CONSTANT(DISTANCE_FADE_PIXEL_ALPHA);
