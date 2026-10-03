@@ -222,7 +222,6 @@ class FindInFilesResultsPanel : public MarginContainer {
 
 	String replace_text;
 
-	bool floating = false;
 	MarginContainer *results_mc = nullptr;
 
 	void _on_button_clicked(TreeItem *p_item, int p_column, int p_id, int p_mouse_button_index);

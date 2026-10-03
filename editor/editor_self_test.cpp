@@ -44,6 +44,7 @@
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
+#include "editor/docks/editor_dock_manager.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_crash_report.h"
@@ -79,6 +80,7 @@
 #include "editor/scene/canvas_item_editor_chrome.h"
 #include "editor/scene/editor_scene_panel.h"
 #include "editor/script/editor_script_panel.h"
+#include "editor/script/find_in_files.h"
 #include "editor/script/script_editor_base.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/gui/code_editor.h"
@@ -95,6 +97,7 @@
 #include "scene/gui/line_edit.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/tab_bar.h"
+#include "scene/gui/tree.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/window.h"
 
@@ -2215,6 +2218,30 @@ void EditorSelfTest::_script_drag_out_back() {
 	EditorSettings::get_singleton()->set("text_editor/behavior/files/open_scripts_in_own_panels", true);
 }
 
+void EditorSelfTest::_find_in_files_open() {
+	// Find in Files is a dock (upstream PR 116560); here asking for a dock
+	// shows it in a pane. Searched for something every script has.
+	FindInFiles::get_singleton()->open_dock("extends", false);
+	FindInFiles::get_singleton()->get_container()->get_search_control()->emit_signal(SNAME("find_requested"));
+	// The search goes through the files over a few frames.
+	seconds_to_wait = 1.0;
+	waiting_since = OS::get_singleton()->get_ticks_msec();
+}
+
+void EditorSelfTest::_find_in_files_found() {
+	FindInFilesContainer *container = FindInFiles::get_singleton()->get_container();
+	_check(_pane_showing(EditorDockManager::get_dock_panel_type_id(container)) && container->is_visible_in_tree(), "Find in Files opens as a panel in a pane");
+	int files = 0;
+	for (const Variant &found : container->find_children("*", "Tree", true, false)) {
+		Tree *tree = Object::cast_to<Tree>(found);
+		if (tree && tree->is_visible_in_tree() && tree->get_root()) {
+			files = MAX(files, tree->get_root()->get_child_count());
+		}
+	}
+	_check(files >= 4, vformat("and finds what is searched for: in %d files", files));
+	container->close();
+}
+
 EditorPane *EditorSelfTest::_pane_with_script(const String &p_path, int *r_index) const {
 	for (EditorPane *pane : _tree()->get_panes()) {
 		for (int i = 0; i < pane->get_panel_count(); i++) {
@@ -3277,6 +3304,8 @@ EditorSelfTest::EditorSelfTest() {
 	_add("script bring out", callable_mp(this, &EditorSelfTest::_script_bring_out));
 	_add("script bring here", callable_mp(this, &EditorSelfTest::_script_bring_here));
 	_add("script brought here", callable_mp(this, &EditorSelfTest::_script_brought_here));
+	_add("find in files open", callable_mp(this, &EditorSelfTest::_find_in_files_open));
+	_add("find in files found", callable_mp(this, &EditorSelfTest::_find_in_files_found));
 	_add("script left open", callable_mp(this, &EditorSelfTest::_script_left_open));
 	_add("script stand-in", callable_mp(this, &EditorSelfTest::_script_stand_in));
 	_add("animation keying prepare", callable_mp(this, &EditorSelfTest::_animation_keying_prepare));

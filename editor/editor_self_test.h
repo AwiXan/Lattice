@@ -219,6 +219,8 @@ class EditorSelfTest : public Node {
 	ObjectID sidebar_view;
 	ObjectID sidebar_node;
 	real_t sidebar_node_x = 0.0;
+	void _find_in_files_open();
+	void _find_in_files_found();
 	void _script_left_open();
 	void _script_stand_in();
 	EditorPane *_script_pane(int *r_index = nullptr) const;
