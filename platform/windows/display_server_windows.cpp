@@ -54,7 +54,9 @@
 #include "scene/resources/texture.h"
 #include "servers/display/accessibility_server.h"
 #include "servers/rendering/dummy/rasterizer_dummy.h"
+#ifdef RD_ENABLED
 #include "servers/rendering/renderer_rd/renderer_compositor_rd.h"
+#endif // RD_ENABLED
 
 #ifdef SDL_ENABLED
 #include "drivers/sdl/joypad_sdl.h"
