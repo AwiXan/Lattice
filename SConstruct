@@ -165,6 +165,15 @@ opts.Add(
     )
 )
 opts.Add(EnumVariable("arch", "CPU architecture", "auto", ["auto"] + architectures, architecture_aliases, ignorecase=2))
+opts.Add(
+    EnumVariable(
+        "x86_64_level",
+        "x86-64 instruction sets: v2 (SSE4.2, runs on any CPU Godot supports) or v3 (AVX2, FMA, F16C, BMI;"
+        " Intel Haswell 2013 / AMD Zen 2017 and newer - the build does not start on older CPUs)",
+        "v2",
+        ["v2", "v3"],
+    )
+)
 opts.Add(BoolVariable("dev_build", "Developer build with dev-only debugging code (DEV_ENABLED)", False))
 opts.Add(
     EnumVariable(
@@ -822,7 +831,15 @@ if env["arch"] == "x86_64":
     # On 64-bit x86, enable SSE 4.2 and prior instruction sets (SSE3/SSSE3/SSE4/SSE4.1) to improve performance.
     # This is supported on most CPUs released after 2009-2011 (Intel Nehalem, AMD Bulldozer).
     # AVX and AVX2 aren't enabled because they aren't available on more recent low-end Intel CPUs.
-    if env.msvc and not methods.using_clang(env):
+    if env["x86_64_level"] == "v3":
+        # AVX2 and what comes with it. Also what turns on Jolt's AVX2, F16C,
+        # LZCNT and TZCNT paths, which it picks from these compiler macros -
+        # MSVC's SSE 4.2 switch below defines none, leaving Jolt on SSE2.
+        if env.msvc and not methods.using_clang(env):
+            env.Append(CCFLAGS=["/arch:AVX2"])
+        else:
+            env.Append(CCFLAGS=["-march=x86-64-v3"])
+    elif env.msvc and not methods.using_clang(env):
         # https://stackoverflow.com/questions/64053597/how-do-i-enable-sse4-1-and-sse3-but-not-avx-in-msvc/69328426
         env.Append(CCFLAGS=["/d2archSSE42"])
     else:
