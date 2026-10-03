@@ -3098,7 +3098,10 @@ void EditorHelp::load_script_doc_cache() {
 		return;
 	}
 
-	if (EditorNode::is_cmdline_mode()) {
+	// Deferred here by the thread that writes the documentation cache, which a
+	// new build does on its first launch: `--import` can be done and the editor
+	// gone before that.
+	if (!EditorNode::get_singleton() || EditorNode::is_cmdline_mode()) {
 		return;
 	}
 
