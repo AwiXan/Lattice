@@ -6,6 +6,15 @@ Import("env_modules")
 
 env_raycast = env_modules.Clone()
 
+# Embree is built for its SSE target only. With x86_64_level=v3 its headers see
+# AVX and ask for the 8-wide kernels, which are not built: it stays at SSE 4.2.
+if env["arch"] == "x86_64" and env["x86_64_level"] == "v3":
+    flags = list(env_raycast["CCFLAGS"])
+    if "/arch:AVX2" in flags:
+        env_raycast["CCFLAGS"] = [f for f in flags if f != "/arch:AVX2"] + ["/d2archSSE42"]
+    elif "-march=x86-64-v3" in flags:
+        env_raycast["CCFLAGS"] = [f for f in flags if f != "-march=x86-64-v3"] + ["-msse4.2", "-mpopcnt"]
+
 # Thirdparty source files
 
 thirdparty_obj = []

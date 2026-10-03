@@ -837,6 +837,10 @@ if env["arch"] == "x86_64":
         # MSVC's SSE 4.2 switch below defines none, leaving Jolt on SSE2.
         if env.msvc and not methods.using_clang(env):
             env.Append(CCFLAGS=["/arch:AVX2"])
+            # MSVC defines __AVX2__ but none of the SSE macros GCC and Clang
+            # define with it, and code that checks for both (etcpak) would
+            # take half of its SIMD path.
+            env.Append(CPPDEFINES=["__SSE3__", "__SSSE3__", "__SSE4_1__", "__SSE4_2__"])
         else:
             env.Append(CCFLAGS=["-march=x86-64-v3"])
     elif env.msvc and not methods.using_clang(env):
