@@ -120,6 +120,14 @@ class PhysicsRayQueryParameters2D;
 class PhysicsPointQueryParameters2D;
 class PhysicsShapeQueryParameters2D;
 
+// Filled in by the *_into() queries, which allocate nothing.
+class PhysicsIntersectRayResult2D;
+class PhysicsIntersectPointResult2D;
+class PhysicsIntersectShapeResult2D;
+class PhysicsCastMotionResult2D;
+class PhysicsCollideShapeResult2D;
+class PhysicsGetRestInfoResult2D;
+
 class PhysicsDirectSpaceState2D : public Object {
 	GDCLASS(PhysicsDirectSpaceState2D, Object);
 
@@ -129,6 +137,13 @@ class PhysicsDirectSpaceState2D : public Object {
 	Vector<real_t> _cast_motion(RequiredParam<PhysicsShapeQueryParameters2D> rp_shape_query);
 	TypedArray<Vector2> _collide_shape(RequiredParam<PhysicsShapeQueryParameters2D> rp_shape_query, int p_max_results = 32);
 	Dictionary _get_rest_info(RequiredParam<PhysicsShapeQueryParameters2D> rp_shape_query);
+
+	bool _intersect_ray_into(RequiredParam<PhysicsRayQueryParameters2D> rp_query, RequiredParam<PhysicsIntersectRayResult2D> rp_result);
+	bool _intersect_point_into(RequiredParam<PhysicsPointQueryParameters2D> rp_query, RequiredParam<PhysicsIntersectPointResult2D> rp_result);
+	bool _intersect_shape_into(RequiredParam<PhysicsShapeQueryParameters2D> rp_query, RequiredParam<PhysicsIntersectShapeResult2D> rp_result);
+	bool _cast_motion_into(RequiredParam<PhysicsShapeQueryParameters2D> rp_query, RequiredParam<PhysicsCastMotionResult2D> rp_result);
+	bool _collide_shape_into(RequiredParam<PhysicsShapeQueryParameters2D> rp_query, RequiredParam<PhysicsCollideShapeResult2D> rp_result);
+	bool _get_rest_info_into(RequiredParam<PhysicsShapeQueryParameters2D> rp_query, RequiredParam<PhysicsGetRestInfoResult2D> rp_result);
 
 protected:
 	static void _bind_methods();

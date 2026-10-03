@@ -29,6 +29,13 @@
 /**************************************************************************/
 
 #include "physics_server_2d.h"
+
+#include "servers/physics_2d/queries/physics_intersect_ray_result_2d.h"
+#include "servers/physics_2d/queries/physics_intersect_point_result_2d.h"
+#include "servers/physics_2d/queries/physics_intersect_shape_result_2d.h"
+#include "servers/physics_2d/queries/physics_cast_motion_result_2d.h"
+#include "servers/physics_2d/queries/physics_collide_shape_result_2d.h"
+#include "servers/physics_2d/queries/physics_get_rest_info_result_2d.h"
 #include "physics_server_2d.compat.inc"
 
 #include "core/config/project_settings.h"
@@ -458,6 +465,55 @@ Dictionary PhysicsDirectSpaceState2D::_get_rest_info(RequiredParam<PhysicsShapeQ
 	return r;
 }
 
+bool PhysicsDirectSpaceState2D::_intersect_ray_into(RequiredParam<PhysicsRayQueryParameters2D> rp_query, RequiredParam<PhysicsIntersectRayResult2D> rp_result) {
+	EXTRACT_PARAM_OR_FAIL_V(ray_query, rp_query, false);
+	EXTRACT_PARAM_OR_FAIL_V(result, rp_result, false);
+
+	return intersect_ray(ray_query->get_parameters(), result->result);
+}
+
+bool PhysicsDirectSpaceState2D::_intersect_point_into(RequiredParam<PhysicsPointQueryParameters2D> rp_query, RequiredParam<PhysicsIntersectPointResult2D> rp_result) {
+	EXTRACT_PARAM_OR_FAIL_V(point_query, rp_query, false);
+	EXTRACT_PARAM_OR_FAIL_V(result, rp_result, false);
+
+	result->intersection_count = intersect_point(point_query->get_parameters(), result->result.ptr(), result->get_max_intersections());
+
+	return result->intersection_count > 0;
+}
+
+bool PhysicsDirectSpaceState2D::_intersect_shape_into(RequiredParam<PhysicsShapeQueryParameters2D> rp_query, RequiredParam<PhysicsIntersectShapeResult2D> rp_result) {
+	EXTRACT_PARAM_OR_FAIL_V(shape_query, rp_query, false);
+	EXTRACT_PARAM_OR_FAIL_V(result, rp_result, false);
+
+	result->intersection_count = intersect_shape(shape_query->get_parameters(), result->result.ptr(), result->get_max_intersections());
+
+	return result->intersection_count > 0;
+}
+
+bool PhysicsDirectSpaceState2D::_cast_motion_into(RequiredParam<PhysicsShapeQueryParameters2D> rp_query, RequiredParam<PhysicsCastMotionResult2D> rp_result) {
+	EXTRACT_PARAM_OR_FAIL_V(shape_query, rp_query, false);
+	EXTRACT_PARAM_OR_FAIL_V(result, rp_result, false);
+
+	result->safe_fraction = 1.0;
+	result->unsafe_fraction = 1.0;
+
+	return cast_motion(shape_query->get_parameters(), result->safe_fraction, result->unsafe_fraction) && result->safe_fraction < 1.0;
+}
+
+bool PhysicsDirectSpaceState2D::_collide_shape_into(RequiredParam<PhysicsShapeQueryParameters2D> rp_query, RequiredParam<PhysicsCollideShapeResult2D> rp_result) {
+	EXTRACT_PARAM_OR_FAIL_V(shape_query, rp_query, false);
+	EXTRACT_PARAM_OR_FAIL_V(result, rp_result, false);
+
+	return collide_shape(shape_query->get_parameters(), result->result.ptr(), result->get_max_collisions(), result->collision_count);
+}
+
+bool PhysicsDirectSpaceState2D::_get_rest_info_into(RequiredParam<PhysicsShapeQueryParameters2D> rp_query, RequiredParam<PhysicsGetRestInfoResult2D> rp_result) {
+	EXTRACT_PARAM_OR_FAIL_V(shape_query, rp_query, false);
+	EXTRACT_PARAM_OR_FAIL_V(result, rp_result, false);
+
+	return rest_info(shape_query->get_parameters(), &result->result);
+}
+
 PhysicsDirectSpaceState2D::PhysicsDirectSpaceState2D() {
 }
 
@@ -468,6 +524,13 @@ void PhysicsDirectSpaceState2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("cast_motion", "parameters"), &PhysicsDirectSpaceState2D::_cast_motion);
 	ClassDB::bind_method(D_METHOD("collide_shape", "parameters", "max_results"), &PhysicsDirectSpaceState2D::_collide_shape, DEFVAL(32));
 	ClassDB::bind_method(D_METHOD("get_rest_info", "parameters"), &PhysicsDirectSpaceState2D::_get_rest_info);
+
+	ClassDB::bind_method(D_METHOD("intersect_ray_into", "parameters", "result"), &PhysicsDirectSpaceState2D::_intersect_ray_into);
+	ClassDB::bind_method(D_METHOD("intersect_point_into", "parameters", "result"), &PhysicsDirectSpaceState2D::_intersect_point_into);
+	ClassDB::bind_method(D_METHOD("intersect_shape_into", "parameters", "result"), &PhysicsDirectSpaceState2D::_intersect_shape_into);
+	ClassDB::bind_method(D_METHOD("cast_motion_into", "parameters", "result"), &PhysicsDirectSpaceState2D::_cast_motion_into);
+	ClassDB::bind_method(D_METHOD("collide_shape_into", "parameters", "result"), &PhysicsDirectSpaceState2D::_collide_shape_into);
+	ClassDB::bind_method(D_METHOD("get_rest_info_into", "parameters", "result"), &PhysicsDirectSpaceState2D::_get_rest_info_into);
 }
 
 ///////////////////////////////
