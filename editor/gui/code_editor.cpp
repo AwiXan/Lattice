@@ -1182,12 +1182,20 @@ void CodeTextEditor::update_editor_settings() {
 }
 
 void CodeTextEditor::set_find_replace_bar(FindReplaceBar *p_bar) {
-	if (find_replace_bar) {
+	if (find_replace_bar == p_bar) {
 		return;
+	}
+	if (find_replace_bar) {
+		// Another bar had it - a script panel's, whose script comes back to the
+		// script editor: that one lets go first. Kept, the editor would be left
+		// with none once the panel and its bar are gone.
+		find_replace_bar->set_text_edit(nullptr);
 	}
 
 	find_replace_bar = p_bar;
-	find_replace_bar->set_text_edit(this);
+	if (find_replace_bar) {
+		find_replace_bar->set_text_edit(this);
+	}
 }
 
 void CodeTextEditor::remove_find_replace_bar() {

@@ -2217,6 +2217,29 @@ void EditorSelfTest::_script_bring_here() {
 
 void EditorSelfTest::_script_brought_here() {
 	_check(!_pane_with_script("res://probe_d.gd") && _script_is_open("res://probe_d.gd"), "Bring It Here puts the script back in the script editor, still open");
+
+	// Ctrl+F in it straight away, through the window as the keyboard sends
+	// it: the find bar it had in the panel went with the panel, and it was
+	// left with none - Ctrl+F crashed.
+	TextEditorBase *editor = Object::cast_to<TextEditorBase>(ScriptEditor::get_singleton()->get_current_editor());
+	CodeTextEditor *code = editor ? editor->get_code_editor() : nullptr;
+	if (code && code->get_text_editor()->is_visible_in_tree()) {
+		code->get_text_editor()->grab_focus();
+		for (int pressed = 1; pressed >= 0; pressed--) {
+			Ref<InputEventKey> key;
+			key.instantiate();
+			key->set_keycode(Key::F);
+			key->set_physical_keycode(Key::F);
+			key->set_command_or_control_autoremap(true);
+			key->set_pressed(pressed);
+			code->get_viewport()->push_input(key);
+		}
+	}
+	FindReplaceBar *find_bar = code ? code->get_find_replace_bar() : nullptr;
+	_check(find_bar && find_bar->is_visible(), "Ctrl+F in a script brought back from its panel opens the find bar");
+	if (find_bar) {
+		find_bar->hide();
+	}
 	EditorSettings::get_singleton()->set("text_editor/behavior/files/open_scripts_in_own_panels", true);
 }
 
@@ -3128,6 +3151,9 @@ void EditorSelfTest::_finish() {
 	const uint32_t error_count = errors.get();
 	print_line(vformat("SELFTEST DONE: %d passed, %d failed, %d errors", passed, failed, error_count));
 	EditorSettings::get_singleton()->set("text_editor/behavior/files/open_scripts_in_own_panels", scripts_in_panels_before);
+	// Saved as well: the editor saved its settings at times of its own while
+	// the test ran, this one switched on, and quitting saves nothing.
+	EditorSettings::get_singleton()->save();
 	OS::get_singleton()->printerr("SELFTEST QUITTING\n");
 	get_tree()->quit(failed > 0 || error_count > 0 ? 1 : 0);
 }
