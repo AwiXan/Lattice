@@ -44,6 +44,9 @@ class RenderDataRD;
 
 namespace RendererRD {
 
+// As light_data_inc.glsl.
+#define DIRECTIONAL_LIGHT_FLAG_CLIPMAP 1u
+
 class LightStorage : public RendererLightStorage {
 public:
 	enum ShadowAtlastQuadrant : uint32_t {
@@ -100,6 +103,7 @@ private:
 		real_t distance_fade_length = 10.0;
 		RSE::LightOmniShadowMode omni_shadow_mode = RSE::LIGHT_OMNI_SHADOW_DUAL_PARABOLOID;
 		RSE::LightDirectionalShadowMode directional_shadow_mode = RSE::LIGHT_DIRECTIONAL_SHADOW_ORTHOGONAL;
+		bool directional_shadow_clipmap = false;
 		bool directional_blend_splits = false;
 		RSE::LightDirectionalSkyMode directional_sky_mode = RSE::LIGHT_DIRECTIONAL_SKY_MODE_LIGHT_AND_SKY;
 		real_t directional_min_shadow_fov = 0.0;
@@ -239,7 +243,7 @@ private:
 		float fade_from;
 		float fade_to;
 		uint32_t sscs_index;
-		uint32_t pad;
+		uint32_t flags; // DIRECTIONAL_LIGHT_FLAG_*
 		uint32_t bake_mode;
 		float volumetric_fog_energy;
 		float shadow_bias[4];
@@ -562,6 +566,7 @@ public:
 	virtual real_t light_directional_get_min_shadow_size(RID p_light) const override;
 
 	virtual RSE::LightDirectionalShadowMode light_directional_get_shadow_mode(RID p_light) override;
+	virtual bool light_directional_is_shadow_clipmap(RID p_light) const override;
 	virtual RSE::LightOmniShadowMode light_omni_get_shadow_mode(RID p_light) override;
 	virtual void light_area_set_size(RID p_light, const Vector2 &p_size) override;
 	virtual Vector2 light_area_get_size(RID p_light) const override;

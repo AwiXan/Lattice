@@ -5239,6 +5239,9 @@
 		<constant name="LIGHT_DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS" value="2" enum="LightDirectionalShadowMode">
 			Use 4 splits for shadow projection when using directional light.
 		</constant>
+		<constant name="LIGHT_DIRECTIONAL_SHADOW_CLIPMAP" value="3" enum="LightDirectionalShadowMode">
+			Use 4 shadow maps placed as a clipmap around the camera, picked by distance. See [constant DirectionalLight3D.SHADOW_CLIPMAP].
+		</constant>
 		<constant name="LIGHT_DIRECTIONAL_SKY_MODE_LIGHT_AND_SKY" value="0" enum="LightDirectionalSkyMode">
 			Use DirectionalLight3D in both sky rendering and scene lighting.
 		</constant>

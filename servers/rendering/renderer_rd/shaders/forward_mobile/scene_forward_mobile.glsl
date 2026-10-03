@@ -2100,7 +2100,7 @@ void main() {
 				half shadow = half(1.0);
 
 				if (directional_lights.data[i].shadow_opacity > 0.001) {
-					float depth_z = -vertex.z;
+					float depth_z = bool(directional_lights.data[i].flags & DIRECTIONAL_LIGHT_FLAG_CLIPMAP) ? length(vertex) : -vertex.z;
 
 					vec4 pssm_coord;
 					float blur_factor;
@@ -2190,12 +2190,12 @@ void main() {
 
 #ifdef USE_LIGHTMAP
 					if (shadowmask_mode == LIGHTMAP_SHADOWMASK_MODE_REPLACE) {
-						shadow = mix(shadow, shadowmask, half(smoothstep(directional_lights.data[i].fade_from, directional_lights.data[i].fade_to, vertex.z))); //done with negative values for performance
+						shadow = mix(shadow, shadowmask, half(smoothstep(directional_lights.data[i].fade_from, directional_lights.data[i].fade_to, -depth_z))); //done with negative values for performance
 					} else if (shadowmask_mode == LIGHTMAP_SHADOWMASK_MODE_OVERLAY) {
-						shadow = shadowmask * mix(shadow, half(1.0), half(smoothstep(directional_lights.data[i].fade_from, directional_lights.data[i].fade_to, vertex.z))); //done with negative values for performance
+						shadow = shadowmask * mix(shadow, half(1.0), half(smoothstep(directional_lights.data[i].fade_from, directional_lights.data[i].fade_to, -depth_z))); //done with negative values for performance
 					} else {
 #endif
-						shadow = mix(shadow, half(1.0), half(smoothstep(directional_lights.data[i].fade_from, directional_lights.data[i].fade_to, vertex.z)));
+						shadow = mix(shadow, half(1.0), half(smoothstep(directional_lights.data[i].fade_from, directional_lights.data[i].fade_to, -depth_z)));
 #ifdef USE_LIGHTMAP
 					}
 #endif

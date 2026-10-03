@@ -2245,6 +2245,13 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 			break;
 	}
 
+	// Clipmap: the cascades are spheres around the camera, of the split
+	// distances as radii, not slices of its view. Turning looks into the same
+	// ones and moving scrolls them by whole texels - which the static caster
+	// cache keeps cheap - so they can reach far. Picked by distance in the
+	// shaders.
+	const bool clipmap = splits == 4 && RSG::light_storage->light_directional_is_shadow_clipmap(p_instance->base);
+
 	real_t distances[5];
 
 	distances[0] = min_distance;
@@ -2277,7 +2284,8 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 
 		// Setup a camera frustum for that range!
 		Frustum camera_frustum = p_cam_frustum;
-		camera_frustum.planes[Projection::PLANE_NEAR].d = -distances[(i == 0 || !overlap) ? i : i - 1];
+		// A clipmap level serves every receiver nearer than its radius.
+		camera_frustum.planes[Projection::PLANE_NEAR].d = -distances[clipmap ? 0 : ((i == 0 || !overlap) ? i : i - 1)];
 		camera_frustum.planes[Projection::PLANE_FAR].d = distances[i + 1];
 		// At least the light's minimum field of view (or size, orthogonal):
 		// shadows then keep still while the camera's FOV is animated.
@@ -2311,6 +2319,12 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 				frustum_corners_local[j] = p_cam_transform.basis.xform(frustum_corners_cam_view[j]);
 			}
 		}
+		if (clipmap) {
+			// Placed on the sphere of the level's radius around the camera;
+			// the view's slice above still says which casters it needs now.
+			frustum_centroid_local = Vector3();
+			frustum_circumscribing_radius = distances[i + 1];
+		}
 		Vector3 frustum_centroid_world = p_cam_transform.origin + frustum_centroid_local;
 
 		{
@@ -2322,7 +2336,7 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 			light_culler->prepare_directional_light_cascade(p_shadow_index, i, receiver_frustum_planes, frustum_corners_world);
 		}
 
-		const bool USE_TIGHTER_DRAW_RECT = directional_shadow_tighter_draw_rect;
+		const bool USE_TIGHTER_DRAW_RECT = directional_shadow_tighter_draw_rect && !clipmap;
 
 		// Compute bounding box of frustum as seen from within the shadowmap
 		Vector3 light_view_frustum_rect_min = light_transform.basis.xform_inv(frustum_corners_local[0]);
@@ -2448,7 +2462,9 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 			cull.shadows[p_shadow_index].cascades[i].projection = ortho_camera;
 			cull.shadows[p_shadow_index].cascades[i].transform = ortho_transform;
 			cull.shadows[p_shadow_index].cascades[i].zfar = light_view_frustum_rect_max.z - z_min_cam;
-			cull.shadows[p_shadow_index].cascades[i].split = distances[i + 1];
+			// A clipmap level is picked while the point is nearer than this: a few
+			// texels in from the edge of its square, for filtering.
+			cull.shadows[p_shadow_index].cascades[i].split = clipmap ? distances[i + 1] * (1.0 - 8.0 / texture_size) : distances[i + 1];
 			cull.shadows[p_shadow_index].cascades[i].shadow_texel_size = frustum_circumscribing_radius * 2.0 / texture_size;
 			cull.shadows[p_shadow_index].cascades[i].bias_scale = (light_view_frustum_rect_max.z - z_min_for_bias);
 			cull.shadows[p_shadow_index].cascades[i].range_begin = light_view_frustum_rect_max.z - light_basis_z.dot(p_cam_transform.origin);

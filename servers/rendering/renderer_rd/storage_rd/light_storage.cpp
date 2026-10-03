@@ -404,9 +404,18 @@ void LightStorage::light_directional_set_shadow_mode(RID p_light, RSE::LightDire
 	Light *light = light_owner.get_or_null(p_light);
 	ERR_FAIL_NULL(light);
 
-	light->directional_shadow_mode = p_mode;
+	// A clipmap draws as four splits do - atlas, cache, blending - and only
+	// where the cascades are placed differs.
+	light->directional_shadow_clipmap = p_mode == RSE::LIGHT_DIRECTIONAL_SHADOW_CLIPMAP;
+	light->directional_shadow_mode = light->directional_shadow_clipmap ? RSE::LIGHT_DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS : p_mode;
 	light->version++;
 	light->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_LIGHT);
+}
+
+bool LightStorage::light_directional_is_shadow_clipmap(RID p_light) const {
+	const Light *light = light_owner.get_or_null(p_light);
+	ERR_FAIL_NULL_V(light, false);
+	return light->directional_shadow_clipmap;
 }
 
 void LightStorage::light_directional_set_blend_splits(RID p_light, bool p_enable) {
@@ -879,6 +888,7 @@ void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const Paged
 
 					int limit = smode == RSE::LIGHT_DIRECTIONAL_SHADOW_ORTHOGONAL ? 0 : (smode == RSE::LIGHT_DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS ? 1 : 3);
 					light_data.blend_splits = (smode != RSE::LIGHT_DIRECTIONAL_SHADOW_ORTHOGONAL) && light->directional_blend_splits;
+					light_data.flags = light->directional_shadow_clipmap ? DIRECTIONAL_LIGHT_FLAG_CLIPMAP : 0;
 					for (int j = 0; j < 4; j++) {
 						Rect2 atlas_rect = light_instance->shadow_transform[j].atlas_rect;
 						Projection correction;

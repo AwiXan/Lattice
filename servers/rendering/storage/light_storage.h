@@ -81,6 +81,9 @@ public:
 	virtual real_t light_directional_get_min_shadow_size(RID p_light) const = 0;
 
 	virtual RSE::LightDirectionalShadowMode light_directional_get_shadow_mode(RID p_light) = 0;
+	// Its four cascades placed as a clipmap - spheres around the camera. Only
+	// where the renderer can pick them by distance; elsewhere they stay PSSM.
+	virtual bool light_directional_is_shadow_clipmap(RID p_light) const { return false; }
 	virtual RSE::LightOmniShadowMode light_omni_get_shadow_mode(RID p_light) = 0;
 
 	virtual void light_area_set_size(RID p_light, const Vector2 &p_size) = 0;

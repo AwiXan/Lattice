@@ -299,7 +299,8 @@ void LightStorage::light_directional_set_shadow_mode(RID p_light, RSE::LightDire
 	Light *light = light_owner.get_or_null(p_light);
 	ERR_FAIL_NULL(light);
 
-	light->directional_shadow_mode = p_mode;
+	// No clipmap here: its four cascades are placed as four splits.
+	light->directional_shadow_mode = p_mode == RSE::LIGHT_DIRECTIONAL_SHADOW_CLIPMAP ? RSE::LIGHT_DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS : p_mode;
 	light->version++;
 	light->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_LIGHT);
 }

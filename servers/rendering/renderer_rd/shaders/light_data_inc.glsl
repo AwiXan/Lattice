@@ -60,6 +60,9 @@ struct ReflectionData {
 	// notes: for ambientblend, use distance to edge to blend between already existing global environment
 };
 
+// The cascades are spheres around the camera, picked by distance, not by depth.
+#define DIRECTIONAL_LIGHT_FLAG_CLIPMAP 1u
+
 struct DirectionalLightData {
 	vec3 direction;
 	float energy; // needs to be highp to avoid NaNs being created with high energy values (i.e. when using physical light units and over-exposing the image)
@@ -74,7 +77,7 @@ struct DirectionalLightData {
 	float fade_from;
 	float fade_to;
 	uint sscs_index;
-	uint pad;
+	uint flags; // DIRECTIONAL_LIGHT_FLAG_*
 	uint bake_mode;
 	float volumetric_fog_energy;
 	vec4 shadow_bias;

@@ -412,7 +412,7 @@ void main() {
 				vec3 shadow_attenuation = vec3(1.0);
 
 				if (directional_lights.data[i].shadow_opacity > 0.001) {
-					float depth_z = -view_pos.z;
+					float depth_z = bool(directional_lights.data[i].flags & DIRECTIONAL_LIGHT_FLAG_CLIPMAP) ? length(view_pos) : -view_pos.z;
 
 					vec4 pssm_coord;
 					vec3 light_dir = directional_lights.data[i].direction;
@@ -443,7 +443,7 @@ void main() {
 					float depth = texture(sampler2D(directional_shadow_atlas, linear_sampler), pssm_coord.xy).r;
 					float shadow = exp(min(0.0, (pssm_coord.z - depth)) * z_range * INV_FOG_FADE);
 
-					shadow = mix(shadow, 1.0, smoothstep(directional_lights.data[i].fade_from, directional_lights.data[i].fade_to, view_pos.z)); //done with negative values for performance
+					shadow = mix(shadow, 1.0, smoothstep(directional_lights.data[i].fade_from, directional_lights.data[i].fade_to, -depth_z)); //done with negative values for performance
 
 					shadow_attenuation = mix(vec3(1.0 - directional_lights.data[i].shadow_opacity), vec3(1.0), shadow);
 				}
