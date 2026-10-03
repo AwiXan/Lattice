@@ -228,6 +228,14 @@ def get_opts():
         BoolVariable("use_llvm", "Use the LLVM compiler", False),
         BoolVariable("use_static_cpp", "Link MinGW/MSVC C++ runtime libraries statically", True),
         BoolVariable("use_asan", "Use address sanitizer (ASAN)", False),
+        EnumVariable(
+            "pgo",
+            "Profile-guided optimization (MSVC with lto=full): link an instrumented build, run it on a"
+            " representative workload (it needs pgort140.dll from Visual Studio beside it), then link again with use",
+            "none",
+            ["none", "instrument", "use"],
+            ignorecase=2,
+        ),
         BoolVariable("use_ubsan", "Use LLVM compiler undefined behavior sanitizer (UBSAN)", False),
         BoolVariable("debug_crt", "Compile with MSVC's debug CRT (/MDd)", False),
         BoolVariable("incremental_link", "Use MSVC incremental linking. May increase or decrease build times.", False),
@@ -588,6 +596,15 @@ def configure_msvc(env: "SConsEnvironment"):
         else:
             env.AppendUnique(LINKFLAGS=["/LTCG"])
         env.AppendUnique(ARFLAGS=["/LTCG"])
+
+    if env["pgo"] != "none":
+        # The profile is applied at link time to the same /GL objects: going
+        # from instrument to use relinks only. The .pgd sits beside the binary,
+        # and the runs leave their .pgc files there for the next link to take.
+        if env["lto"] != "full" or env["use_llvm"]:
+            print("Profile-guided optimization needs MSVC and `lto=full`.")
+            sys.exit(255)
+        env.Append(LINKFLAGS=["/GENPROFILE" if env["pgo"] == "instrument" else "/USEPROFILE"])
 
     env.Append(LINKFLAGS=["/NATVIS:platform\\windows\\godot.natvis"])
 
