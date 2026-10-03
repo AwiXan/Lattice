@@ -2942,6 +2942,11 @@
 		<member name="rendering/environment/glow/upscale_mode.mobile" type="int" setter="" getter="" default="0">
 			Lower-end override for [member rendering/environment/glow/upscale_mode] on mobile devices, due to performance concerns or driver support.
 		</member>
+		<member name="rendering/environment/refraction/max_layers" type="int" setter="" getter="" default="4">
+			How many times more the screen texture may be copied within one frame. The screen texture is copied once per frame, before the transparent objects are drawn, so an object that reads it (refraction, [code]hint_screen_texture[/code]) does not show the other transparent objects behind it. With refraction layers, the screen is copied again before the objects of a [member Material.render_priority] that read it are drawn, whenever objects of a lower priority were drawn since the last copy: those are then seen through the ones of the higher priority. Every copy has a cost, so none is made while all transparent objects in view share one priority, and [code]0[/code] turns the feature off.
+			[b]Note:[/b] Only supported in the Forward+ renderer.
+			[b]Note:[/b] This property is only read when the project starts. To change it at run-time, call [method RenderingServer.refraction_set_max_layers] instead.
+		</member>
 		<member name="rendering/environment/screen_space_reflection/half_size" type="bool" setter="" getter="" default="true" keywords="resolution">
 			If [code]true[/code], screen-space reflections will be rendered at half size and then upscaled before being added to the scene. This is faster but may look pixelated or cause flickering. If [code]false[/code], screen-space reflections will be rendered at full size.
 		</member>

@@ -1047,6 +1047,7 @@ public:
 
 	virtual void gi_set_use_half_resolution(bool p_enable) = 0;
 	virtual void gi_set_resolution(RSE::GIResolution p_resolution) = 0;
+	virtual void refraction_set_max_layers(int p_layers) = 0;
 	// From rendering/global_illumination/gi/resolution - or use_half_resolution
 	// turned off, in projects from before it.
 	static RSE::GIResolution gi_get_project_resolution();

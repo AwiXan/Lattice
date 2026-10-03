@@ -2720,6 +2720,7 @@ void RenderingServer::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("gi_set_use_half_resolution", "half_resolution"), &RenderingServer::gi_set_use_half_resolution);
 	ClassDB::bind_method(D_METHOD("gi_set_resolution", "resolution"), &RenderingServer::gi_set_resolution);
+	ClassDB::bind_method(D_METHOD("refraction_set_max_layers", "layers"), &RenderingServer::refraction_set_max_layers);
 
 	BIND_ENUM_CONSTANT(RSE::GI_RESOLUTION_FULL);
 	BIND_ENUM_CONSTANT(RSE::GI_RESOLUTION_HALF);
@@ -3791,6 +3792,8 @@ void RenderingServer::init() {
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/reflections/reflection_atlas/reflection_size.mobile", PROPERTY_HINT_RANGE, "4,2048,1"), 128);
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/reflections/reflection_atlas/reflection_count", PROPERTY_HINT_RANGE, "1,256,1"), 64);
 	GLOBAL_DEF_RST("rendering/reflections/specular_occlusion/enabled", true);
+
+	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/environment/refraction/max_layers", PROPERTY_HINT_RANGE, "0,16,1"), 4);
 
 	GLOBAL_DEF("rendering/global_illumination/gi/use_half_resolution", true);
 	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "rendering/global_illumination/hddagi/last_cascade_fade", PROPERTY_HINT_RANGE, "0.0,1.0,0.01"), 0.25);

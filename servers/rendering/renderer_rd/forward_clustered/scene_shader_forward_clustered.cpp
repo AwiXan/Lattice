@@ -53,6 +53,7 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	ShaderCompiler::GeneratedCode gen_code;
 
 	blend_mode = BLEND_MODE_MIX;
+	uses_oit = false;
 	depth_test_disabledi = 0;
 	depth_test_invertedi = 0;
 	alpha_antialiasing_mode = ALPHA_ANTIALIASING_OFF;
@@ -103,6 +104,7 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	actions.render_mode_values["blend_sub"] = Pair<int *, int>(&blend_mode, BLEND_MODE_SUB);
 	actions.render_mode_values["blend_mul"] = Pair<int *, int>(&blend_mode, BLEND_MODE_MUL);
 	actions.render_mode_values["blend_premul_alpha"] = Pair<int *, int>(&blend_mode, BLEND_MODE_PREMULTIPLIED_ALPHA);
+	actions.render_mode_flags["blend_oit"] = &uses_oit;
 
 	actions.render_mode_values["alpha_to_coverage"] = Pair<int *, int>(&alpha_antialiasing_mode, ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE);
 	actions.render_mode_values["alpha_to_coverage_and_one"] = Pair<int *, int>(&alpha_antialiasing_mode, ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE_AND_TO_ONE);
@@ -245,7 +247,8 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 		blend_mode = BLEND_MODE_ALPHA_TO_COVERAGE;
 	}
 
-	uses_blend_alpha = blend_mode_uses_blend_alpha(BlendMode(blend_mode));
+	// Order-independent surfaces are all drawn in the transparent pass, opaque or not.
+	uses_blend_alpha = blend_mode_uses_blend_alpha(BlendMode(blend_mode)) || uses_oit;
 }
 
 bool SceneShaderForwardClustered::ShaderData::is_animated() const {
@@ -443,6 +446,25 @@ void SceneShaderForwardClustered::ShaderData::_create_pipeline(PipelineKey p_pip
 			}
 
 			blend_state = blend_state_color_blend;
+
+			if (uses_oit && (p_pipeline_key.color_pass_flags & PIPELINE_COLOR_PASS_FLAG_SEPARATE_SPECULAR)) {
+				// Weighted blended order-independent transparency: the colors are
+				// summed, weighted, in attachment 0, and how much is seen through
+				// them is multiplied in attachment 1.
+				RD::PipelineColorBlendState::Attachment accumulation;
+				accumulation.enable_blend = true;
+				accumulation.src_color_blend_factor = RD::BLEND_FACTOR_ONE;
+				accumulation.dst_color_blend_factor = RD::BLEND_FACTOR_ONE;
+				accumulation.src_alpha_blend_factor = RD::BLEND_FACTOR_ONE;
+				accumulation.dst_alpha_blend_factor = RD::BLEND_FACTOR_ONE;
+				RD::PipelineColorBlendState::Attachment revealage;
+				revealage.enable_blend = true;
+				revealage.src_color_blend_factor = RD::BLEND_FACTOR_ZERO;
+				revealage.dst_color_blend_factor = RD::BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+				revealage.src_alpha_blend_factor = RD::BLEND_FACTOR_ZERO;
+				revealage.dst_alpha_blend_factor = RD::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+				blend_state.attachments = { accumulation, revealage, RD::PipelineColorBlendState::Attachment() };
+			}
 
 			if (depth_draw == DEPTH_DRAW_OPAQUE) {
 				depth_stencil_state.enable_depth_write = false; //alpha does not draw depth
@@ -889,6 +911,7 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 		actions.render_mode_defines["cull_disabled"] = "#define DO_SIDE_CHECK\n";
 		actions.render_mode_defines["particle_trails"] = "#define USE_PARTICLE_TRAILS\n";
 		actions.render_mode_defines["depth_prepass_alpha"] = "#define USE_OPAQUE_PREPASS\n";
+		actions.render_mode_defines["blend_oit"] = "#define BLEND_OIT_USED\n";
 
 		actions.render_mode_defines["depth_draw_never"] = "#define DEPTH_DRAW_NEVER_USED\n";
 		actions.render_mode_defines["depth_draw_always"] = "#define DEPTH_DRAW_ALWAYS_USED\n";

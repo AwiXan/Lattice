@@ -125,6 +125,10 @@ protected:
 	RendererRD::SkyRD sky;
 	RendererRD::GI gi;
 
+	// How many times more the screen may be copied within the transparent pass,
+	// for surfaces of a higher render priority to read the lower ones.
+	int refraction_max_layers = 4;
+
 	virtual void _update_shader_quality_settings() {}
 	static bool _debug_draw_can_use_effects(RSE::ViewportDebugDraw p_debug_draw);
 
@@ -248,6 +252,7 @@ public:
 	virtual Ref<RenderSceneBuffers> render_buffers_create() override;
 	virtual void gi_set_use_half_resolution(bool p_enable) override;
 	virtual void gi_set_resolution(RSE::GIResolution p_resolution) override;
+	virtual void refraction_set_max_layers(int p_layers) override;
 
 	RID render_buffers_get_default_voxel_gi_buffer();
 

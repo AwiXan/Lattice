@@ -1090,6 +1090,15 @@ layout(location = 1) out vec4 specular_buffer; //specular and SSS (subsurface sc
 layout(location = 0) out vec4 frag_color;
 #endif // MODE_SEPARATE_SPECULAR
 
+#if defined(MODE_SEPARATE_SPECULAR) && defined(BLEND_OIT_USED)
+// An order-independent transparent surface is never drawn with its specular
+// apart. With the two outputs it is drawn into the order-independent buffers
+// instead: its weighted color goes in the first, how much is seen through it
+// in the second.
+#define MODE_OIT
+vec4 frag_color;
+#endif
+
 #endif // RENDER DEPTH
 
 #ifdef MOTION_VECTORS
@@ -3232,7 +3241,7 @@ void fragment_shader(in SceneData scene_data) {
 	diffuse_light *= 1.0 - metallic;
 	ambient_light *= 1.0 - metallic;
 
-#ifdef MODE_SEPARATE_SPECULAR
+#if defined(MODE_SEPARATE_SPECULAR) && !defined(MODE_OIT)
 
 #ifdef MODE_UNSHADED
 	diffuse_buffer = vec4(albedo.rgb, 0.0);
@@ -3300,7 +3309,7 @@ void fragment_shader(in SceneData scene_data) {
 
 #CODE : COMPOSE
 
-#ifdef MODE_SEPARATE_SPECULAR
+#if defined(MODE_SEPARATE_SPECULAR) && !defined(MODE_OIT)
 		diffuse_buffer = vec4(diffuse_color, sss_strength);
 		specular_buffer = vec4(specular_color, metallic);
 #else
@@ -3308,6 +3317,20 @@ void fragment_shader(in SceneData scene_data) {
 #endif
 	}
 #endif //COMPOSE_CODE_USED
+
+#ifdef MODE_OIT
+	{
+		// Weighted blended order-independent transparency (McGuire and Bavoil,
+		// 2013): the color goes in weighted by how near and how opaque the
+		// surface is, and how much is seen through it goes in beside. The
+		// weights are kept within what a half float holds for a few layers of
+		// bright surfaces.
+		float oit_alpha = clamp(frag_color.a, 0.0, 1.0);
+		float oit_weight = oit_alpha * clamp(300.0 / (1.0 + vertex.z * vertex.z * 0.25), 0.1, 300.0);
+		diffuse_buffer = vec4(frag_color.rgb * oit_alpha, oit_alpha) * oit_weight;
+		specular_buffer = vec4(oit_alpha);
+	}
+#endif
 
 #endif //MODE_RENDER_DEPTH
 #ifdef MOTION_VECTORS

@@ -44,6 +44,7 @@
 #include "servers/rendering/renderer_rd/shaders/effects/octmap_filter_raster.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/octmap_roughness.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/octmap_roughness_raster.glsl.gen.h"
+#include "servers/rendering/renderer_rd/shaders/effects/oit_composite.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/effects/specular_merge.glsl.gen.h"
 
 namespace RendererRD {
@@ -371,6 +372,19 @@ private:
 
 	} specular_merge;
 
+	enum OITCompositeMode {
+		OIT_COMPOSITE,
+		OIT_COMPOSITE_MULTIVIEW,
+		OIT_COMPOSITE_MAX
+	};
+
+	// Order-independent transparency, mixed into the color buffer.
+	struct OITComposite {
+		OitCompositeShaderRD shader;
+		RID shader_version;
+		PipelineCacheRD pipelines[OIT_COMPOSITE_MAX];
+	} oit_composite_data;
+
 	static CopyEffects *singleton;
 
 public:
@@ -416,6 +430,7 @@ public:
 	void octmap_roughness_raster(RID p_source_rd_texture, RID p_dest_framebuffer, uint32_t p_sample_count, float p_roughness, uint32_t p_source_size, uint32_t p_dest_size, float p_border_size);
 
 	void merge_specular(RID p_dest_framebuffer, RID p_specular, RID p_base, RID p_reflection, uint32_t p_view_count);
+	void oit_composite(RID p_dest_framebuffer, RID p_accumulation, RID p_revealage, uint32_t p_view_count, const Rect2 &p_region = Rect2());
 };
 
 } // namespace RendererRD

@@ -3610,6 +3610,14 @@
 				Sets how often the reflection probe updates. Can either be once or every frame.
 			</description>
 		</method>
+		<method name="refraction_set_max_layers">
+			<return type="void" />
+			<param index="0" name="layers" type="int" />
+			<description>
+				Sets how many times more the screen texture may be copied within one frame, from [code]0[/code] to [code]16[/code]. The screen texture is copied once per frame, before the transparent objects are drawn, so an object that reads it (refraction, [code]hint_screen_texture[/code]) does not show the other transparent objects behind it. With refraction layers, the screen is copied again before the objects of a [member Material.render_priority] that read it are drawn, whenever objects of a lower priority were drawn since the last copy: those are then seen through the ones of the higher priority. Every copy has a cost, so none is made while all transparent objects in view share one priority, and [code]0[/code] turns the feature off. Takes effect on the next frame. Equivalent to [member ProjectSettings.rendering/environment/refraction/max_layers].
+				[b]Note:[/b] Only supported in the Forward+ renderer.
+			</description>
+		</method>
 		<method name="request_frame_drawn_callback">
 			<return type="void" />
 			<param index="0" name="callable" type="Callable" />

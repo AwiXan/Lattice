@@ -1453,6 +1453,7 @@ public:
 	PASS0R(Ref<RenderSceneBuffers>, render_buffers_create)
 	PASS1(gi_set_use_half_resolution, bool)
 	PASS1(gi_set_resolution, RSE::GIResolution)
+	PASS1(refraction_set_max_layers, int)
 
 	/* Misc */
 	PASS1(set_debug_draw_mode, RSE::ViewportDebugDraw)

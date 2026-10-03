@@ -686,6 +686,10 @@
 		<constant name="BLEND_MODE_PREMULT_ALPHA" value="4" enum="BlendMode">
 			The color of the object is added to the background and the alpha channel is used to mask out the background. This is effectively a hybrid of the blend mix and add modes, useful for effects like fire where you want the flame to add but the smoke to mix. By default, this works with unshaded materials using premultiplied textures. For shaded materials, use the [code]PREMUL_ALPHA_FACTOR[/code] built-in so that lighting can be modulated as well.
 		</constant>
+		<constant name="BLEND_MODE_OIT" value="5" enum="BlendMode">
+			The color of the object is blended on top of the background as with [constant BLEND_MODE_MIX], but whichever order the transparent objects are drawn in (weighted blended order-independent transparency): surfaces that overlap or cross neither hide one another wrongly nor pop as the camera moves. What is seen through several of them is a weighted average, in which the nearer and the more opaque count for more: exact for one surface, close for a few. Objects with this mode are drawn together after all other transparent objects, and [member Material.render_priority] does not order them. In custom [code]spatial[/code] shaders, use [code]render_mode blend_oit;[/code].
+			[b]Note:[/b] Only supported in the Forward+ renderer. The Mobile and Compatibility renderers, and reflection probes, draw it as [constant BLEND_MODE_MIX].
+		</constant>
 		<constant name="ALPHA_ANTIALIASING_OFF" value="0" enum="AlphaAntiAliasing">
 			Disables Alpha AntiAliasing for the material.
 		</constant>

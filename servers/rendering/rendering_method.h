@@ -345,6 +345,7 @@ public:
 
 	virtual void gi_set_use_half_resolution(bool p_enable) = 0;
 	virtual void gi_set_resolution(RSE::GIResolution p_resolution) = 0;
+	virtual void refraction_set_max_layers(int p_layers) = 0;
 
 	virtual void set_debug_draw_mode(RSE::ViewportDebugDraw p_debug_draw) = 0;
 

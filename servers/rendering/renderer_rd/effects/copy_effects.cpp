@@ -359,6 +359,39 @@ CopyEffects::CopyEffects(BitField<RasterEffects> p_raster_effects) {
 			}
 		}
 	}
+
+	{
+		Vector<String> oit_modes;
+		oit_modes.push_back("\n"); // OIT_COMPOSITE
+		oit_modes.push_back("\n#define USE_MULTIVIEW\n"); // OIT_COMPOSITE_MULTIVIEW
+
+		oit_composite_data.shader.initialize(oit_modes);
+
+		if (!RendererCompositorRD::get_singleton()->is_xr_enabled()) {
+			oit_composite_data.shader.set_variant_enabled(OIT_COMPOSITE_MULTIVIEW, false);
+		}
+
+		oit_composite_data.shader_version = oit_composite_data.shader.version_create();
+
+		// Mixed in as any other transparent surface is.
+		RD::PipelineColorBlendState::Attachment ba;
+		ba.enable_blend = true;
+		ba.src_color_blend_factor = RD::BLEND_FACTOR_SRC_ALPHA;
+		ba.dst_color_blend_factor = RD::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+		ba.src_alpha_blend_factor = RD::BLEND_FACTOR_ONE;
+		ba.dst_alpha_blend_factor = RD::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+		ba.color_blend_op = RD::BLEND_OP_ADD;
+		ba.alpha_blend_op = RD::BLEND_OP_ADD;
+
+		RD::PipelineColorBlendState blend_mix;
+		blend_mix.attachments.push_back(ba);
+
+		for (int i = 0; i < OIT_COMPOSITE_MAX; i++) {
+			if (oit_composite_data.shader.is_variant_enabled(i)) {
+				oit_composite_data.pipelines[i].setup(oit_composite_data.shader.version_get_shader(oit_composite_data.shader_version, i), RD::RENDER_PRIMITIVE_TRIANGLES, RD::PipelineRasterizationState(), RD::PipelineMultisampleState(), RD::PipelineDepthStencilState(), blend_mix, 0);
+			}
+		}
+	}
 }
 
 CopyEffects::~CopyEffects() {
@@ -396,6 +429,7 @@ CopyEffects::~CopyEffects() {
 
 	copy.shader.version_free(copy.shader_version);
 	specular_merge.shader.version_free(specular_merge.shader_version);
+	oit_composite_data.shader.version_free(oit_composite_data.shader_version);
 
 	RD::get_singleton()->free_rid(filter.coefficient_buffer);
 
@@ -1481,6 +1515,32 @@ void CopyEffects::octmap_roughness_raster(RID p_source_rd_texture, RID p_dest_fr
 
 	RD::get_singleton()->draw_list_draw(draw_list, false, 1u, 3u);
 	RD::get_singleton()->draw_list_end();
+}
+
+void CopyEffects::oit_composite(RID p_dest_framebuffer, RID p_accumulation, RID p_revealage, uint32_t p_view_count, const Rect2 &p_region) {
+	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
+	ERR_FAIL_NULL(uniform_set_cache);
+	MaterialStorage *material_storage = MaterialStorage::get_singleton();
+	ERR_FAIL_NULL(material_storage);
+
+	RID default_sampler = material_storage->sampler_rd_get_default(RSE::CANVAS_ITEM_TEXTURE_FILTER_NEAREST, RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
+
+	RD::get_singleton()->draw_command_begin_label("Composite Order-Independent Transparency");
+
+	RD::DrawListID draw_list = RD::get_singleton()->draw_list_begin(p_dest_framebuffer, RD::DRAW_DEFAULT_ALL, Vector<Color>(), 1.0f, 0, p_region);
+
+	const int mode = p_view_count > 1 ? OIT_COMPOSITE_MULTIVIEW : OIT_COMPOSITE;
+	RID shader = oit_composite_data.shader.version_get_shader(oit_composite_data.shader_version, mode);
+	RD::get_singleton()->draw_list_bind_render_pipeline(draw_list, oit_composite_data.pipelines[mode].get_render_pipeline(RD::INVALID_ID, RD::get_singleton()->framebuffer_get_format(p_dest_framebuffer)));
+
+	RD::Uniform u_accumulation(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 0, Vector<RID>({ default_sampler, p_accumulation }));
+	RD::Uniform u_revealage(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 1, Vector<RID>({ default_sampler, p_revealage }));
+	RD::get_singleton()->draw_list_bind_uniform_set(draw_list, uniform_set_cache->get_cache(shader, 0, u_accumulation, u_revealage), 0);
+
+	RD::get_singleton()->draw_list_draw(draw_list, false, 1u, 3u);
+	RD::get_singleton()->draw_list_end();
+
+	RD::get_singleton()->draw_command_end_label();
 }
 
 void CopyEffects::merge_specular(RID p_dest_framebuffer, RID p_specular, RID p_base, RID p_reflection, uint32_t p_view_count) {

@@ -66,6 +66,35 @@ void RenderForwardClustered::RenderBufferDataForwardClustered::ensure_specular()
 	}
 }
 
+void RenderForwardClustered::RenderBufferDataForwardClustered::ensure_oit() {
+	ERR_FAIL_NULL(render_buffers);
+
+	if (!render_buffers->has_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_OIT_ACCUMULATION)) {
+		const bool msaa = render_buffers->get_msaa_3d() != RSE::VIEWPORT_MSAA_DISABLED;
+		const bool storage = render_buffers->get_can_be_storage();
+		render_buffers->create_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_OIT_ACCUMULATION, RD::DATA_FORMAT_R16G16B16A16_SFLOAT, RenderSceneBuffersRD::get_color_usage_bits(msaa, false, storage));
+		render_buffers->create_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_OIT_REVEALAGE, RD::DATA_FORMAT_R8_UNORM, RenderSceneBuffersRD::get_color_usage_bits(msaa, false, storage));
+		if (msaa) {
+			render_buffers->create_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_OIT_ACCUMULATION_MSAA, RD::DATA_FORMAT_R16G16B16A16_SFLOAT, RenderSceneBuffersRD::get_color_usage_bits(false, true, storage), render_buffers->get_texture_samples());
+			render_buffers->create_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_OIT_REVEALAGE_MSAA, RD::DATA_FORMAT_R8_UNORM, RenderSceneBuffersRD::get_color_usage_bits(false, true, storage), render_buffers->get_texture_samples());
+		}
+	}
+}
+
+RID RenderForwardClustered::RenderBufferDataForwardClustered::get_oit_fb() {
+	ERR_FAIL_NULL_V(render_buffers, RID());
+	ensure_oit();
+
+	// As the transparent pass is drawn: the color, nothing where the specular
+	// goes in the opaque pass - here how much is seen through - and the depth.
+	const bool use_msaa = render_buffers->get_msaa_3d() != RSE::VIEWPORT_MSAA_DISABLED;
+	RID accumulation = render_buffers->get_texture(RB_SCOPE_FORWARD_CLUSTERED, use_msaa ? RB_TEX_OIT_ACCUMULATION_MSAA : RB_TEX_OIT_ACCUMULATION);
+	RID revealage = render_buffers->get_texture(RB_SCOPE_FORWARD_CLUSTERED, use_msaa ? RB_TEX_OIT_REVEALAGE_MSAA : RB_TEX_OIT_REVEALAGE);
+	RID depth = use_msaa ? render_buffers->get_texture(RB_SCOPE_BUFFERS, RB_TEX_DEPTH_MSAA) : render_buffers->get_depth_texture();
+
+	return FramebufferCacheRD::get_singleton()->get_cache_multiview(render_buffers->get_view_count(), accumulation, revealage, RID(), depth);
+}
+
 void RenderForwardClustered::RenderBufferDataForwardClustered::ensure_normal_roughness_texture() {
 	ERR_FAIL_NULL(render_buffers);
 
@@ -655,6 +684,9 @@ void RenderForwardClustered::_render_list(RenderingDevice::DrawListID p_draw_lis
 				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_MOTION_VECTORS);
 				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_SEPARATE_SPECULAR | COLOR_PASS_FLAG_MULTIVIEW | COLOR_PASS_FLAG_MOTION_VECTORS);
 				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_TRANSPARENT | COLOR_PASS_FLAG_MULTIVIEW | COLOR_PASS_FLAG_MOTION_VECTORS);
+				// Order-independent transparency.
+				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_TRANSPARENT | COLOR_PASS_FLAG_SEPARATE_SPECULAR);
+				VALID_FLAG_COMBINATION(COLOR_PASS_FLAG_TRANSPARENT | COLOR_PASS_FLAG_SEPARATE_SPECULAR | COLOR_PASS_FLAG_MULTIVIEW);
 				default: {
 					ERR_FAIL_MSG("Invalid color pass flag combination " + itos(p_params->color_pass_flags));
 				}
@@ -1966,6 +1998,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	uint32_t color_pass_flags = 0;
 	Vector<Color> depth_pass_clear;
 	bool using_separate_specular = false;
+	bool using_oit = false;
 	bool using_ssr = false;
 	bool using_sscs = false;
 	bool using_hddagi = false;
@@ -2565,7 +2598,93 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 
 		RID alpha_framebuffer = rb_data.is_valid() ? rb_data->get_color_pass_fb(transparent_color_pass_flags) : color_only_framebuffer;
 		RenderListParameters render_list_params(render_list[RENDER_LIST_ALPHA].elements.ptr(), render_list[RENDER_LIST_ALPHA].element_info.ptr(), render_list[RENDER_LIST_ALPHA].elements.size(), reverse_cull, PASS_MODE_COLOR, transparent_color_pass_flags, rb_data.is_null(), p_render_data->directional_light_soft_shadows, rp_uniform_set, get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_WIREFRAME, Vector2(), p_render_data->scene_data->lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, p_render_data->scene_data->view_count, 0, base_specialization, !is_reflection_probe);
-		_render_list_with_draw_list(&render_list_params, alpha_framebuffer, RD::DRAW_DEFAULT_ALL, Vector<Color>(), 0.0f, 0u, p_render_data->render_region);
+
+		GeometryInstanceSurfaceDataCache **alpha_elements = render_list[RENDER_LIST_ALPHA].elements.ptr();
+		const uint32_t alpha_count = render_list[RENDER_LIST_ALPHA].elements.size();
+
+		// Order-independent surfaces are sorted last, and drawn into buffers of
+		// their own once the sorted ones are in. Where there are no such buffers
+		// (reflection probes), they are sorted and mixed as the others.
+		uint32_t sorted_count = alpha_count;
+		if (rb_data.is_valid()) {
+			while (sorted_count > 0 && (alpha_elements[sorted_count - 1]->flags & GeometryInstanceSurfaceDataCache::FLAG_USES_OIT)) {
+				sorted_count--;
+			}
+		}
+		using_oit = sorted_count < alpha_count;
+
+		// Refraction layers. The screen is copied once before the pass, so a
+		// surface reading it never sees another transparent one. Render priority
+		// asks for more: before the surfaces of a priority that reads the screen
+		// are drawn, what the lower ones left is copied for them.
+		int screen_copies_left = (rb_data.is_valid() && scene_state.used_screen_texture) ? refraction_max_layers : 0;
+		const RD::FramebufferFormatID alpha_framebuffer_format = RD::get_singleton()->framebuffer_get_format(alpha_framebuffer);
+		render_list_params.framebuffer_format = alpha_framebuffer_format;
+		uint32_t layer_from = 0;
+		do {
+			uint32_t layer_to = sorted_count;
+			bool next_reads_depth = false;
+			for (uint32_t i = layer_from + 1; screen_copies_left > 0 && i < sorted_count; i++) {
+				if (alpha_elements[i]->sort.priority == alpha_elements[i - 1]->sort.priority) {
+					continue;
+				}
+				bool reads_screen = false;
+				for (uint32_t j = i; j < sorted_count && alpha_elements[j]->sort.priority == alpha_elements[i]->sort.priority; j++) {
+					reads_screen = reads_screen || (alpha_elements[j]->flags & GeometryInstanceSurfaceDataCache::FLAG_USES_SCREEN_TEXTURE);
+					next_reads_depth = next_reads_depth || (alpha_elements[j]->flags & GeometryInstanceSurfaceDataCache::FLAG_USES_DEPTH_TEXTURE);
+				}
+				if (reads_screen) {
+					layer_to = i;
+					break;
+				}
+				next_reads_depth = false;
+			}
+
+			RD::DrawListID draw_list = RD::get_singleton()->draw_list_begin(alpha_framebuffer, RD::DRAW_DEFAULT_ALL, Vector<Color>(), 0.0f, 0u, p_render_data->render_region);
+			_render_list(draw_list, alpha_framebuffer_format, &render_list_params, layer_from, layer_to);
+			RD::get_singleton()->draw_list_end();
+
+			layer_from = layer_to;
+			if (layer_from < sorted_count) {
+				screen_copies_left--;
+				RENDER_TIMESTAMP("Copy Screen Texture (Refraction Layer)");
+				if (use_msaa) {
+					for (uint32_t v = 0; v < rb->get_view_count(); v++) {
+						RD::get_singleton()->texture_resolve_multisample(rb->get_color_msaa(v), rb->get_internal_texture(v));
+					}
+				}
+				_render_buffers_copy_screen_texture(p_render_data);
+				if (next_reads_depth) {
+					// With what the transparent surfaces that write depth left in it.
+					if (use_msaa) {
+						for (uint32_t v = 0; v < rb->get_view_count(); v++) {
+							resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
+						}
+					}
+					_render_buffers_copy_depth_texture(p_render_data);
+				}
+			}
+		} while (layer_from < sorted_count);
+
+		if (using_oit) {
+			RENDER_TIMESTAMP("Render 3D Order-Independent Transparent Pass");
+
+			// Drawn with the shader variant of two outputs: the one that keeps the
+			// specular apart in the opaque pass, here in the transparent one.
+			scene_shader.enable_advanced_shader_group(p_render_data->scene_data->view_count > 1);
+			const uint32_t oit_color_pass_flags = transparent_color_pass_flags | uint32_t(COLOR_PASS_FLAG_SEPARATE_SPECULAR);
+
+			RID oit_framebuffer = rb_data->get_oit_fb();
+			RenderListParameters oit_list_params(render_list[RENDER_LIST_ALPHA].elements.ptr(), render_list[RENDER_LIST_ALPHA].element_info.ptr(), render_list[RENDER_LIST_ALPHA].elements.size(), reverse_cull, PASS_MODE_COLOR, oit_color_pass_flags, rb_data.is_null(), p_render_data->directional_light_soft_shadows, rp_uniform_set, get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_WIREFRAME, Vector2(), p_render_data->scene_data->lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, p_render_data->scene_data->view_count, 0, base_specialization, !is_reflection_probe);
+			const RD::FramebufferFormatID oit_framebuffer_format = RD::get_singleton()->framebuffer_get_format(oit_framebuffer);
+			oit_list_params.framebuffer_format = oit_framebuffer_format;
+
+			// Nothing summed, and all of what is behind seen.
+			Vector<Color> oit_clear = { Color(0, 0, 0, 0), Color(1, 1, 1, 1) };
+			RD::DrawListID draw_list = RD::get_singleton()->draw_list_begin(oit_framebuffer, RD::DRAW_CLEAR_COLOR_0 | RD::DRAW_CLEAR_COLOR_1, oit_clear, 0.0f, 0u, p_render_data->render_region);
+			_render_list(draw_list, oit_framebuffer_format, &oit_list_params, sorted_count, alpha_count);
+			RD::get_singleton()->draw_list_end();
+		}
 	}
 
 	RD::get_singleton()->draw_command_end_label();
@@ -2587,6 +2706,21 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	}
 
 	RD::get_singleton()->draw_command_end_label();
+
+	if (using_oit) {
+		RENDER_TIMESTAMP("Composite Order-Independent Transparency");
+
+		if (use_msaa) {
+			for (uint32_t v = 0; v < rb->get_view_count(); v++) {
+				RD::get_singleton()->texture_resolve_multisample(rb->get_texture_slice(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_OIT_ACCUMULATION_MSAA, v, 0), rb->get_texture_slice(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_OIT_ACCUMULATION, v, 0));
+				RD::get_singleton()->texture_resolve_multisample(rb->get_texture_slice(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_OIT_REVEALAGE_MSAA, v, 0), rb->get_texture_slice(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_OIT_REVEALAGE, v, 0));
+			}
+		}
+
+		// Over the color buffer as it is once the multisampled one is resolved.
+		RID resolved_color_fb = FramebufferCacheRD::get_singleton()->get_cache_multiview(rb->get_view_count(), rb->get_internal_texture());
+		copy_effects->oit_composite(resolved_color_fb, rb_data->get_oit_accumulation(), rb_data->get_oit_revealage(), rb->get_view_count(), p_render_data->render_region);
+	}
 
 	RD::get_singleton()->draw_command_begin_label("Copy Framebuffer for SSIL/SSR");
 	if (using_ssil || using_ssr) {
@@ -4609,6 +4743,10 @@ void RenderForwardClustered::_geometry_instance_add_surface_with_material(Geomet
 
 	if (p_material->shader_data->stencil_enabled) {
 		flags |= GeometryInstanceSurfaceDataCache::FLAG_USES_STENCIL;
+	}
+
+	if (p_material->shader_data->uses_oit) {
+		flags |= GeometryInstanceSurfaceDataCache::FLAG_USES_OIT;
 	}
 
 	if (p_material->shader_data->uses_alpha_pass()) {

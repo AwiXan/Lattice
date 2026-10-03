@@ -89,8 +89,11 @@ public:
 	};
 
 	enum PipelineColorPassFlags {
-		PIPELINE_COLOR_PASS_FLAG_TRANSPARENT = 1 << 0, // Can't combine with SEPARATE_SPECULAR.
-		PIPELINE_COLOR_PASS_FLAG_SEPARATE_SPECULAR = 1 << 1, // Can't combine with TRANSPARENT.
+		// Both together: order-independent transparency, whose surfaces write the
+		// weighted color and how much is seen through them where the diffuse and
+		// the specular of an opaque one go.
+		PIPELINE_COLOR_PASS_FLAG_TRANSPARENT = 1 << 0,
+		PIPELINE_COLOR_PASS_FLAG_SEPARATE_SPECULAR = 1 << 1,
 		PIPELINE_COLOR_PASS_FLAG_LIGHTMAP = 1 << 2,
 		PIPELINE_COLOR_PASS_FLAG_MULTIVIEW = 1 << 3,
 		PIPELINE_COLOR_PASS_FLAG_MOTION_VECTORS = 1 << 4,
@@ -243,6 +246,8 @@ public:
 		bool uses_point_size = false;
 		bool uses_alpha = false;
 		bool uses_blend_alpha = false;
+		// blend_oit: drawn order-independent, after the sorted transparent surfaces.
+		bool uses_oit = false;
 		bool uses_alpha_clip = false;
 		bool uses_alpha_antialiasing = false;
 		bool uses_depth_prepass_alpha = false;

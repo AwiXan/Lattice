@@ -994,6 +994,7 @@ public:
 
 	FUNC1(gi_set_use_half_resolution, bool)
 	FUNC1(gi_set_resolution, RSE::GIResolution)
+	FUNC1(refraction_set_max_layers, int)
 
 #undef server_name
 #undef ServerName

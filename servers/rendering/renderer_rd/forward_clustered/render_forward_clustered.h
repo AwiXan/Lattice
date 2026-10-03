@@ -54,6 +54,10 @@
 #define RB_TEX_NORMAL_ROUGHNESS_MSAA SNAME("normal_roughness_msaa")
 #define RB_TEX_VOXEL_GI SNAME("voxel_gi")
 #define RB_TEX_VOXEL_GI_MSAA SNAME("voxel_gi_msaa")
+#define RB_TEX_OIT_ACCUMULATION SNAME("oit_accumulation")
+#define RB_TEX_OIT_ACCUMULATION_MSAA SNAME("oit_accumulation_msaa")
+#define RB_TEX_OIT_REVEALAGE SNAME("oit_revealage")
+#define RB_TEX_OIT_REVEALAGE_MSAA SNAME("oit_revealage_msaa")
 
 namespace RendererSceneRenderImplementation {
 
@@ -123,6 +127,13 @@ public:
 		};
 
 		RID render_hddagi_uniform_set;
+
+		// Order-independent transparency: where its surfaces are drawn, to be
+		// mixed into the color buffer once all of them are in.
+		void ensure_oit();
+		RID get_oit_fb();
+		RID get_oit_accumulation() const { return render_buffers->get_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_OIT_ACCUMULATION); }
+		RID get_oit_revealage() const { return render_buffers->get_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_OIT_REVEALAGE); }
 
 		void ensure_specular();
 		bool has_specular() const { return render_buffers->has_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_SPECULAR); }
@@ -525,6 +536,7 @@ private:
 			FLAG_USES_PARTICLE_TRAILS = 65536,
 			FLAG_USES_MOTION_VECTOR = 131072,
 			FLAG_USES_STENCIL = 262144,
+			FLAG_USES_OIT = 524288,
 		};
 
 		union {
@@ -746,6 +758,12 @@ private:
 
 		struct SortByReverseDepthAndPriority {
 			_FORCE_INLINE_ bool operator()(const GeometryInstanceSurfaceDataCache *A, const GeometryInstanceSurfaceDataCache *B) const {
+				// Order-independent surfaces last: they are drawn together, once the sorted ones are in.
+				const uint32_t a_oit = A->flags & GeometryInstanceSurfaceDataCache::FLAG_USES_OIT;
+				const uint32_t b_oit = B->flags & GeometryInstanceSurfaceDataCache::FLAG_USES_OIT;
+				if (a_oit != b_oit) {
+					return b_oit != 0;
+				}
 				return (A->sort.priority == B->sort.priority) ? (A->owner->depth > B->owner->depth) : (A->sort.priority < B->sort.priority);
 			}
 		};
