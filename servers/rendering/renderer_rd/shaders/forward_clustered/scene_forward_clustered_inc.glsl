@@ -296,7 +296,10 @@ layout(set = 0, binding = 14, std140) uniform HDDAGI {
 	ivec3 probe_axis_size;
 	float esm_strength;
 
-	uvec4 pad3;
+	float last_cascade_fade; // In probes, from the edge of the last cascade.
+	uint pad3_0;
+	uint pad3_1;
+	uint pad3_2;
 
 	HDDAGIProbeCascadeData cascades[HDDAGI_MAX_CASCADES];
 }

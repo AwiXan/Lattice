@@ -1425,6 +1425,10 @@ void GI::HDDAGI::pre_process_gi(const Transform3D &p_transform, RenderDataRD *p_
 	hddagi_data.normal_bias = normal_bias;
 	hddagi_data.reflection_bias = reflection_bias;
 	hddagi_data.esm_strength = 1.0;
+	// A fraction of the last cascade's half size, at least the two probes
+	// the cascades blend over.
+	const float half_extent_probes = float(hddagi_data.probe_axis_size[0] - 1) * 0.5;
+	hddagi_data.last_cascade_fade = MAX(2.0f, half_extent_probes * float(GLOBAL_GET_CACHED(float, "rendering/global_illumination/hddagi/last_cascade_fade")));
 
 	hddagi_data.energy = energy;
 

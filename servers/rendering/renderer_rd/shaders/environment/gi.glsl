@@ -70,7 +70,10 @@ layout(set = 0, binding = 15, std140) uniform HDDAGI {
 	ivec3 probe_axis_size;
 	float esm_strength;
 
-	uvec4 pad3;
+	float last_cascade_fade; // In probes, from the edge of the last cascade.
+	uint pad3_0;
+	uint pad3_1;
+	uint pad3_2;
 
 	ProbeCascadeData cascades[HDDAGI_MAX_CASCADES];
 }
@@ -717,7 +720,10 @@ void hddagi_process(vec3 vertex, vec3 normal, vec3 reflection, float roughness, 
 
 			float min_d = min(inner_dist.x, min(inner_dist.y, inner_dist.z));
 
-			blend = clamp(1.0 - smoothstep(0.5, 2.5, min_d), 0, 1);
+			// Into the next cascade over two probes; past the last one there is
+			// only the sky's light, so that fade can be as long as asked for.
+			float fade = cascade < hddagi.max_cascades - 1 ? 2.0 : hddagi.last_cascade_fade;
+			blend = clamp(1.0 - smoothstep(0.5, 0.5 + fade, min_d), 0, 1);
 
 			if (cascade < hddagi.max_cascades - 1) {
 				cell_size = mix(cell_size, 1.0 / hddagi.cascades[cascade + 1].to_cell, blend);

@@ -3792,6 +3792,7 @@ void RenderingServer::init() {
 	GLOBAL_DEF_RST("rendering/reflections/specular_occlusion/enabled", true);
 
 	GLOBAL_DEF("rendering/global_illumination/gi/use_half_resolution", true);
+	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "rendering/global_illumination/hddagi/last_cascade_fade", PROPERTY_HINT_RANGE, "0.0,1.0,0.01"), 0.25);
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/global_illumination/gi/resolution", PROPERTY_HINT_ENUM, "Full,Half,Quarter,Eighth"), RSE::GI_RESOLUTION_HALF);
 
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/global_illumination/voxel_gi/quality", PROPERTY_HINT_ENUM, "Low (4 Cones - Fast),High (6 Cones - Slow)"), 0);

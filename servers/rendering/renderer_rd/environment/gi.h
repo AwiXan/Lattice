@@ -798,7 +798,9 @@ public:
 		int32_t probe_axis_size[3];
 		float esm_strength;
 
-		uint32_t pad3[4];
+		// In probes: how far in from its edge the last cascade fades out.
+		float last_cascade_fade;
+		uint32_t pad3[3];
 
 		struct ProbeCascadeData {
 			float position[3]; //offset of (0,0,0) in world coordinates
