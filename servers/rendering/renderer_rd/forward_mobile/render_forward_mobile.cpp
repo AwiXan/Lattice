@@ -955,9 +955,6 @@ void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color
 	}
 	render_list[RENDER_LIST_ALPHA].sort_by_reverse_depth_and_priority();
 
-	_fill_instance_data(RENDER_LIST_OPAQUE);
-	_fill_instance_data(RENDER_LIST_ALPHA);
-
 	if (p_render_data->render_info) {
 		p_render_data->render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_VISIBLE][RSE::VIEWPORT_RENDER_INFO_DRAW_CALLS_IN_FRAME] = p_render_data->instances->size();
 		p_render_data->render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_VISIBLE][RSE::VIEWPORT_RENDER_INFO_OBJECTS_IN_FRAME] = p_render_data->instances->size();
@@ -1176,6 +1173,13 @@ void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color
 	uint32_t positional_light_count = 0;
 	light_storage->update_light_buffers(p_render_data, *p_render_data->lights, p_render_data->scene_data->cam_transform, p_render_data->shadow_atlas, using_shadows, directional_light_count, positional_light_count, p_render_data->directional_light_soft_shadows);
 	texture_storage->update_decal_buffer(*p_render_data->decals, p_render_data->scene_data->cam_transform);
+
+	// Only now: each instance is given the omni and spot lights and the
+	// decals that made it into this frame's buffers, and that is known once
+	// those are updated. Filled before them, every one was left out - no light
+	// but the directional ones lit anything.
+	_fill_instance_data(RENDER_LIST_OPAQUE);
+	_fill_instance_data(RENDER_LIST_ALPHA);
 
 	p_render_data->directional_light_count = directional_light_count;
 
