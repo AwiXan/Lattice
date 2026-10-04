@@ -57,6 +57,8 @@
 #include "editor/file_system/editor_file_system.h"
 #include "editor/gui/editor_pane.h"
 #include "editor/inspector/editor_document_inspector.h"
+#include "editor/inspector/editor_inspector.h"
+#include "editor/inspector/editor_properties.h"
 #include "editor/gui/editor_pane_tree.h"
 #include "editor/gui/editor_pane_window.h"
 #include "editor/gui/editor_spin_slider.h"
@@ -3241,6 +3243,60 @@ void EditorSelfTest::_gizmo_script_screen_selected() {
 	main_screen->select(EditorMainScreen::EDITOR_3D);
 }
 
+void EditorSelfTest::_inspector_freed_node() {
+	// An Inspector panel goes on showing a node that was deleted: out of the
+	// tree, kept by the undo history. When the history lets go of it the node
+	// is freed and nothing tells the panel, which is only cleared when it has
+	// the next object to show - and a resource property, folding on its way
+	// out, went through the freed node. The editor crashed there.
+	const bool added = !_find_document_inspector(_tree());
+	if (added) {
+		_tree()->get_first_pane()->add_panel("inspector");
+	}
+	EditorDocumentInspector *panel = _find_document_inspector(_tree());
+	Node *scene = EditorNode::get_singleton()->get_edited_scene();
+	if (!panel || !scene) {
+		_check(false, "an Inspector panel and a scene to free a node under");
+		return;
+	}
+	EditorInspector *inspector = panel->get_inspector();
+
+	MeshInstance3D *shown = memnew(MeshInstance3D);
+	Ref<BoxMesh> box;
+	box.instantiate();
+	shown->set_mesh(box);
+	scene->add_child(shown);
+	shown->set_owner(scene);
+
+	// Out of the tree and shown all the same, as a deleted node is.
+	scene->remove_child(shown);
+	inspector->edit(shown);
+	EditorPropertyResource *property = nullptr;
+	for (const Variant &found : inspector->find_children("*", "EditorPropertyResource", true, false)) {
+		if (!property) {
+			property = Object::cast_to<EditorPropertyResource>(found);
+		}
+	}
+	const bool alive_before = property && property->is_edited_object_alive();
+	memdelete(shown);
+	const bool alive_after = property && property->is_edited_object_alive();
+
+	// Cleared for the next object: none of it may reach for the freed node.
+	inspector->edit(scene);
+	_check(alive_before && !alive_after && inspector->get_edited_object() == scene, vformat("an Inspector panel whose node was freed under it moves on to the next object (property found %s, alive before %s, after %s)", property != nullptr, alive_before, alive_after));
+
+	inspector->edit(nullptr);
+	if (added) {
+		EditorPane *pane = Object::cast_to<EditorPane>(panel->get_parent());
+		for (int i = 0; pane && i < pane->get_panel_count(); i++) {
+			if (pane->get_panel_at(i) == panel) {
+				pane->close_panel(i);
+				break;
+			}
+		}
+	}
+}
+
 void EditorSelfTest::_finish() {
 	remove_error_handler(&error_handler);
 	const uint32_t error_count = errors.get();
@@ -3418,6 +3474,7 @@ EditorSelfTest::EditorSelfTest() {
 	_add("gizmo script screen open", callable_mp(this, &EditorSelfTest::_gizmo_script_screen_open));
 	_add("gizmo script screen select", callable_mp(this, &EditorSelfTest::_gizmo_script_screen_select));
 	_add("gizmo script screen selected", callable_mp(this, &EditorSelfTest::_gizmo_script_screen_selected));
+	_add("inspector freed node", callable_mp(this, &EditorSelfTest::_inspector_freed_node));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
 }
 

@@ -145,6 +145,9 @@ private:
 	int text_size;
 	friend class EditorInspector;
 	Object *object = nullptr;
+	// The pointer is a plain one: what it was given for, to tell when the
+	// object is gone (see is_edited_object_alive()).
+	ObjectID object_id;
 	StringName property;
 	String property_path;
 	String doc_path;
@@ -255,6 +258,10 @@ public:
 	bool is_draw_background() const;
 
 	Object *get_edited_object();
+	// False once the object has been freed under the property: an inspector is
+	// only cleared when it is given something else to show, and its properties
+	// leave after their object when nothing told the inspector to let go of it.
+	bool is_edited_object_alive() const;
 	StringName get_edited_property() const;
 	inline Variant get_edited_property_value() const {
 		ERR_FAIL_NULL_V(object, Variant());
