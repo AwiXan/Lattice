@@ -272,9 +272,13 @@ class EditorSelfTest : public Node {
 	void _animation_track_conversion();
 	void _animation_dock_lent();
 	void _animation_dock_lent_finds_player();
+	void _gizmo_script_screen_open();
+	void _gizmo_script_screen_select();
+	void _gizmo_script_screen_selected();
 	void _finish();
 
 	// Kept between steps.
+	ObjectID gizmo_lamp;
 	ObjectID shader_pane;
 	int panes_before_shader = 0;
 	real_t shader_ratio = 0;

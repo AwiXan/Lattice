@@ -10613,12 +10613,19 @@ void Node3DEditor::_selection_changed() {
 		selected = nullptr;
 	}
 
-	// Ensure gizmo updates are performed when the selection changes
-	// outside of the 3D view (see GH-106713).
-	if (!is_visible()) {
-		if (top_selected.size() == 1) {
-			Node3D *new_selected = Object::cast_to<Node3D>(top_selected.back()->get());
-			if (new_selected != selected) {
+	// The editor hands the selected node over (Node3DEditorPlugin::edit()) only
+	// when it may switch to the 3D main screen, which it never does from the
+	// script editor or the screens after it. A 3D view in a pane is on screen
+	// whichever main screen is current, so it takes the node from the selection
+	// itself - its gizmo showed neither handles nor the shape it has when
+	// selected otherwise. Off screen, that waits until the view is shown (see
+	// GH-106713).
+	if (top_selected.size() == 1) {
+		Node3D *new_selected = Object::cast_to<Node3D>(top_selected.back()->get());
+		if (new_selected != selected) {
+			if (is_visible_in_tree()) {
+				edit(new_selected);
+			} else {
 				gizmos_dirty = true;
 			}
 		}
@@ -11534,7 +11541,12 @@ void Node3DEditor::_request_gizmo(Object *p_obj) {
 		return;
 	}
 
-	bool is_selected = (sp == selected);
+	// Selected in any view: the one building the gizmos need not be the one
+	// on screen that took the node from the selection.
+	bool is_selected = false;
+	for (const Node3DEditor *view : instances) {
+		is_selected = is_selected || (sp == view->selected);
+	}
 
 	// A gizmo belongs to the node, not to a view: one view builds them for
 	// everyone, so asking whether the node is in *its* document would leave

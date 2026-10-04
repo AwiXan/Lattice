@@ -68,12 +68,14 @@
 #include "editor/gui/progress_dialog.h"
 #include "scene/resources/3d/primitive_meshes.h"
 #include "scene/3d/camera_3d.h"
+#include "scene/3d/light_3d.h"
 #include "scene/3d/mesh_instance_3d.h"
 #include "scene/3d/skeleton_3d.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/menu_bar.h"
 #include "editor/gui/editor_view_sidebar.h"
 #include "editor/scene/3d/node_3d_editor_chrome.h"
+#include "editor/scene/3d/node_3d_editor_gizmos.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
 #include "scene/gui/color_rect.h"
@@ -3173,6 +3175,72 @@ void EditorSelfTest::_animation_dock_lent_finds_player() {
 	AnimationPlayerEditor::get_singleton()->get_track_editor()->set_animation(Ref<Animation>(), true);
 }
 
+void EditorSelfTest::_gizmo_script_screen_open() {
+	// A layout can come back with the script editor as the main screen while
+	// the 3D view shows in its pane. The editor then never hands a selected
+	// node to the 3D editor - it would have to switch main screens - and the
+	// node's gizmo stayed that of an unselected one: no handles, no range.
+	EditorNode::get_editor_main_screen()->select(EditorMainScreen::EDITOR_SCRIPT);
+}
+
+void EditorSelfTest::_gizmo_script_screen_select() {
+	// The 3D view back in its pane, by the pane: the main screen stays as it is.
+	_tree()->get_first_pane()->show_panel_of_type("view_3d");
+
+	// Into the scene a view on screen shows: each view draws what is selected
+	// in its own document.
+	Node *scene = nullptr;
+	for (Node3DEditor *view : Node3DEditor::get_instances()) {
+		if (!scene && view->is_visible_in_tree()) {
+			scene = view->get_edited_scene();
+		}
+	}
+	if (!scene) {
+		return;
+	}
+
+	OmniLight3D *lamp = memnew(OmniLight3D);
+	lamp->set_name("SelfTestGizmoLamp");
+	scene->add_child(lamp);
+	lamp->set_owner(scene);
+	gizmo_lamp = lamp->get_instance_id();
+
+	EditorSelection *selection = EditorNode::get_singleton()->get_editor_selection();
+	selection->clear();
+	selection->add_node(lamp);
+	// As the scene tree and the viewport do after changing it.
+	selection->update();
+}
+
+void EditorSelfTest::_gizmo_script_screen_selected() {
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	OmniLight3D *lamp = ObjectDB::get_instance<OmniLight3D>(gizmo_lamp);
+	bool gizmo_selected = false;
+	if (lamp) {
+		for (const Ref<Node3DGizmo> &gizmo : lamp->get_gizmos()) {
+			Ref<EditorNode3DGizmo> editor_gizmo = gizmo;
+			gizmo_selected = gizmo_selected || (editor_gizmo.is_valid() && editor_gizmo->is_selected());
+		}
+	}
+	const bool script_screen = main_screen->get_selected_index() == EditorMainScreen::EDITOR_SCRIPT;
+	bool view_shown = false;
+	for (Node3DEditor *view : Node3DEditor::get_instances()) {
+		view_shown = view_shown || view->is_visible_in_tree();
+	}
+	String views;
+	for (Node3DEditor *view : Node3DEditor::get_instances()) {
+		views += vformat(" [shown %s, shows its scene %s, has it %s]", view->is_visible_in_tree(), lamp && view->get_edited_scene() == lamp->get_owner(), lamp && view->get_single_selected_node() == lamp);
+	}
+	_check(script_screen && view_shown && gizmo_selected, vformat("a node selected while the 3D view shows in a pane and the script editor is the main screen gets the gizmo of a selected node (script screen %s, gizmo selected %s; views:%s)", script_screen, gizmo_selected, views));
+
+	EditorNode::get_singleton()->get_editor_selection()->clear();
+	if (lamp) {
+		lamp->get_parent()->remove_child(lamp);
+		memdelete(lamp);
+	}
+	main_screen->select(EditorMainScreen::EDITOR_3D);
+}
+
 void EditorSelfTest::_finish() {
 	remove_error_handler(&error_handler);
 	const uint32_t error_count = errors.get();
@@ -3347,6 +3415,9 @@ EditorSelfTest::EditorSelfTest() {
 	_add("animation track conversion", callable_mp(this, &EditorSelfTest::_animation_track_conversion));
 	_add("animation dock lent", callable_mp(this, &EditorSelfTest::_animation_dock_lent));
 	_add("animation dock lent finds player", callable_mp(this, &EditorSelfTest::_animation_dock_lent_finds_player));
+	_add("gizmo script screen open", callable_mp(this, &EditorSelfTest::_gizmo_script_screen_open));
+	_add("gizmo script screen select", callable_mp(this, &EditorSelfTest::_gizmo_script_screen_select));
+	_add("gizmo script screen selected", callable_mp(this, &EditorSelfTest::_gizmo_script_screen_selected));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
 }
 
