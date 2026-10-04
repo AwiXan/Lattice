@@ -807,6 +807,10 @@ Object *EditorProperty::get_edited_object() {
 	return object;
 }
 
+bool EditorProperty::is_edited_object_alive() const {
+	return object && ObjectDB::get_instance(object_id) == object;
+}
+
 StringName EditorProperty::get_edited_property() const {
 	return property;
 }
@@ -1432,6 +1436,7 @@ bool EditorProperty::is_favoritable() const {
 
 void EditorProperty::set_object_and_property(Object *p_object, const StringName &p_property) {
 	object = p_object;
+	object_id = p_object ? p_object->get_instance_id() : ObjectID();
 	property = p_property;
 
 	_update_flags();
@@ -4052,6 +4057,7 @@ void EditorInspector::_parse_added_editors(VBoxContainer *p_current_vbox, Editor
 
 		if (ep) {
 			ep->object = object;
+			ep->object_id = object ? object->get_instance_id() : ObjectID();
 			ep->connect("property_changed", callable_mp(this, &EditorInspector::_property_changed).bind(false));
 			ep->connect("property_keyed", callable_mp(this, &EditorInspector::_property_keyed));
 			ep->connect("property_deleted", callable_mp(this, &EditorInspector::_property_deleted), CONNECT_DEFERRED);
@@ -4899,6 +4905,7 @@ void EditorInspector::update_tree() {
 			if (ep) {
 				// Set all this before the control gets the ENTER_TREE notification.
 				ep->object = object;
+				ep->object_id = object ? object->get_instance_id() : ObjectID();
 
 				if (properties.size()) {
 					if (properties.size() == 1) {

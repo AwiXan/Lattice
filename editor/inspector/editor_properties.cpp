@@ -3767,6 +3767,13 @@ void EditorPropertyResource::set_use_filter(bool p_use) {
 }
 
 void EditorPropertyResource::fold_resource() {
+	// Called on the way out of an inspector, which can be after the object:
+	// a node deleted in the editor stays in the undo history, out of the tree,
+	// and an Inspector panel still showing it is told nothing when the history
+	// lets go of it and it is freed.
+	if (!is_edited_object_alive()) {
+		return;
+	}
 	bool unfolded = get_edited_object()->editor_is_section_unfolded(get_edited_property());
 	if (unfolded) {
 		resource_picker->set_toggle_pressed(false);
