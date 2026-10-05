@@ -180,6 +180,7 @@ private:
 
 	void _post_tasks(Task **p_tasks, uint32_t p_count, bool p_high_priority, MutexLock<BinaryMutex> &p_lock, bool p_pump_task);
 	void _notify_threads(const ThreadData *p_current_thread_data, uint32_t p_process_count, uint32_t p_promote_count);
+	bool _leave_tasks_to_free_thread(const ThreadData *p_pump_thread);
 
 	bool _try_promote_low_priority_task();
 

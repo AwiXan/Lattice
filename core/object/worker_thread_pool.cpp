@@ -328,6 +328,38 @@ void WorkerThreadPool::_notify_threads(const ThreadData *p_current_thread_data, 
 	}
 }
 
+// A thread that runs the pump task of a server leaves the queued tasks to the others whenever it can:
+// everything sent to that server meanwhile (the main thread syncs with it on every frame) would have
+// to wait for the task it took, however long that one is.
+// Returns whether another thread deals with them, having woken one up if none was on its way already.
+bool WorkerThreadPool::_leave_tasks_to_free_thread(const ThreadData *p_pump_thread) {
+	ThreadData *idle = nullptr;
+	ThreadData *awaiting = nullptr;
+	for (uint32_t i = 0; i < threads.size(); i++) {
+		ThreadData &th = threads[i];
+		if (&th == p_pump_thread) {
+			continue;
+		}
+		if (!th.current_task) {
+			if (th.signaled) {
+				return true;
+			}
+			idle = &th;
+		} else if (th.awaited_task && !th.signaled && !th.current_task->is_pump_task) {
+			awaiting = &th;
+		}
+	}
+
+	ThreadData *chosen = idle ? idle : awaiting;
+	if (!chosen) {
+		// Every other thread is busy, so this one still has to help, or the tasks may never be run.
+		return false;
+	}
+	chosen->cond_var.notify_one();
+	chosen->signaled = true;
+	return true;
+}
+
 bool WorkerThreadPool::_try_promote_low_priority_task() {
 	if (low_priority_task_queue.first()) {
 		Task *low_prio_task = low_priority_task_queue.first()->self();
@@ -541,6 +573,9 @@ void WorkerThreadPool::_wait_collaboratively(ThreadData *p_caller_pool_thread, T
 				if ((p_task == ThreadData::YIELDING || p_caller_pool_thread->has_pump_task == true) && task_to_process->is_pump_task) {
 					task_to_process = nullptr;
 					_notify_threads(p_caller_pool_thread, 1, 0);
+				} else if (p_caller_pool_thread->current_task->is_pump_task && (p_task == ThreadData::YIELDING || p_task->pool_thread_index != -1) && _leave_tasks_to_free_thread(p_caller_pool_thread)) {
+					// Left to a free thread, so the server stays able to answer; the awaited task, if any, is not in the queue.
+					task_to_process = nullptr;
 				} else {
 					task_queue.remove(task_queue.first());
 				}
