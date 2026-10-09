@@ -41,6 +41,8 @@ class LocalizationEditor : public VBoxContainer {
 	GDCLASS(LocalizationEditor, VBoxContainer);
 
 	Tree *translation_list = nullptr;
+	Tree *translation_folder_list = nullptr;
+	EditorFileDialog *translation_folder_open = nullptr;
 
 	EditorLocaleDialog *locale_select = nullptr;
 	EditorFileDialog *translation_file_open = nullptr;
@@ -56,6 +58,10 @@ class LocalizationEditor : public VBoxContainer {
 	EditorFileDialog *template_source_open_dialog = nullptr;
 	EditorFileDialog *template_generate_dialog = nullptr;
 	Button *template_generate_button = nullptr;
+	Tree *template_module_list = nullptr;
+	EditorFileDialog *template_module_open = nullptr;
+	EditorFileDialog *template_module_file_dialog = nullptr;
+	String template_module_editing;
 
 	bool updating_translations = false;
 	StringName localization_changed;
@@ -67,6 +73,10 @@ class LocalizationEditor : public VBoxContainer {
 	void _translation_file_open();
 	void _translation_add(const PackedStringArray &p_paths);
 	void _translation_delete(Object *p_item, int p_column, int p_button, MouseButton p_mouse_button);
+	void _translation_folder_open();
+	void _translation_folder_add(const String &p_folder);
+	void _translation_folder_button(Object *p_item, int p_column, int p_button, MouseButton p_mouse_button);
+	void _set_setting_with_undo(const String &p_action, const StringName &p_setting, const Variant &p_value);
 
 	void _translation_res_file_open();
 	void _translation_res_add(const PackedStringArray &p_paths);
@@ -87,6 +97,11 @@ class LocalizationEditor : public VBoxContainer {
 	void _template_add_builtin_toggled();
 	void _template_generate(const String &p_file);
 	void _update_template_source_file_extensions();
+	void _template_module_open();
+	void _template_module_add(const String &p_folder);
+	void _template_module_button(Object *p_item, int p_column, int p_button, MouseButton p_mouse_button);
+	void _template_module_file_selected(const String &p_file);
+	void _template_modules_generate();
 
 	void _filesystem_files_moved(const String &p_old_file, const String &p_new_file);
 	void _filesystem_file_removed(const String &p_file);

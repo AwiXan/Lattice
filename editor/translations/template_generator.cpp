@@ -31,6 +31,7 @@
 #include "template_generator.h"
 
 #include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
 #include "editor/translations/editor_translation.h"
 #include "editor/translations/editor_translation_parser.h"
 
@@ -106,25 +107,61 @@ TranslationTemplateGenerator::MessageMap TranslationTemplateGenerator::parse(con
 void TranslationTemplateGenerator::generate(const String &p_file) {
 	const Vector<String> files = GLOBAL_GET("internationalization/locale/translations_pot_files");
 	const bool add_builtin = GLOBAL_GET("internationalization/locale/translation_add_builtin_strings_to_pot");
+	generate(p_file, files, add_builtin);
+}
 
-	const MessageMap &map = parse(files, add_builtin);
+bool TranslationTemplateGenerator::generate(const String &p_file, const Vector<String> &p_sources, bool p_add_builtin) {
+	const MessageMap &map = parse(p_sources, p_add_builtin);
 	if (map.is_empty()) {
-		WARN_PRINT_ED(TTR("No translatable strings found."));
-		return;
+		WARN_PRINT_ED(vformat(TTR("No translatable strings found for %s."), p_file));
+		return false;
 	}
 
+	DirAccess::make_dir_recursive_absolute(p_file.get_base_dir());
 	Error err;
 	Ref<FileAccess> file = FileAccess::open(p_file, FileAccess::WRITE, &err);
-	ERR_FAIL_COND_MSG(err != OK, "Failed to open " + p_file);
+	ERR_FAIL_COND_V_MSG(err != OK, false, "Failed to open " + p_file);
 
 	const String ext = p_file.get_extension().to_lower();
 	if (ext == "pot") {
-		_write_to_pot(file, map);
+		_write_to_pot(file, map, p_sources);
 	} else if (ext == "csv") {
 		_write_to_csv(file, map);
 	} else {
-		ERR_FAIL_MSG("Unrecognized translation template file extension: " + ext);
+		ERR_FAIL_V_MSG(false, "Unrecognized translation template file extension: " + ext);
 	}
+	return true;
+}
+
+static void _find_template_sources(const String &p_folder, const HashSet<String> &p_extensions, Vector<String> &r_files) {
+	Ref<DirAccess> dir = DirAccess::open(p_folder);
+	if (dir.is_null()) {
+		return;
+	}
+	dir->set_include_hidden(false);
+	for (const String &file : dir->get_files()) {
+		if (p_extensions.has(file.get_extension().to_lower())) {
+			r_files.push_back(p_folder.path_join(file));
+		}
+	}
+	for (const String &sub : dir->get_directories()) {
+		_find_template_sources(p_folder.path_join(sub), p_extensions, r_files);
+	}
+}
+
+Vector<String> TranslationTemplateGenerator::find_sources(const String &p_folder) {
+	List<String> extension_list;
+	EditorTranslationParser::get_singleton()->get_recognized_extensions(&extension_list);
+	HashSet<String> extensions;
+	for (const String &extension : extension_list) {
+		extensions.insert(extension.to_lower());
+	}
+	// Translations and templates hold strings, but are not where they come from.
+	extensions.erase("csv");
+	Vector<String> files;
+	_find_template_sources(p_folder.trim_suffix("/"), extensions, files);
+	files.sort();
+	return files;
 }
 
 static void _write_pot_field(Ref<FileAccess> p_file, const String &p_name, const String &p_value) {
@@ -153,9 +190,9 @@ static void _write_pot_field(Ref<FileAccess> p_file, const String &p_name, const
 	}
 }
 
-void TranslationTemplateGenerator::_write_to_pot(Ref<FileAccess> p_file, const MessageMap &p_map) const {
+void TranslationTemplateGenerator::_write_to_pot(Ref<FileAccess> p_file, const MessageMap &p_map, const Vector<String> &p_sources) const {
 	const String project_name = GLOBAL_GET("application/config/name").operator String().replace("\n", "\\n");
-	const Vector<String> files = GLOBAL_GET("internationalization/locale/translations_pot_files");
+	const Vector<String> &files = p_sources;
 	String extracted_files;
 	for (const String &file : files) {
 		extracted_files += "# " + file.replace("\n", "\\n") + "\n";

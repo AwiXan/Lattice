@@ -39,11 +39,14 @@
 #include "core/input/input.h"
 #include "core/input/input_event.h"
 #include "core/io/config_file.h"
+#include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/image.h"
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
+#include "core/string/translation_domain.h"
+#include "core/string/translation_server.h"
 #include "editor/docks/editor_dock_manager.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
@@ -59,6 +62,7 @@
 #include "editor/inspector/editor_document_inspector.h"
 #include "editor/inspector/editor_inspector.h"
 #include "editor/inspector/editor_properties.h"
+#include "editor/translations/template_generator.h"
 #include "editor/gui/editor_pane_tree.h"
 #include "editor/gui/editor_pane_window.h"
 #include "editor/gui/editor_spin_slider.h"
@@ -3297,6 +3301,45 @@ void EditorSelfTest::_inspector_freed_node() {
 	}
 }
 
+void EditorSelfTest::_localization_folders_and_modules() {
+	// A module of the game: its own folder, scripts with strings, and a folder
+	// of translations beside them. The project lists the folder once, not each
+	// file, and the module's template is made from the module's files alone.
+	const String module = "res://selftest_l10n_module";
+	DirAccess::make_dir_recursive_absolute(module.path_join("translations"));
+	{
+		Ref<FileAccess> f = FileAccess::open(module.path_join("module.gd"), FileAccess::WRITE);
+		f->store_string("extends Node\n\nfunc _ready():\n\tprint(tr(\"SELFTEST_MODULE_STRING\"))\n");
+	}
+	for (const String &name : { String("module_ru.po"), String("module_ru.mo") }) {
+		// A .mo beside the .po, as Poedit leaves it: the .po is the one taken.
+		Ref<FileAccess> f = FileAccess::open(module.path_join("translations").path_join(name), FileAccess::WRITE);
+		f->store_string("msgid \"\"\nmsgstr \"\"\n\"Content-Type: text/plain; charset=UTF-8\\n\"\n\"Language: ru\\n\"\n\nmsgid \"SELFTEST_MODULE_STRING\"\nmsgstr \"ok\"\n");
+	}
+
+	const Vector<String> found = TranslationServer::find_translation_files(module);
+	const String found_path = found.is_empty() ? String() : found[0];
+	_check(found.size() == 1 && found[0].ends_with("module_ru.po"), vformat("a translation folder gives its translations, the .po of a .po and .mo pair (%s)", String(", ").join(found)));
+
+	const Vector<String> sources = TranslationTemplateGenerator::find_sources(module);
+	const String template_path = module.path_join("translations/module.pot");
+	const bool generated = sources.size() == 1 && TranslationTemplateGenerator::get_singleton()->generate(template_path, sources, false);
+	const String template_text = FileAccess::get_file_as_string(template_path);
+	_check(generated && template_text.contains("SELFTEST_MODULE_STRING") && template_text.contains("module.gd"), vformat("a module's template is generated from the files under its folder (%d sources)", sources.size()));
+
+	const Variant folders_before = GLOBAL_GET("internationalization/locale/translation_folders");
+	ProjectSettings::get_singleton()->set_setting("internationalization/locale/translation_folders", PackedStringArray({ module }));
+	Ref<TranslationDomain> domain;
+	domain.instantiate();
+	TranslationServer::get_singleton()->load_project_translations(domain);
+	bool loaded = false;
+	for (const Ref<Translation> &translation : domain->get_translations()) {
+		loaded = loaded || (translation.is_valid() && translation->get_path() == found_path);
+	}
+	ProjectSettings::get_singleton()->set_setting("internationalization/locale/translation_folders", folders_before);
+	_check(loaded, "the project's translations take in those of its translation folders");
+}
+
 void EditorSelfTest::_finish() {
 	remove_error_handler(&error_handler);
 	const uint32_t error_count = errors.get();
@@ -3475,6 +3518,7 @@ EditorSelfTest::EditorSelfTest() {
 	_add("gizmo script screen select", callable_mp(this, &EditorSelfTest::_gizmo_script_screen_select));
 	_add("gizmo script screen selected", callable_mp(this, &EditorSelfTest::_gizmo_script_screen_selected));
 	_add("inspector freed node", callable_mp(this, &EditorSelfTest::_inspector_freed_node));
+	_add("localization folders and modules", callable_mp(this, &EditorSelfTest::_localization_folders_and_modules));
 	_add("finish", callable_mp(this, &EditorSelfTest::_finish));
 }
 

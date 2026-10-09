@@ -276,6 +276,7 @@ class EditorSelfTest : public Node {
 	void _gizmo_script_screen_select();
 	void _gizmo_script_screen_selected();
 	void _inspector_freed_node();
+	void _localization_folders_and_modules();
 	void _finish();
 
 	// Kept between steps.

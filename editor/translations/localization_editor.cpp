@@ -31,12 +31,15 @@
 #include "localization_editor.h"
 
 #include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
 #include "core/io/resource_loader.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "core/string/translation_server.h"
 #include "editor/docks/filesystem_dock.h"
+#include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
+#include "editor/file_system/editor_file_system.h"
 #include "editor/gui/editor_file_dialog.h"
 #include "editor/gui/editor_toaster.h"
 #include "editor/settings/editor_command_palette.h"
@@ -51,6 +54,8 @@ void LocalizationEditor::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			translation_list->connect("button_clicked", callable_mp(this, &LocalizationEditor::_translation_delete));
+			translation_folder_list->connect("button_clicked", callable_mp(this, &LocalizationEditor::_translation_folder_button));
+			template_module_list->connect("button_clicked", callable_mp(this, &LocalizationEditor::_template_module_button));
 			template_source_list->connect("button_clicked", callable_mp(this, &LocalizationEditor::_template_source_delete));
 			template_add_builtin->set_pressed(GLOBAL_GET("internationalization/locale/translation_add_builtin_strings_to_pot"));
 
@@ -71,6 +76,8 @@ void LocalizationEditor::_notification(int p_what) {
 			_update_template_source_file_extensions();
 			template_generate_dialog->add_filter("*.pot");
 			template_generate_dialog->add_filter("*.csv");
+			template_module_file_dialog->add_filter("*.pot");
+			template_module_file_dialog->add_filter("*.csv");
 		} break;
 
 		case NOTIFICATION_DRAG_END: {
@@ -114,6 +121,45 @@ void LocalizationEditor::_translation_add(const PackedStringArray &p_paths) {
 
 void LocalizationEditor::_translation_file_open() {
 	translation_file_open->popup_file_dialog();
+}
+
+void LocalizationEditor::_set_setting_with_undo(const String &p_action, const StringName &p_setting, const Variant &p_value) {
+	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	undo_redo->create_action(p_action);
+	undo_redo->add_do_property(ProjectSettings::get_singleton(), p_setting, p_value);
+	undo_redo->add_undo_property(ProjectSettings::get_singleton(), p_setting, GLOBAL_GET(p_setting));
+	undo_redo->add_do_method(this, "update_translations");
+	undo_redo->add_undo_method(this, "update_translations");
+	undo_redo->add_do_method(this, "emit_signal", localization_changed);
+	undo_redo->add_undo_method(this, "emit_signal", localization_changed);
+	undo_redo->commit_action();
+}
+
+void LocalizationEditor::_translation_folder_open() {
+	translation_folder_open->popup_file_dialog();
+}
+
+void LocalizationEditor::_translation_folder_add(const String &p_folder) {
+	PackedStringArray folders = GLOBAL_GET("internationalization/locale/translation_folders");
+	const String folder = p_folder.trim_suffix("/");
+	if (folder.is_empty() || folders.has(folder)) {
+		return;
+	}
+	folders.push_back(folder);
+	_set_setting_with_undo(TTR("Add Translation Folder"), "internationalization/locale/translation_folders", folders);
+}
+
+void LocalizationEditor::_translation_folder_button(Object *p_item, int p_column, int p_button, MouseButton p_mouse_button) {
+	if (p_mouse_button != MouseButton::LEFT) {
+		return;
+	}
+	TreeItem *ti = Object::cast_to<TreeItem>(p_item);
+	ERR_FAIL_NULL(ti);
+	PackedStringArray folders = GLOBAL_GET("internationalization/locale/translation_folders");
+	const int idx = folders.find(String(ti->get_metadata(0)));
+	ERR_FAIL_COND(idx < 0);
+	folders.remove_at(idx);
+	_set_setting_with_undo(TTR("Remove Translation Folder"), "internationalization/locale/translation_folders", folders);
 }
 
 void LocalizationEditor::_translation_delete(Object *p_item, int p_column, int p_button, MouseButton p_mouse_button) {
@@ -429,6 +475,89 @@ void LocalizationEditor::_template_generate(const String &p_file) {
 	TranslationTemplateGenerator::get_singleton()->generate(p_file);
 }
 
+void LocalizationEditor::_template_module_open() {
+	template_module_open->popup_file_dialog();
+}
+
+// Where a module's template goes when it is added: the one template already in it or in a folder of its
+// translations, else translations/<module>.pot.
+static String _default_module_template(const String &p_folder) {
+	for (const String &sub : { String(), String("translations"), String("locale"), String("i18n") }) {
+		const String dir_path = sub.is_empty() ? p_folder : p_folder.path_join(sub);
+		Ref<DirAccess> dir = DirAccess::open(dir_path);
+		if (dir.is_null()) {
+			continue;
+		}
+		String found;
+		int count = 0;
+		for (const String &file : dir->get_files()) {
+			if (file.get_extension().to_lower() == "pot") {
+				found = dir_path.path_join(file);
+				count++;
+			}
+		}
+		if (count == 1) {
+			return found;
+		}
+	}
+	return p_folder.path_join("translations").path_join(p_folder.get_file() + ".pot");
+}
+
+void LocalizationEditor::_template_module_add(const String &p_folder) {
+	Dictionary modules = GLOBAL_GET("internationalization/locale/translation_template_modules");
+	const String folder = p_folder.trim_suffix("/");
+	if (folder.is_empty() || modules.has(folder)) {
+		return;
+	}
+	modules = modules.duplicate();
+	modules[folder] = _default_module_template(folder);
+	_set_setting_with_undo(TTR("Add Translation Template Module"), "internationalization/locale/translation_template_modules", modules);
+}
+
+void LocalizationEditor::_template_module_button(Object *p_item, int p_column, int p_button, MouseButton p_mouse_button) {
+	if (p_mouse_button != MouseButton::LEFT) {
+		return;
+	}
+	TreeItem *ti = Object::cast_to<TreeItem>(p_item);
+	ERR_FAIL_NULL(ti);
+	const String folder = ti->get_metadata(0);
+	Dictionary modules = GLOBAL_GET("internationalization/locale/translation_template_modules");
+	ERR_FAIL_COND(!modules.has(folder));
+	if (p_button == 0) {
+		// Where its template goes.
+		template_module_editing = folder;
+		template_module_file_dialog->set_current_path(modules[folder]);
+		template_module_file_dialog->popup_file_dialog();
+		return;
+	}
+	modules = modules.duplicate();
+	modules.erase(folder);
+	_set_setting_with_undo(TTR("Remove Translation Template Module"), "internationalization/locale/translation_template_modules", modules);
+}
+
+void LocalizationEditor::_template_module_file_selected(const String &p_file) {
+	Dictionary modules = GLOBAL_GET("internationalization/locale/translation_template_modules");
+	if (!modules.has(template_module_editing)) {
+		return;
+	}
+	modules = modules.duplicate();
+	modules[template_module_editing] = p_file;
+	_set_setting_with_undo(TTR("Change Translation Template"), "internationalization/locale/translation_template_modules", modules);
+}
+
+void LocalizationEditor::_template_modules_generate() {
+	const Dictionary modules = GLOBAL_GET("internationalization/locale/translation_template_modules");
+	int generated = 0;
+	for (const KeyValue<Variant, Variant> &kv : modules) {
+		const Vector<String> sources = TranslationTemplateGenerator::find_sources(kv.key);
+		if (!sources.is_empty() && TranslationTemplateGenerator::get_singleton()->generate(kv.value, sources, false)) {
+			generated++;
+		}
+	}
+	EditorFileSystem::get_singleton()->scan_changes();
+	EditorToaster::get_singleton()->popup_str(vformat(TTRN("%d template generated.", "%d templates generated.", generated), generated));
+}
+
 void LocalizationEditor::_update_template_source_file_extensions() {
 	template_source_open_dialog->clear_filters();
 	List<String> translation_parse_file_extensions;
@@ -650,6 +779,32 @@ void LocalizationEditor::update_translations() {
 		}
 	}
 
+	// Translation folders, with what is loaded from each.
+	translation_folder_list->clear();
+	TreeItem *folder_root = translation_folder_list->create_item(nullptr);
+	translation_folder_list->set_hide_root(true);
+	const PackedStringArray folders = GLOBAL_GET("internationalization/locale/translation_folders");
+	for (const String &folder : folders) {
+		const Vector<String> files = TranslationServer::find_translation_files(folder);
+		TreeItem *t = translation_folder_list->create_item(folder_root);
+		t->set_icon(0, get_editor_theme_icon(SNAME("Folder")));
+		t->set_text(0, vformat(TTRN("%s (%d file)", "%s (%d files)", files.size()), folder.replace_first("res://", "") + "/", files.size()));
+		t->set_tooltip_text(0, folder);
+		t->set_metadata(0, folder);
+		t->add_button(0, get_editor_theme_icon(SNAME("Remove")), 0, false, TTRC("Remove"));
+		t->set_collapsed(true);
+		if (!DirAccess::dir_exists_absolute(folder)) {
+			t->set_text(0, t->get_text(0) + vformat(" (%s)", TTR("Removed")));
+		}
+		for (const String &file : files) {
+			TreeItem *f = translation_folder_list->create_item(t);
+			f->set_text(0, file.trim_prefix(folder + "/"));
+			f->set_tooltip_text(0, file);
+			f->set_custom_color(0, get_theme_color(SNAME("font_disabled_color"), EditorStringName(Editor)));
+			f->set_selectable(0, false);
+		}
+	}
+
 	// Update translation remaps.
 	String remap_selected;
 	if (translation_remap->get_selected()) {
@@ -733,6 +888,27 @@ void LocalizationEditor::update_translations() {
 		t->add_button(0, get_editor_theme_icon(SNAME("Remove")), 0, false, TTRC("Remove"));
 	}
 
+	// Module templates: a template each, from the files under its folder.
+	template_module_list->clear();
+	TreeItem *module_root = template_module_list->create_item(nullptr);
+	template_module_list->set_hide_root(true);
+	const Dictionary modules = GLOBAL_GET("internationalization/locale/translation_template_modules");
+	Vector<String> module_folders;
+	for (const KeyValue<Variant, Variant> &kv : modules) {
+		module_folders.push_back(kv.key);
+	}
+	module_folders.sort();
+	for (const String &folder : module_folders) {
+		const String template_path = modules[folder];
+		TreeItem *t = template_module_list->create_item(module_root);
+		t->set_icon(0, get_editor_theme_icon(SNAME("Folder")));
+		t->set_text(0, vformat(String::utf8("%s/  \u2192  %s"), folder.replace_first("res://", ""), template_path.replace_first("res://", "")));
+		t->set_tooltip_text(0, vformat(TTR("Strings from the files under %s go to %s."), folder, template_path));
+		t->set_metadata(0, folder);
+		t->add_button(0, get_editor_theme_icon(SNAME("Edit")), 0, false, TTRC("Change the template file"));
+		t->add_button(0, get_editor_theme_icon(SNAME("Remove")), 1, false, TTRC("Remove"));
+	}
+
 	// New translation parser plugin might extend possible file extensions in template generation.
 	_update_template_source_file_extensions();
 
@@ -789,6 +965,34 @@ LocalizationEditor::LocalizationEditor() {
 		translation_file_open->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILES);
 		translation_file_open->connect("files_selected", callable_mp(this, &LocalizationEditor::_translation_add));
 		add_child(translation_file_open);
+
+		// Folders: every translation in them, without listing each - modules, and the files added to them later.
+		HBoxContainer *fhb = memnew(HBoxContainer);
+		Label *fl = memnew(Label(TTRC("Translation Folders:")));
+		fl->set_theme_type_variation("HeaderSmall");
+		fl->set_tooltip_text(TTRC("Every translation file (.po, .mo, .translation) in these folders and their subfolders is loaded, as those listed above are. Of a .po and a .mo of the same name, the .po."));
+		fl->set_mouse_filter(MOUSE_FILTER_PASS);
+		fhb->add_child(fl);
+		fhb->add_spacer();
+		tvb->add_child(fhb);
+
+		Button *addfolder = memnew(Button(TTRC("Add Folder...")));
+		addfolder->connect(SceneStringName(pressed), callable_mp(this, &LocalizationEditor::_translation_folder_open));
+		fhb->add_child(addfolder);
+
+		MarginContainer *fmc = memnew(MarginContainer);
+		fmc->set_theme_type_variation("NoBorderHorizontalBottomWide");
+		fmc->set_v_size_flags(SIZE_EXPAND_FILL);
+		tvb->add_child(fmc);
+
+		translation_folder_list = memnew(Tree);
+		translation_folder_list->set_scroll_hint_mode(Tree::SCROLL_HINT_MODE_TOP);
+		fmc->add_child(translation_folder_list);
+
+		translation_folder_open = memnew(EditorFileDialog);
+		translation_folder_open->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_DIR);
+		translation_folder_open->connect("dir_selected", callable_mp(this, &LocalizationEditor::_translation_folder_add));
+		add_child(translation_folder_open);
 	}
 
 	{
@@ -911,6 +1115,43 @@ LocalizationEditor::LocalizationEditor() {
 		template_source_open_dialog->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILES);
 		template_source_open_dialog->connect("files_selected", callable_mp(this, &LocalizationEditor::_template_source_add));
 		add_child(template_source_open_dialog);
+
+		// Modules: a template of their own each, from every file under their folder.
+		HBoxContainer *mhb = memnew(HBoxContainer);
+		Label *ml = memnew(Label(TTRC("Module Templates:")));
+		ml->set_theme_type_variation("HeaderSmall");
+		ml->set_tooltip_text(TTRC("A folder and its template: the strings of every file under the folder (scripts, scenes...) go to that template alone, generated with the others by \"Generate All\". Built-in strings are left to the template above."));
+		ml->set_mouse_filter(MOUSE_FILTER_PASS);
+		mhb->add_child(ml);
+		mhb->add_spacer();
+		tvb->add_child(mhb);
+
+		Button *addmodule = memnew(Button(TTRC("Add Module...")));
+		addmodule->connect(SceneStringName(pressed), callable_mp(this, &LocalizationEditor::_template_module_open));
+		mhb->add_child(addmodule);
+
+		Button *generate_modules = memnew(Button(TTRC("Generate All")));
+		generate_modules->connect(SceneStringName(pressed), callable_mp(this, &LocalizationEditor::_template_modules_generate));
+		mhb->add_child(generate_modules);
+
+		MarginContainer *mmc = memnew(MarginContainer);
+		mmc->set_theme_type_variation("NoBorderHorizontalWide");
+		mmc->set_v_size_flags(SIZE_EXPAND_FILL);
+		tvb->add_child(mmc);
+
+		template_module_list = memnew(Tree);
+		template_module_list->set_scroll_hint_mode(Tree::SCROLL_HINT_MODE_BOTH);
+		mmc->add_child(template_module_list);
+
+		template_module_open = memnew(EditorFileDialog);
+		template_module_open->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_DIR);
+		template_module_open->connect("dir_selected", callable_mp(this, &LocalizationEditor::_template_module_add));
+		add_child(template_module_open);
+
+		template_module_file_dialog = memnew(EditorFileDialog);
+		template_module_file_dialog->set_file_mode(EditorFileDialog::FILE_MODE_SAVE_FILE);
+		template_module_file_dialog->connect("file_selected", callable_mp(this, &LocalizationEditor::_template_module_file_selected));
+		add_child(template_module_file_dialog);
 	}
 
 	for (Tree *tree : trees) {

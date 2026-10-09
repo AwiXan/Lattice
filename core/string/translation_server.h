@@ -169,6 +169,12 @@ public:
 
 	void load_project_translations(Ref<TranslationDomain> p_domain);
 
+	// The translation files (.po, .mo, .translation) a path stands for: the file itself, or those under the
+	// folder, sorted. Of a .po and a .mo of the same name, the .po.
+	static Vector<String> find_translation_files(const String &p_path);
+	int load_translations(const String &p_path, const StringName &p_domain = StringName());
+	int unload_translations(const String &p_path, const StringName &p_domain = StringName());
+
 #ifdef TOOLS_ENABLED
 	virtual void get_argument_options(const StringName &p_function, int p_idx, List<String> *r_options) const override;
 #endif // TOOLS_ENABLED

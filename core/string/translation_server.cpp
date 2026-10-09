@@ -33,6 +33,8 @@
 
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 #include "core/object/class_db.h"
 #include "core/os/main_loop.h"
@@ -726,6 +728,8 @@ void TranslationServer::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("add_translation", "translation"), &TranslationServer::add_translation);
 	ClassDB::bind_method(D_METHOD("remove_translation", "translation"), &TranslationServer::remove_translation);
+	ClassDB::bind_method(D_METHOD("load_translations", "path", "domain"), &TranslationServer::load_translations, DEFVAL(StringName()));
+	ClassDB::bind_method(D_METHOD("unload_translations", "path", "domain"), &TranslationServer::unload_translations, DEFVAL(StringName()));
 
 #ifndef DISABLE_DEPRECATED
 	ClassDB::bind_method(D_METHOD("get_translation_object", "locale"), &TranslationServer::get_translation_object);
@@ -764,12 +768,121 @@ void TranslationServer::load_project_translations(Ref<TranslationDomain> p_domai
 		return;
 	}
 	const Vector<String> &translations = GLOBAL_GET(prop);
+	HashSet<String> loaded;
 	for (const String &path : translations) {
 		Ref<Translation> tr = ResourceLoader::load(path);
 		if (tr.is_valid()) {
 			p_domain->add_translation(tr);
+			loaded.insert(path);
 		}
 	}
+
+	// Every translation in these folders, without listing each.
+	const Vector<String> folders = GLOBAL_GET("internationalization/locale/translation_folders");
+	for (const String &folder : folders) {
+		for (const String &path : find_translation_files(folder)) {
+			if (loaded.has(path)) {
+				continue;
+			}
+			Ref<Translation> tr = ResourceLoader::load(path);
+			if (tr.is_valid()) {
+				p_domain->add_translation(tr);
+				loaded.insert(path);
+			}
+		}
+	}
+}
+
+static void _find_translation_files(const String &p_folder, const HashSet<String> &p_extensions, Vector<String> &r_files) {
+	Ref<DirAccess> dir = DirAccess::open(p_folder);
+	if (dir.is_null()) {
+		return;
+	}
+	dir->set_include_hidden(false);
+	for (const String &file : dir->get_files()) {
+		if (p_extensions.has(file.get_extension().to_lower())) {
+			r_files.push_back(p_folder.path_join(file));
+		}
+	}
+	for (const String &sub : dir->get_directories()) {
+		_find_translation_files(p_folder.path_join(sub), p_extensions, r_files);
+	}
+}
+
+Vector<String> TranslationServer::find_translation_files(const String &p_path) {
+	List<String> extension_list;
+	ResourceLoader::get_recognized_extensions_for_type("Translation", &extension_list);
+	HashSet<String> extensions;
+	for (const String &extension : extension_list) {
+		extensions.insert(extension.to_lower());
+	}
+
+	Vector<String> files;
+	const String path = p_path.simplify_path().trim_suffix("/");
+	if (DirAccess::dir_exists_absolute(path)) {
+		_find_translation_files(path, extensions, files);
+	} else if (extensions.has(path.get_extension().to_lower()) && FileAccess::exists(path)) {
+		files.push_back(path);
+	}
+	files.sort();
+
+	// Poedit and msgfmt save a .mo beside the .po: the same messages, once.
+	HashSet<String> po_files;
+	for (const String &file : files) {
+		if (file.get_extension().to_lower() == "po") {
+			po_files.insert(file.get_basename());
+		}
+	}
+	Vector<String> result;
+	for (const String &file : files) {
+		if (file.get_extension().to_lower() == "mo" && po_files.has(file.get_basename())) {
+			continue;
+		}
+		result.push_back(file);
+	}
+	return result;
+}
+
+int TranslationServer::load_translations(const String &p_path, const StringName &p_domain) {
+	Ref<TranslationDomain> domain = p_domain == StringName() ? main_domain : get_or_add_domain(p_domain);
+	HashSet<String> present;
+	for (const Ref<Translation> &translation : domain->get_translations()) {
+		if (translation.is_valid() && !translation->get_path().is_empty()) {
+			present.insert(translation->get_path());
+		}
+	}
+	int added = 0;
+	for (const String &path : find_translation_files(p_path)) {
+		if (present.has(path)) {
+			continue;
+		}
+		Ref<Translation> tr = ResourceLoader::load(path, "Translation");
+		if (tr.is_valid()) {
+			domain->add_translation(tr);
+			added++;
+		}
+	}
+	return added;
+}
+
+int TranslationServer::unload_translations(const String &p_path, const StringName &p_domain) {
+	if (p_domain != StringName() && !has_domain(p_domain)) {
+		return 0;
+	}
+	Ref<TranslationDomain> domain = p_domain == StringName() ? main_domain : get_or_add_domain(p_domain);
+	const String path = p_path.simplify_path().trim_suffix("/");
+	int removed = 0;
+	for (const Ref<Translation> &translation : domain->get_translations()) {
+		if (translation.is_null()) {
+			continue;
+		}
+		const String translation_path = translation->get_path();
+		if (translation_path == path || translation_path.begins_with(path + "/")) {
+			domain->remove_translation(translation);
+			removed++;
+		}
+	}
+	return removed;
 }
 
 TranslationServer::TranslationServer() {

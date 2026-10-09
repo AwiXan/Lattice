@@ -171,6 +171,20 @@
 				Returns [code]true[/code] if there are any [Translation] instances in the main translation domain that match [param locale] (see [method compare_locales]). If [param exact] is [code]true[/code], only instances whose locale exactly equals [param locale] are considered.
 			</description>
 		</method>
+		<method name="load_translations">
+			<return type="int" />
+			<param index="0" name="path" type="String" />
+			<param index="1" name="domain" type="StringName" default="&amp;&quot;&quot;" />
+			<description>
+				Loads the translation files at [param path] - a [code].po[/code], [code].mo[/code] or [code].translation[/code] file, or a folder, whose translation files and those of its subfolders are all taken - and adds them to the translation domain [param domain] (the main one if empty, see [method get_or_add_domain]). Of a [code].po[/code] and a [code].mo[/code] of the same name in a folder, the [code].po[/code] is taken. Files already in the domain are skipped. Returns how many were added.
+				Meant for translations that come with the game's content at run time, such as mods or downloaded content, from [code]user://[/code] as well as [code]res://[/code]. The project's own are loaded at start from [code]internationalization/locale/translations[/code] and the translation folders of the Localization tab of the project settings.
+				[codeblock]
+				for mod in DirAccess.get_directories_at("user://mods"):
+				    TranslationServer.load_translations("user://mods".path_join(mod).path_join("translations"))
+				[/codeblock]
+				See also [method unload_translations].
+			</description>
+		</method>
 		<method name="parse_number" qualifiers="const">
 			<return type="String" />
 			<param index="0" name="number" type="String" />
@@ -243,6 +257,14 @@
 				Returns the current locale's translation for the given message, plural message and context.
 				The number [param n] is the number or quantity of the plural object. It will be used to guide the translation system to fetch the correct plural form for the selected language.
 				[b]Note:[/b] This method always uses the main translation domain.
+			</description>
+		</method>
+		<method name="unload_translations">
+			<return type="int" />
+			<param index="0" name="path" type="String" />
+			<param index="1" name="domain" type="StringName" default="&amp;&quot;&quot;" />
+			<description>
+				Removes from the translation domain [param domain] (the main one if empty) the translations loaded from [param path]: that file, or every file under that folder. Returns how many were removed. The counterpart of [method load_translations], for content unloaded while the game runs.
 			</description>
 		</method>
 	</methods>

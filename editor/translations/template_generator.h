@@ -46,13 +46,17 @@ class TranslationTemplateGenerator {
 
 	MessageMap parse(const Vector<String> &p_sources, bool p_add_builtin) const;
 
-	void _write_to_pot(Ref<FileAccess> p_file, const MessageMap &p_map) const;
+	void _write_to_pot(Ref<FileAccess> p_file, const MessageMap &p_map, const Vector<String> &p_sources) const;
 	void _write_to_csv(Ref<FileAccess> p_file, const MessageMap &p_map) const;
 
 public:
 	static TranslationTemplateGenerator *get_singleton();
 
 	void generate(const String &p_file);
+	// From these files rather than the project's list of template sources. Returns whether it was written.
+	bool generate(const String &p_file, const Vector<String> &p_sources, bool p_add_builtin);
+	// The files under a folder that strings can be taken from, for a module's template.
+	static Vector<String> find_sources(const String &p_folder);
 
 	~TranslationTemplateGenerator();
 };
