@@ -845,6 +845,13 @@ Error GDScript::reload(bool p_keep_state) {
 
 	can_run = ScriptServer::is_scripting_enabled() || parser.is_tool();
 
+#ifdef TOOLS_ENABLED
+	HashMap<GDScript *, HashMap<StringName, int>> old_member_places;
+	if (p_keep_state) {
+		_get_member_places(old_member_places);
+	}
+#endif
+
 	GDScriptCompiler compiler;
 	err = compiler.compile(&parser, this, p_keep_state);
 
@@ -898,8 +905,50 @@ Error GDScript::reload(bool p_keep_state) {
 #endif
 
 	reloading = false;
+
+#ifdef TOOLS_ENABLED
+	if (p_keep_state) {
+		// A script extending one of these classes keeps the places of their members from when it was compiled,
+		// in its instances too, while their functions now use the new ones: on the wrong members, they would
+		// read "Bad address index" or worse. Unless it is reloaded along (saving one in the script editor
+		// does), it is recompiled here.
+		HashMap<GDScript *, HashMap<StringName, int>> member_places;
+		_get_member_places(member_places);
+		HashSet<GDScript *> moved;
+		for (const KeyValue<GDScript *, HashMap<StringName, int>> &E : old_member_places) {
+			const HashMap<StringName, int> *places = member_places.getptr(E.key);
+			bool same = places && places->size() == E.value.size();
+			for (const KeyValue<StringName, int> &F : E.value) {
+				if (!same) {
+					break;
+				}
+				const int *place = places->getptr(F.key);
+				same = place && *place == F.value;
+			}
+			if (!same) {
+				moved.insert(E.key);
+			}
+		}
+		if (!moved.is_empty()) {
+			GDScriptLanguage::get_singleton()->_reload_inheriters(moved, get_root_script());
+		}
+	}
+#endif
+
 	return OK;
 }
+
+#ifdef TOOLS_ENABLED
+void GDScript::_get_member_places(HashMap<GDScript *, HashMap<StringName, int>> &r_places) {
+	HashMap<StringName, int> &places = r_places[this];
+	for (const KeyValue<StringName, MemberInfo> &E : member_indices) {
+		places[E.key] = E.value.index;
+	}
+	for (KeyValue<StringName, Ref<GDScript>> &E : subclasses) {
+		E.value->_get_member_places(r_places);
+	}
+}
+#endif
 
 ScriptLanguage *GDScript::get_language() const {
 	return GDScriptLanguage::get_singleton();
@@ -2607,6 +2656,30 @@ void GDScriptLanguage::reload_tool_script(const Ref<Script> &p_script, bool p_so
 	Array scripts = { p_script };
 	reload_scripts(scripts, p_soft_reload);
 }
+
+#ifdef TOOLS_ENABLED
+void GDScriptLanguage::_reload_inheriters(const HashSet<GDScript *> &p_bases, GDScript *p_reloaded) {
+	List<Ref<GDScript>> inheriters;
+	{
+		MutexLock lock(mutex);
+		for (SelfList<GDScript> *elem = script_list.first(); elem; elem = elem->next()) {
+			GDScript *scr = elem->self();
+			if (scr->base.is_null() || !p_bases.has(scr->base.ptr())) {
+				continue;
+			}
+			// Inner classes are compiled with the file they are in.
+			Ref<GDScript> root = Ref<GDScript>(scr->get_root_script());
+			if (root.ptr() != p_reloaded && !inheriters.find(root)) {
+				inheriters.push_back(root);
+			}
+		}
+	}
+	for (Ref<GDScript> &scr : inheriters) {
+		print_verbose("GDScript: Reloading " + scr->get_path() + ", as the members of its base moved.");
+		scr->reload(true);
+	}
+}
+#endif
 
 void GDScriptLanguage::frame() {
 #ifdef DEBUG_ENABLED
