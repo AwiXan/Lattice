@@ -38,6 +38,7 @@
 #include "core/string/string_name.h"
 #include "core/templates/pair.h"
 #include "core/templates/self_list.h"
+#include "core/variant/container_type_validate.h"
 #include "core/variant/variant.h"
 
 class GDScriptInstance;
@@ -65,6 +66,9 @@ public:
 	_FORCE_INLINE_ bool has_type() const { return kind != VARIANT; }
 
 	bool is_type(const Variant &p_variant, bool p_allow_implicit_conversion = false) const;
+	// What a container with this element type holds beneath it, as validators: for an element type of
+	// Array[int], [int]. Empty when the element type is no typed container.
+	Vector<ContainerTypeValidate> get_nested_validators() const;
 
 	bool can_contain_object() const {
 		if (kind == BUILTIN) {
@@ -368,6 +372,8 @@ private:
 	Vector<Variant> constants;
 	HashMap<StringName, Variant> constant_map;
 	Vector<StringName> global_names;
+	// The types beneath the element types of the typed containers the code makes and checks.
+	Vector<Vector<ContainerTypeValidate>> nested_types;
 	Vector<Variant::ValidatedOperatorEvaluator> operator_funcs;
 	Vector<Variant::ValidatedSetter> setters;
 	Vector<Variant::ValidatedGetter> getters;
@@ -386,6 +392,7 @@ private:
 	int _default_arg_count = 0;
 	int _constant_count = 0;
 	int _global_names_count = 0;
+	int _nested_types_count = 0;
 	int _operator_funcs_count = 0;
 	int _setters_count = 0;
 	int _getters_count = 0;
@@ -404,6 +411,7 @@ private:
 	const int *_default_arg_ptr = nullptr;
 	mutable Variant *_constants_ptr = nullptr;
 	const StringName *_global_names_ptr = nullptr;
+	const Vector<ContainerTypeValidate> *_nested_types_ptr = nullptr;
 	const Variant::ValidatedOperatorEvaluator *_operator_funcs_ptr = nullptr;
 	const Variant::ValidatedSetter *_setters_ptr = nullptr;
 	const Variant::ValidatedGetter *_getters_ptr = nullptr;

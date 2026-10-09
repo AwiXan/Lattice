@@ -208,6 +208,10 @@ GDScriptFunction *GDScriptByteCodeGenerator::write_end() {
 		function->_constant_count = 0;
 	}
 
+	function->nested_types = nested_types_list;
+	function->_nested_types_count = function->nested_types.size();
+	function->_nested_types_ptr = function->nested_types.is_empty() ? nullptr : function->nested_types.ptr();
+
 	if (name_map.size()) {
 		function->global_names.resize(name_map.size());
 		function->_global_names_ptr = &function->global_names[0];
@@ -695,6 +699,7 @@ void GDScriptByteCodeGenerator::write_type_test(const Address &p_target, const A
 				append(get_constant_pos(element_type.script_type) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS));
 				append(element_type.builtin_type);
 				append(element_type.native_type);
+				append(get_nested_types_pos(element_type));
 			} else if (p_type.builtin_type == Variant::DICTIONARY && p_type.has_container_element_types()) {
 				const GDScriptDataType &key_element_type = p_type.get_container_element_type_or_variant(0);
 				const GDScriptDataType &value_element_type = p_type.get_container_element_type_or_variant(1);
@@ -707,6 +712,8 @@ void GDScriptByteCodeGenerator::write_type_test(const Address &p_target, const A
 				append(key_element_type.native_type);
 				append(value_element_type.builtin_type);
 				append(value_element_type.native_type);
+				append(get_nested_types_pos(key_element_type));
+				append(get_nested_types_pos(value_element_type));
 			} else {
 				append_opcode(GDScriptFunction::OPCODE_TYPE_TEST_BUILTIN);
 				append(p_target);
@@ -962,6 +969,7 @@ void GDScriptByteCodeGenerator::write_assign_with_conversion(const Address &p_ta
 				append(get_constant_pos(element_type.script_type) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS));
 				append(element_type.builtin_type);
 				append(element_type.native_type);
+				append(get_nested_types_pos(element_type));
 			} else if (p_target.type.builtin_type == Variant::DICTIONARY && p_target.type.has_container_element_types()) {
 				const GDScriptDataType &key_type = p_target.type.get_container_element_type_or_variant(0);
 				const GDScriptDataType &value_type = p_target.type.get_container_element_type_or_variant(1);
@@ -974,6 +982,8 @@ void GDScriptByteCodeGenerator::write_assign_with_conversion(const Address &p_ta
 				append(key_type.native_type);
 				append(value_type.builtin_type);
 				append(value_type.native_type);
+				append(get_nested_types_pos(key_type));
+				append(get_nested_types_pos(value_type));
 			} else {
 				append_opcode(GDScriptFunction::OPCODE_ASSIGN_TYPED_BUILTIN);
 				append(p_target);
@@ -1020,6 +1030,7 @@ void GDScriptByteCodeGenerator::write_assign(const Address &p_target, const Addr
 		append(get_constant_pos(element_type.script_type) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS));
 		append(element_type.builtin_type);
 		append(element_type.native_type);
+		append(get_nested_types_pos(element_type));
 	} else if (p_target.type.kind == GDScriptDataType::BUILTIN && p_target.type.builtin_type == Variant::DICTIONARY && p_target.type.has_container_element_types()) {
 		const GDScriptDataType &key_type = p_target.type.get_container_element_type_or_variant(0);
 		const GDScriptDataType &value_type = p_target.type.get_container_element_type_or_variant(1);
@@ -1032,6 +1043,8 @@ void GDScriptByteCodeGenerator::write_assign(const Address &p_target, const Addr
 		append(key_type.native_type);
 		append(value_type.builtin_type);
 		append(value_type.native_type);
+		append(get_nested_types_pos(key_type));
+		append(get_nested_types_pos(value_type));
 	} else if (p_target.type.kind == GDScriptDataType::BUILTIN && p_source.type.kind == GDScriptDataType::BUILTIN && p_target.type.builtin_type != p_source.type.builtin_type) {
 		// Need conversion.
 		append_opcode(GDScriptFunction::OPCODE_ASSIGN_TYPED_BUILTIN);
@@ -1516,6 +1529,7 @@ void GDScriptByteCodeGenerator::write_construct_typed_array(const Address &p_tar
 	append(p_arguments.size());
 	append(p_element_type.builtin_type);
 	append(p_element_type.native_type);
+	append(get_nested_types_pos(p_element_type));
 	ct.cleanup();
 }
 
@@ -1544,6 +1558,8 @@ void GDScriptByteCodeGenerator::write_construct_typed_dictionary(const Address &
 	append(p_key_type.native_type);
 	append(p_value_type.builtin_type);
 	append(p_value_type.native_type);
+	append(get_nested_types_pos(p_key_type));
+	append(get_nested_types_pos(p_value_type));
 	ct.cleanup();
 }
 
@@ -1900,6 +1916,7 @@ void GDScriptByteCodeGenerator::write_return(const Address &p_return_value, bool
 				append(get_constant_pos(element_type.script_type) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS));
 				append(element_type.builtin_type);
 				append(element_type.native_type);
+				append(get_nested_types_pos(element_type));
 			} else if (function->return_type.builtin_type == Variant::DICTIONARY && function->return_type.has_container_element_types()) {
 				const GDScriptDataType &key_type = function->return_type.get_container_element_type_or_variant(0);
 				const GDScriptDataType &value_type = function->return_type.get_container_element_type_or_variant(1);
@@ -1911,6 +1928,8 @@ void GDScriptByteCodeGenerator::write_return(const Address &p_return_value, bool
 				append(key_type.native_type);
 				append(value_type.builtin_type);
 				append(value_type.native_type);
+				append(get_nested_types_pos(key_type));
+				append(get_nested_types_pos(value_type));
 			} else {
 				append_opcode(GDScriptFunction::OPCODE_RETURN_TYPED_BUILTIN);
 				append(p_return_value);

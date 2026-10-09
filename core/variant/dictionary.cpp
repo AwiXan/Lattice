@@ -650,7 +650,7 @@ ContainerTypeValidate Dictionary::convert_container_type(const ContainerType &p_
 	validator.type = p_container.builtin_type;
 	validator.class_name = p_container.class_name;
 	validator.script = p_container.script;
-	validator.where = "NestedType";
+	validator.where = "nested container";
 
 	for (const ContainerType &nested : p_container.nested_types) {
 		validator.nested_types.push_back(convert_container_type(nested));
@@ -762,6 +762,21 @@ bool Dictionary::is_same_typed_key(const Dictionary &p_other) const {
 
 bool Dictionary::is_same_typed_value(const Dictionary &p_other) const {
 	return _p->typed_value == p_other._p->typed_value;
+}
+
+bool Dictionary::is_typed_nested(const Vector<ContainerTypeValidate> &p_key_nested_types, const Vector<ContainerTypeValidate> &p_value_nested_types) const {
+	auto same = [](const Vector<ContainerTypeValidate> &p_a, const Vector<ContainerTypeValidate> &p_b) {
+		if (p_a.size() != p_b.size()) {
+			return false;
+		}
+		for (int i = 0; i < p_a.size(); i++) {
+			if (p_a[i] != p_b[i]) {
+				return false;
+			}
+		}
+		return true;
+	};
+	return same(_p->typed_key.nested_types, p_key_nested_types) && same(_p->typed_value.nested_types, p_value_nested_types);
 }
 
 ContainerType Dictionary::get_key_type() const {

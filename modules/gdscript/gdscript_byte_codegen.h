@@ -106,6 +106,21 @@ class GDScriptByteCodeGenerator : public GDScriptCodeGenerator {
 
 	HashMap<Variant, int> constant_map;
 	RBMap<StringName, int> name_map;
+	Vector<Vector<ContainerTypeValidate>> nested_types_list;
+	// Where what is beneath an element type is in the function's table, or -1 for nothing.
+	int get_nested_types_pos(const GDScriptDataType &p_element_type) {
+		const Vector<ContainerTypeValidate> nested = p_element_type.get_nested_validators();
+		if (nested.is_empty()) {
+			return -1;
+		}
+		for (int i = 0; i < nested_types_list.size(); i++) {
+			if (nested_types_list[i] == nested) {
+				return i;
+			}
+		}
+		nested_types_list.push_back(nested);
+		return nested_types_list.size() - 1;
+	}
 #ifdef TOOLS_ENABLED
 	Vector<StringName> named_globals;
 #endif

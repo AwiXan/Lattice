@@ -119,6 +119,8 @@ public:
 	bool is_same_typed_value(const Dictionary &p_other) const;
 
 	ContainerType get_key_type() const;
+	// Whether the types beneath its key and value types are these.
+	bool is_typed_nested(const Vector<ContainerTypeValidate> &p_key_nested_types, const Vector<ContainerTypeValidate> &p_value_nested_types) const;
 	ContainerType get_value_type() const;
 	uint32_t get_typed_key_builtin() const;
 	uint32_t get_typed_value_builtin() const;

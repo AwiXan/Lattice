@@ -910,7 +910,7 @@ ContainerTypeValidate Array::convert_container_type(const ContainerType &contain
 	validator.type = container.builtin_type;
 	validator.class_name = container.class_name;
 	validator.script = container.script;
-	validator.where = "NestedType";
+	validator.where = "nested container";
 
 	for (const ContainerType &nested : container.nested_types) {
 		validator.nested_types.push_back(convert_container_type(nested));
@@ -966,6 +966,19 @@ ContainerType Array::convert_validator_to_container(const ContainerTypeValidate 
 	}
 
 	return type;
+}
+
+bool Array::is_typed_nested(const Vector<ContainerTypeValidate> &p_nested_types) const {
+	const Vector<ContainerTypeValidate> &nested = _p->typed.nested_types;
+	if (nested.size() != p_nested_types.size()) {
+		return false;
+	}
+	for (int i = 0; i < nested.size(); i++) {
+		if (nested[i] != p_nested_types[i]) {
+			return false;
+		}
+	}
+	return true;
 }
 
 ContainerType Array::get_element_type() const {

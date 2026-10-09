@@ -274,26 +274,48 @@ public:
 		return true;
 	}
 
+	// Whether a container type says the same as this validator.
+	static bool is_same_type(const ContainerType &p_type, const ContainerTypeValidate &p_validate) {
+		if (p_type.builtin_type != p_validate.type || p_type.class_name != p_validate.class_name || p_type.script != p_validate.script) {
+			return false;
+		}
+		if (p_type.nested_types.size() != p_validate.nested_types.size()) {
+			return false;
+		}
+		for (int i = 0; i < p_type.nested_types.size(); i++) {
+			if (!is_same_type(p_type.nested_types[i], p_validate.nested_types[i])) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// An array going into this container as an element must be typed as the element type says. One that
+	// is goes in as it is, shared; another is replaced by a typed copy, its elements validated (and
+	// converted) on the way in, as a typed array takes what is assigned to it.
 	bool validate_nested_array(Variant &inout_variant, const char *p_operation = "use") const {
 		if (nested_types.is_empty()) {
 			return true;
 		}
 
-		Array array = inout_variant;
+		const Array source = inout_variant;
 		const ContainerTypeValidate &element_type = nested_types[0];
+		if (is_same_type(source.get_element_type(), element_type)) {
+			return true;
+		}
 
-		for (int i = 0; i < array.size(); i++) {
-			Variant element = array[i];
+		Array typed;
+		typed.set_typed(element_type.type, element_type.class_name, element_type.script, element_type.nested_types);
+		typed.resize(source.size());
+		for (int i = 0; i < source.size(); i++) {
+			Variant element = source[i];
 			if (!element_type.validate(element, p_operation)) {
 				ERR_FAIL_V_MSG(false, vformat("Array element at index %d failed type validation.", i));
 			}
-			// Only write back if the element was actually coerced, to preserve COW sharing.
-			if (element != array[i]) {
-				array[i] = element;
-			}
+			typed.set(i, element);
 		}
 
-		inout_variant = array;
+		inout_variant = typed;
 		return true;
 	}
 
@@ -305,11 +327,15 @@ public:
 		const Dictionary source = inout_variant;
 		const ContainerTypeValidate &key_type = nested_types[0];
 		const ContainerTypeValidate &value_type = nested_types[1];
+		// Typed as it should be: kept, shared.
+		if (is_same_type(source.get_key_type(), key_type) && is_same_type(source.get_value_type(), value_type)) {
+			return true;
+		}
 
-		// Build a fresh dictionary so validation never mutates the caller's dict mid-iteration,
-		// and keeps COW intact when nothing needs coercion.
+		// Else a typed copy, never touching the caller's dictionary.
 		Dictionary result;
-		bool any_coerced = false;
+		result.set_typed(key_type.type, key_type.class_name, key_type.script, key_type.nested_types,
+				value_type.type, value_type.class_name, value_type.script, value_type.nested_types);
 		for (const KeyValue<Variant, Variant> &kv : source) {
 			Variant key = kv.key;
 			Variant value = kv.value;
@@ -320,19 +346,13 @@ public:
 			if (!value_type.validate(value, p_operation)) {
 				ERR_FAIL_V_MSG(false, "Dictionary value failed type validation.");
 			}
-
-			if (!any_coerced && (key != kv.key || value != kv.value)) {
-				any_coerced = true;
-			}
 			if (result.has(key)) {
 				ERR_FAIL_V_MSG(false, "Dictionary key coercion would create a duplicate key.");
 			}
 			result[key] = value;
 		}
 
-		if (any_coerced) {
-			inout_variant = result;
-		}
+		inout_variant = result;
 		return true;
 	}
 };

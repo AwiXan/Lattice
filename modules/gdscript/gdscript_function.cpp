@@ -34,6 +34,25 @@
 
 #include "core/object/class_db.h"
 
+Vector<ContainerTypeValidate> GDScriptDataType::get_nested_validators() const {
+	Vector<ContainerTypeValidate> validators;
+	if (kind != BUILTIN || !has_container_element_types() || (builtin_type != Variant::ARRAY && builtin_type != Variant::DICTIONARY)) {
+		return validators;
+	}
+	const int count = builtin_type == Variant::ARRAY ? 1 : 2;
+	for (int i = 0; i < count; i++) {
+		const GDScriptDataType element = get_container_element_type_or_variant(i);
+		ContainerTypeValidate validator;
+		validator.type = element.builtin_type;
+		validator.class_name = element.native_type;
+		validator.script = Ref<Script>(element.script_type);
+		validator.where = "nested container";
+		validator.nested_types = element.get_nested_validators();
+		validators.push_back(validator);
+	}
+	return validators;
+}
+
 bool GDScriptDataType::is_type(const Variant &p_variant, bool p_allow_implicit_conversion) const {
 	switch (kind) {
 		case VARIANT: {
@@ -57,6 +76,7 @@ bool GDScriptDataType::is_type(const Variant &p_variant, bool p_allow_implicit_c
 					} else {
 						valid = elem_type.kind == BUILTIN && elem_type.builtin_type == array_builtin_type;
 					}
+					valid = valid && array.is_typed_nested(elem_type.get_nested_validators());
 				} else {
 					valid = false;
 				}
@@ -76,6 +96,10 @@ bool GDScriptDataType::is_type(const Variant &p_variant, bool p_allow_implicit_c
 						} else {
 							valid = key.kind == BUILTIN && key.builtin_type == key_builtin_type;
 						}
+					}
+
+					if (valid) {
+						valid = dictionary.is_typed_nested(get_container_element_type_or_variant(0).get_nested_validators(), get_container_element_type_or_variant(1).get_nested_validators());
 					}
 
 					if (valid && dictionary.is_typed_value()) {
