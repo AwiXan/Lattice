@@ -575,6 +575,7 @@ Error RenderingDeviceDriverVulkan::_initialize_device_extensions() {
 	_register_requested_device_extension(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME, false);
 	_register_requested_device_extension(VK_KHR_MAINTENANCE_2_EXTENSION_NAME, false);
 	_register_requested_device_extension(VK_EXT_PIPELINE_CREATION_CACHE_CONTROL_EXTENSION_NAME, false);
+	_register_requested_device_extension(VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME, false);
 	_register_requested_device_extension(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME, false);
 	_register_requested_device_extension(VK_EXT_ASTC_DECODE_MODE_EXTENSION_NAME, false);
 	_register_requested_device_extension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME, false);
@@ -889,6 +890,7 @@ Error RenderingDeviceDriverVulkan::_check_device_capabilities() {
 
 	// Cache extension availability we query often.
 	framebuffer_depth_resolve = enabled_device_extension_names.has(VK_KHR_DEPTH_STENCIL_RESOLVE_EXTENSION_NAME);
+	pipeline_creation_feedback = physical_device_properties.apiVersion >= VK_API_VERSION_1_3 || enabled_device_extension_names.has(VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME);
 
 	bool use_fdm_offsets = false;
 	if (VulkanHooks::get_singleton() != nullptr) {
@@ -5331,6 +5333,7 @@ bool RenderingDeviceDriverVulkan::pipeline_cache_create(const Vector<uint8_t> &p
 				} else {
 					pipelines_cache.current_size = loaded_buffer_size;
 					pipelines_cache.buffer = p_data;
+					pipelines_cache.loaded = true;
 				}
 			}
 		}
@@ -5392,6 +5395,40 @@ Vector<uint8_t> RenderingDeviceDriverVulkan::pipeline_cache_serialize() {
 	header->data_hash = hash_murmur3_buffer(pipelines_cache.buffer.ptr() + sizeof(PipelineCacheHeader), pipelines_cache.current_size);
 
 	return pipelines_cache.buffer;
+}
+
+bool RenderingDeviceDriverVulkan::pipeline_cache_is_loaded() {
+	return pipelines_cache.loaded;
+}
+
+bool RenderingDeviceDriverVulkan::pipeline_cache_get_hits(uint64_t &r_hits, uint64_t &r_misses) {
+	r_hits = pipelines_cache.hits.get();
+	r_misses = pipelines_cache.misses.get();
+	return pipeline_creation_feedback && pipelines_cache.vk_cache != VK_NULL_HANDLE;
+}
+
+const void *RenderingDeviceDriverVulkan::_pipeline_feedback_chain(PipelineFeedback &r_feedback, const void *p_next, uint32_t p_stage_count) {
+	if (!pipeline_creation_feedback || pipelines_cache.vk_cache == VK_NULL_HANDLE) {
+		return p_next;
+	}
+	r_feedback.create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO;
+	r_feedback.create_info.pNext = p_next;
+	r_feedback.create_info.pPipelineCreationFeedback = &r_feedback.pipeline;
+	// Some drivers want one per stage, as the extension first asked.
+	r_feedback.create_info.pipelineStageCreationFeedbackCount = MIN(p_stage_count, (uint32_t)std::size(r_feedback.stages));
+	r_feedback.create_info.pPipelineStageCreationFeedbacks = r_feedback.stages;
+	return &r_feedback.create_info;
+}
+
+void RenderingDeviceDriverVulkan::_pipeline_feedback_count(const PipelineFeedback &p_feedback) {
+	if (!(p_feedback.pipeline.flags & VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT)) {
+		return;
+	}
+	if (p_feedback.pipeline.flags & VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT) {
+		pipelines_cache.hits.increment();
+	} else {
+		pipelines_cache.misses.increment();
+	}
 }
 
 /*******************/
@@ -6256,8 +6293,14 @@ RDD::PipelineID RenderingDeviceDriverVulkan::render_pipeline_create(
 	uint64_t pipeline_start_time = OS::get_singleton()->get_ticks_usec();
 #endif
 
+	PipelineFeedback feedback;
+	pipeline_create_info.pNext = _pipeline_feedback_chain(feedback, pipeline_create_info.pNext, pipeline_create_info.stageCount);
+
 	VkPipeline vk_pipeline = VK_NULL_HANDLE;
 	VkResult err = vkCreateGraphicsPipelines(vk_device, pipelines_cache.vk_cache, 1, &pipeline_create_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_PIPELINE), &vk_pipeline);
+	if (err == VK_SUCCESS) {
+		_pipeline_feedback_count(feedback);
+	}
 
 	// Don't print error for VK_ERROR_UNKNOWN on Adreno 660.
 	if (unlikely(err == VK_ERROR_UNKNOWN && driver_workarounds.dont_print_on_render_pipeline_creation_failure)) {
@@ -6767,9 +6810,13 @@ RDD::PipelineID RenderingDeviceDriverVulkan::compute_pipeline_create(ShaderID p_
 		pipeline_create_info.stage.pSpecializationInfo = specialization_info;
 	}
 
+	PipelineFeedback feedback;
+	pipeline_create_info.pNext = _pipeline_feedback_chain(feedback, pipeline_create_info.pNext, 1);
+
 	VkPipeline vk_pipeline = VK_NULL_HANDLE;
 	VkResult err = vkCreateComputePipelines(vk_device, pipelines_cache.vk_cache, 1, &pipeline_create_info, VKC::get_allocation_callbacks(VK_OBJECT_TYPE_PIPELINE), &vk_pipeline);
 	ERR_FAIL_COND_V_MSG(err, PipelineID(), vformat("Couldn't create Vulkan compute pipelines (VkResult error %d).", err));
+	_pipeline_feedback_count(feedback);
 
 	return PipelineID(vk_pipeline);
 }

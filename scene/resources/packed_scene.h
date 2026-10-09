@@ -273,6 +273,9 @@ public:
 
 	bool can_instantiate() const;
 	Node *instantiate(GenEditState p_edit_state = GEN_EDIT_STATE_DISABLED) const;
+	// Queues the pipelines of the 3D meshes the scene holds, with the materials its nodes give them, for
+	// compilation in the background. Returns how many meshes were queued.
+	int precompile_shaders() const;
 
 	void recreate_state();
 	void replace_state(Ref<SceneState> p_by);

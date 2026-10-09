@@ -65,6 +65,14 @@ public:
 
 	virtual void mesh_generate_pipelines(RID p_mesh, bool p_background_compilation) = 0;
 	virtual uint32_t get_pipeline_compilations(RSE::PipelineSource p_source) = 0;
+	// The pipelines a mesh is drawn with, compiled ahead in the background, with these materials in place of
+	// its surfaces' own where given (and their next passes).
+	virtual void mesh_precompile_pipelines(RID p_mesh, const Vector<RID> &p_materials) {}
+	// The pipelines of the material's shader, compiled and being compiled.
+	virtual void material_get_pipeline_counts(RID p_material, uint32_t &r_compiled, uint32_t &r_compiling) {
+		r_compiled = 0;
+		r_compiling = 0;
+	}
 
 	/* HDDAGI UPDATE */
 

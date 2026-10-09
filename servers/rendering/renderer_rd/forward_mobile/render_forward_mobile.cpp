@@ -364,21 +364,32 @@ void RenderForwardMobile::setup_render_buffer_data(Ref<RenderSceneBuffersRD> p_r
 	p_render_buffers->set_custom_data(RB_SCOPE_MOBILE, data);
 }
 
-void RenderForwardMobile::mesh_generate_pipelines(RID p_mesh, bool p_background_compilation) {
+void RenderForwardMobile::_mesh_generate_pipelines(RID p_mesh, bool p_background_compilation, const Vector<RID> &p_materials, RSE::PipelineSource p_source) {
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
 	RID shadow_mesh = mesh_storage->mesh_get_shadow_mesh(p_mesh);
 	uint32_t surface_count = 0;
 	const RID *materials = mesh_storage->mesh_get_surface_count_and_materials(p_mesh, surface_count);
 	Vector<ShaderPipelinePair> pipeline_pairs;
+	// The surfaces' materials, or those given in their place, and then their next passes.
+	LocalVector<Pair<uint32_t, RID>> surface_materials;
 	for (uint32_t i = 0; i < surface_count; i++) {
-		if (materials[i].is_null()) {
-			continue;
+		RID pass = (int(i) < p_materials.size() && p_materials[i].is_valid()) ? p_materials[i] : materials[i];
+		for (uint32_t depth = 0; pass.is_valid() && depth < 8; depth++) {
+			surface_materials.push_back({ i, pass });
+			if (p_source == RSE::PIPELINE_SOURCE_MESH) {
+				break; // As the mesh is made: the first pass of its own materials only.
+			}
+			SceneShaderForwardMobile::MaterialData *pass_data = static_cast<SceneShaderForwardMobile::MaterialData *>(material_storage->material_get_data(pass, RendererRD::MaterialStorage::SHADER_TYPE_3D));
+			pass = pass_data ? pass_data->next_pass : RID();
 		}
+	}
 
+	for (const Pair<uint32_t, RID> &surface_material : surface_materials) {
+		const uint32_t i = surface_material.first;
 		void *mesh_surface = mesh_storage->mesh_get_surface(p_mesh, i);
 		void *mesh_surface_shadow = mesh_surface;
-		SceneShaderForwardMobile::MaterialData *material = static_cast<SceneShaderForwardMobile::MaterialData *>(material_storage->material_get_data(materials[i], RendererRD::MaterialStorage::SHADER_TYPE_3D));
+		SceneShaderForwardMobile::MaterialData *material = static_cast<SceneShaderForwardMobile::MaterialData *>(material_storage->material_get_data(surface_material.second, RendererRD::MaterialStorage::SHADER_TYPE_3D));
 		if (material == nullptr || !material->shader_data->is_valid()) {
 			continue;
 		}
@@ -409,7 +420,7 @@ void RenderForwardMobile::mesh_generate_pipelines(RID p_mesh, bool p_background_
 		surface.uses_transparent = material->shader_data->uses_alpha_pass();
 		surface.uses_depth = surface.uses_opaque || (surface.uses_transparent && material->shader_data->uses_depth_in_alpha_pass());
 		surface.can_use_lightmap = mesh_storage->mesh_surface_get_format(mesh_surface) & RSE::ARRAY_FORMAT_TEX_UV2;
-		_mesh_compile_pipelines_for_surface(surface, global_pipeline_data_required, RSE::PIPELINE_SOURCE_MESH, &pipeline_pairs);
+		_mesh_compile_pipelines_for_surface(surface, global_pipeline_data_required, p_source, &pipeline_pairs);
 	}
 
 	// Try to wait for all the pipelines that were compiled. This will force the loader to wait on all ubershader pipelines to be ready.
@@ -418,6 +429,26 @@ void RenderForwardMobile::mesh_generate_pipelines(RID p_mesh, bool p_background_
 			pair.first->pipeline_hash_map.wait_for_pipeline(pair.second.hash());
 		}
 	}
+}
+
+void RenderForwardMobile::mesh_generate_pipelines(RID p_mesh, bool p_background_compilation) {
+	_mesh_generate_pipelines(p_mesh, p_background_compilation, Vector<RID>(), RSE::PIPELINE_SOURCE_MESH);
+}
+
+void RenderForwardMobile::mesh_precompile_pipelines(RID p_mesh, const Vector<RID> &p_materials) {
+	ERR_FAIL_COND(!RendererRD::MeshStorage::get_singleton()->owns_mesh(p_mesh));
+	_mesh_generate_pipelines(p_mesh, true, p_materials, RSE::PIPELINE_SOURCE_SURFACE);
+}
+
+void RenderForwardMobile::material_get_pipeline_counts(RID p_material, uint32_t &r_compiled, uint32_t &r_compiling) {
+	r_compiled = 0;
+	r_compiling = 0;
+	SceneShaderForwardMobile::MaterialData *material = static_cast<SceneShaderForwardMobile::MaterialData *>(RendererRD::MaterialStorage::get_singleton()->material_get_data(p_material, RendererRD::MaterialStorage::SHADER_TYPE_3D));
+	if (material == nullptr || material->shader_data == nullptr) {
+		return;
+	}
+	r_compiled = material->shader_data->pipeline_hash_map.get_pipelines_compiled();
+	r_compiling = material->shader_data->pipeline_hash_map.get_pipelines_compiling();
 }
 
 uint32_t RenderForwardMobile::get_pipeline_compilations(RSE::PipelineSource p_source) {

@@ -730,6 +730,9 @@ public:
 	/* PIPELINES */
 
 	virtual void mesh_generate_pipelines(RID p_mesh, bool p_background_compilation) override;
+	virtual void mesh_precompile_pipelines(RID p_mesh, const Vector<RID> &p_materials) override;
+	virtual void material_get_pipeline_counts(RID p_material, uint32_t &r_compiled, uint32_t &r_compiling) override;
+	void _mesh_generate_pipelines(RID p_mesh, bool p_background_compilation, const Vector<RID> &p_materials, RSE::PipelineSource p_source);
 	virtual uint32_t get_pipeline_compilations(RSE::PipelineSource p_source) override;
 
 	/* SHADER LIBRARY */

@@ -168,6 +168,8 @@ class RenderingDeviceDriverVulkan : public RenderingDeviceDriver {
 	bool pipeline_cache_control_support = false;
 	bool device_fault_support = false;
 	bool framebuffer_depth_resolve = false;
+	// VK_EXT_pipeline_creation_feedback (core in 1.3): whether a pipeline came from the pipeline cache.
+	bool pipeline_creation_feedback = false;
 #if defined(VK_TRACK_DEVICE_MEMORY)
 	bool device_memory_report_support = false;
 #endif
@@ -598,7 +600,19 @@ private:
 		size_t current_size = 0;
 		Vector<uint8_t> buffer; // Header then data.
 		VkPipelineCache vk_cache = VK_NULL_HANDLE;
+		bool loaded = false;
+		SafeNumeric<uint64_t> hits;
+		SafeNumeric<uint64_t> misses;
 	};
+
+	// Chains a creation feedback onto a pipeline's creation, and counts what it says once created.
+	struct PipelineFeedback {
+		VkPipelineCreationFeedbackCreateInfo create_info = {};
+		VkPipelineCreationFeedback pipeline = {};
+		VkPipelineCreationFeedback stages[8] = {};
+	};
+	const void *_pipeline_feedback_chain(PipelineFeedback &r_feedback, const void *p_next, uint32_t p_stage_count);
+	void _pipeline_feedback_count(const PipelineFeedback &p_feedback);
 
 	static int caching_instance_count;
 	PipelineCache pipelines_cache;
@@ -618,6 +632,8 @@ public:
 	virtual void pipeline_cache_free() override final;
 	virtual size_t pipeline_cache_query_size() override final;
 	virtual Vector<uint8_t> pipeline_cache_serialize() override final;
+	virtual bool pipeline_cache_is_loaded() override final;
+	virtual bool pipeline_cache_get_hits(uint64_t &r_hits, uint64_t &r_misses) override final;
 
 	/*******************/
 	/**** RENDERING ****/

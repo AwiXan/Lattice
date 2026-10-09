@@ -59,10 +59,14 @@ private:
 	HashMap<uint32_t, WorkerThreadPool::TaskID> compilation_tasks;
 	Mutex local_mutex;
 	int stats_kind = RenderingShaderStats::KIND_ENGINE;
+	// The pipelines of this map queued and done since it was last cleared.
+	SafeNumeric<uint32_t> pipelines_queued;
+	SafeNumeric<uint32_t> pipelines_done;
 
 	void _compile_task(Key p_key) {
 		(creation_object->*creation_function)(p_key);
 		RenderingShaderStats::of(stats_kind).pipelines_done.increment();
+		pipelines_done.increment();
 	}
 
 	bool _add_new_pipelines_to_map() {
@@ -159,6 +163,7 @@ public:
 
 		// Queue a background compilation task.
 		RenderingShaderStats::of(stats_kind).pipelines_queued.increment();
+		pipelines_queued.increment();
 		WorkerThreadPool::TaskID task_id = WorkerThreadPool::get_singleton()->add_template_task(this, &PipelineHashMapRD::_compile_task, p_key, p_high_priority, "PipelineCompilation");
 		compilation_tasks.insert(p_key_hash, task_id);
 	}
@@ -234,6 +239,16 @@ public:
 
 		hash_map.clear();
 		compilation_set.clear();
+		pipelines_queued.set(0);
+		pipelines_done.set(0);
+	}
+
+	// The pipelines compiled, and being compiled, since the map was last cleared.
+	uint32_t get_pipelines_compiled() const { return pipelines_done.get(); }
+	uint32_t get_pipelines_compiling() const {
+		const uint32_t done = pipelines_done.get();
+		const uint32_t queued = pipelines_queued.get();
+		return queued > done ? queued - done : 0;
 	}
 
 	// Set the external pipeline compilations array to increase the counters on every time a pipeline is compiled.

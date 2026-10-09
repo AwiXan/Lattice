@@ -8780,6 +8780,7 @@ Error RenderingDevice::initialize(RenderingContextDriver *p_context, DisplayServ
 		pipeline_cache_file_path += ".cache";
 
 		Vector<uint8_t> cache_data = _load_pipeline_cache();
+		pipeline_cache_file_found = !cache_data.is_empty();
 		pipeline_cache_enabled = driver->pipeline_cache_create(cache_data);
 		if (pipeline_cache_enabled) {
 			pipeline_cache_size = driver->pipeline_cache_query_size();
@@ -8805,7 +8806,26 @@ Vector<uint8_t> RenderingDevice::_load_pipeline_cache() {
 	}
 }
 
-void RenderingDevice::update_pipeline_cache(bool p_closing) {
+Dictionary RenderingDevice::get_pipeline_cache_info() {
+	_THREAD_SAFE_METHOD_
+
+	Dictionary info;
+	info["enabled"] = pipeline_cache_enabled;
+	const bool loaded = pipeline_cache_enabled && driver->pipeline_cache_is_loaded();
+	info["loaded"] = loaded;
+	// "loaded": what was saved last time is used. "empty": there was none (the first start, or it was deleted).
+	// "discarded": there was one, made with another GPU, graphics driver version or engine build.
+	info["state"] = !pipeline_cache_enabled ? "disabled" : (loaded ? "loaded" : (pipeline_cache_file_found ? "discarded" : "empty"));
+	info["size"] = pipeline_cache_enabled ? (int64_t)driver->pipeline_cache_query_size() : 0;
+	uint64_t hits = 0;
+	uint64_t misses = 0;
+	const bool counted = pipeline_cache_enabled && driver->pipeline_cache_get_hits(hits, misses);
+	info["hits"] = counted ? (int64_t)hits : -1;
+	info["misses"] = counted ? (int64_t)misses : -1;
+	return info;
+}
+
+void RenderingDevice::update_pipeline_cache(bool p_closing, bool p_now) {
 	_THREAD_SAFE_METHOD_
 
 	{
@@ -8828,7 +8848,7 @@ void RenderingDevice::update_pipeline_cache(bool p_closing) {
 
 		bool must_save = false;
 
-		if (p_closing) {
+		if (p_closing || p_now) {
 			must_save = difference > 0;
 		} else {
 			float save_interval = GLOBAL_GET("rendering/rendering_device/pipeline_cache/save_chunk_size_mb");

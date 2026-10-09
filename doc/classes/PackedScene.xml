@@ -102,6 +102,25 @@
 				Packs the [param path] node, and all owned sub-nodes, into this [PackedScene]. Any existing data will be cleared. See [member Node.owner].
 			</description>
 		</method>
+		<method name="precompile_shaders" qualifiers="const">
+			<return type="int" />
+			<description>
+				Queues the pipelines of the 3D meshes this scene holds for compilation in the background, with the materials its nodes give them ([member GeometryInstance3D.material_override], [member GeometryInstance3D.material_overlay], surface override materials), and the same for the scenes it instances. No node is made. Returns how many meshes were queued.
+				Meshes in [MeshInstance3D], [MultiMeshInstance3D], [CPUParticles3D] and the draw passes of [GPUParticles3D] are found; meshes made at run time (CSG, [Label3D], procedural ones) are not.
+				A "compiling shaders" screen, shown when the pipeline cache had nothing to give:
+				[codeblock]
+				func _ready():
+				    if not RenderingServer.get_shader_compilation_info().needs_compilation:
+				        return
+				    for path in ["res://maps/arena.tscn", "res://player/player.tscn"]:
+				        load(path).precompile_shaders()
+				    while RenderingServer.get_shader_compilation_info().compiling:
+				        await get_tree().process_frame
+				    RenderingServer.save_pipeline_cache()
+				[/codeblock]
+				See [method RenderingServer.mesh_precompile_pipelines].
+			</description>
+		</method>
 	</methods>
 	<constants>
 		<constant name="GEN_EDIT_STATE_DISABLED" value="0" enum="GenEditState">

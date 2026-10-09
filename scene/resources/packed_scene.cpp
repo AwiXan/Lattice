@@ -46,6 +46,10 @@
 #include "scene/main/instance_placeholder.h"
 #include "scene/main/missing_node.h"
 #include "scene/property_utils.h"
+#include "scene/resources/material.h"
+#include "scene/resources/mesh.h"
+#include "scene/resources/multimesh.h"
+#include "servers/rendering/rendering_server.h"
 
 #ifndef _3D_DISABLED
 #include "scene/3d/node_3d.h"
@@ -2578,6 +2582,84 @@ bool PackedScene::can_instantiate() const {
 	return state->can_instantiate();
 }
 
+// Walks the nodes of a scene state, and of the scenes it instances, without making any node.
+static int _precompile_scene_shaders(const Ref<SceneState> &p_state, HashSet<const SceneState *> &r_visited) {
+	if (p_state.is_null() || r_visited.has(p_state.ptr())) {
+		return 0;
+	}
+	r_visited.insert(p_state.ptr());
+
+	RenderingServer *rs = RenderingServer::get_singleton();
+	int queued = 0;
+	auto queue = [&](const Ref<Mesh> &p_mesh, const Vector<RID> &p_materials) {
+		if (p_mesh.is_valid() && p_mesh->get_surface_count() > 0) {
+			rs->mesh_precompile_pipelines(p_mesh->get_rid(), p_materials);
+			queued++;
+		}
+	};
+
+	for (int i = 0; i < p_state->get_node_count(); i++) {
+		Ref<PackedScene> instance = p_state->get_node_instance(i);
+		if (instance.is_valid()) {
+			queued += _precompile_scene_shaders(instance->get_state(), r_visited);
+		}
+
+		LocalVector<Ref<Mesh>> meshes;
+		Ref<Material> material_override;
+		Ref<Material> material_overlay;
+		HashMap<int, Ref<Material>> surface_overrides;
+		for (int j = 0; j < p_state->get_node_property_count(i); j++) {
+			const String name = p_state->get_node_property_name(i, j);
+			const Variant value = p_state->get_node_property_value(i, j);
+			if (name == "mesh" || name.begins_with("draw_pass_")) {
+				// MeshInstance3D and CPUParticles3D, GPUParticles3D.
+				Ref<Mesh> mesh = value;
+				if (mesh.is_valid()) {
+					meshes.push_back(mesh);
+				}
+			} else if (name == "multimesh") {
+				Ref<MultiMesh> multimesh = value;
+				if (multimesh.is_valid() && multimesh->get_mesh().is_valid()) {
+					meshes.push_back(multimesh->get_mesh());
+				}
+			} else if (name == "material_override") {
+				material_override = value;
+			} else if (name == "material_overlay") {
+				material_overlay = value;
+			} else if (name.begins_with("surface_material_override/")) {
+				surface_overrides[name.get_slicec('/', 1).to_int()] = value;
+			}
+		}
+
+		for (const Ref<Mesh> &mesh : meshes) {
+			Vector<RID> materials;
+			materials.resize(mesh->get_surface_count());
+			for (int k = 0; k < materials.size(); k++) {
+				const Ref<Material> *surface = surface_overrides.getptr(k);
+				if (material_override.is_valid()) {
+					materials.write[k] = material_override->get_rid();
+				} else if (surface && surface->is_valid()) {
+					materials.write[k] = (*surface)->get_rid();
+				}
+			}
+			queue(mesh, materials);
+			if (material_overlay.is_valid()) {
+				Vector<RID> overlay;
+				overlay.resize(mesh->get_surface_count());
+				overlay.fill(material_overlay->get_rid());
+				queue(mesh, overlay);
+			}
+		}
+	}
+	return queued;
+}
+
+int PackedScene::precompile_shaders() const {
+	ERR_FAIL_NULL_V(RenderingServer::get_singleton(), 0);
+	HashSet<const SceneState *> visited;
+	return _precompile_scene_shaders(state, visited);
+}
+
 Node *PackedScene::instantiate(GenEditState p_edit_state) const {
 	MainThreadWork::Scope work(MainThreadWork::KIND_INSTANTIATE, get_path());
 #ifndef TOOLS_ENABLED
@@ -2689,6 +2771,7 @@ void PackedScene::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("pack", "path"), &PackedScene::pack);
 	ClassDB::bind_method(D_METHOD("instantiate", "edit_state"), &PackedScene::instantiate, DEFVAL(GEN_EDIT_STATE_DISABLED));
 	ClassDB::bind_method(D_METHOD("can_instantiate"), &PackedScene::can_instantiate);
+	ClassDB::bind_method(D_METHOD("precompile_shaders"), &PackedScene::precompile_shaders);
 	ClassDB::bind_method(D_METHOD("_set_bundled_scene", "scene"), &PackedScene::_set_bundled_scene);
 	ClassDB::bind_method(D_METHOD("_get_bundled_scene"), &PackedScene::_get_bundled_scene);
 	ClassDB::bind_method(D_METHOD("get_state"), &PackedScene::get_state);

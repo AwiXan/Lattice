@@ -77,7 +77,40 @@ Dictionary RenderingServer::get_shader_compilation_info() const {
 	Dictionary info = numbers(totals[0], totals[1], totals[2], totals[3], totals[4]);
 	info["compiling"] = int(info["shaders_compiling"]) > 0 || int(info["pipelines_compiling"]) > 0;
 	info["types"] = types;
+
+	Dictionary cache;
+#ifdef RD_ENABLED
+	if (RenderingDevice::get_singleton()) {
+		cache = RenderingDevice::get_singleton()->get_pipeline_cache_info();
+	}
+#endif
+	if (cache.is_empty()) {
+		cache["enabled"] = false;
+		cache["loaded"] = false;
+		cache["state"] = "disabled";
+		cache["size"] = 0;
+		cache["hits"] = -1;
+		cache["misses"] = -1;
+	}
+	info["pipeline_cache"] = cache;
+	// What a game asks before showing a "compiling shaders" screen: nothing was kept from last time
+	// (first start, or the GPU, its driver or the engine changed), so the pipelines will compile as they come.
+	const String state = cache["state"];
+	info["needs_compilation"] = state == "empty" || state == "discarded";
 	return info;
+}
+
+void RenderingServer::material_precompile_pipelines(RID p_material) {
+	ERR_FAIL_COND(!p_material.is_valid());
+	mesh_precompile_pipelines(get_test_cube(), Vector<RID>{ p_material });
+}
+
+void RenderingServer::_mesh_precompile_pipelines_bind(RID p_mesh, const TypedArray<RID> &p_materials) {
+	Vector<RID> materials;
+	for (int i = 0; i < p_materials.size(); i++) {
+		materials.push_back(p_materials[i]);
+	}
+	mesh_precompile_pipelines(p_mesh, materials);
 }
 RenderingServer *(*RenderingServer::create_func)() = nullptr;
 
@@ -3583,6 +3616,10 @@ void RenderingServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("has_changed"), &RenderingServer::has_changed);
 	ClassDB::bind_method(D_METHOD("get_rendering_info", "info"), &RenderingServer::get_rendering_info);
 	ClassDB::bind_method(D_METHOD("get_shader_compilation_info"), &RenderingServer::get_shader_compilation_info);
+	ClassDB::bind_method(D_METHOD("mesh_precompile_pipelines", "mesh", "materials"), &RenderingServer::_mesh_precompile_pipelines_bind, DEFVAL(TypedArray<RID>()));
+	ClassDB::bind_method(D_METHOD("material_precompile_pipelines", "material"), &RenderingServer::material_precompile_pipelines);
+	ClassDB::bind_method(D_METHOD("material_get_compilation_info", "material"), &RenderingServer::material_get_compilation_info);
+	ClassDB::bind_method(D_METHOD("save_pipeline_cache"), &RenderingServer::save_pipeline_cache);
 	ClassDB::bind_method(D_METHOD("get_video_adapter_name"), &RenderingServer::get_video_adapter_name);
 	ClassDB::bind_method(D_METHOD("get_video_adapter_vendor"), &RenderingServer::get_video_adapter_vendor);
 #ifdef RD_ENABLED

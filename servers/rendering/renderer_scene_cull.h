@@ -1123,6 +1123,8 @@ public:
 
 	virtual void mesh_generate_pipelines(RID p_mesh, bool p_background_compilation);
 	virtual uint32_t get_pipeline_compilations(RSE::PipelineSource p_source);
+	virtual void mesh_precompile_pipelines(RID p_mesh, const Vector<RID> &p_materials);
+	virtual Dictionary material_get_compilation_info(RID p_material);
 
 	_FORCE_INLINE_ void _update_instance(Instance *p_instance) const;
 	_FORCE_INLINE_ void _update_instance_aabb(Instance *p_instance) const;

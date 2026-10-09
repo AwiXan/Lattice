@@ -126,6 +126,8 @@ public:
 
 	virtual void mesh_generate_pipelines(RID p_mesh, bool p_background_compilation) = 0;
 	virtual uint32_t get_pipeline_compilations(RSE::PipelineSource p_source) = 0;
+	virtual void mesh_precompile_pipelines(RID p_mesh, const Vector<RID> &p_materials) = 0;
+	virtual Dictionary material_get_compilation_info(RID p_material) = 0;
 
 	/* SKY API */
 

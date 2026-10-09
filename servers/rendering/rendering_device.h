@@ -1240,6 +1240,8 @@ private:
 	RID_Owner<RenderPipeline, true> render_pipeline_owner;
 
 	bool pipeline_cache_enabled = false;
+	// There was a cache file at the start, taken or not.
+	bool pipeline_cache_file_found = false;
 	size_t pipeline_cache_size = 0;
 	String pipeline_cache_file_path;
 	WorkerThreadPool::TaskID pipeline_cache_save_task = WorkerThreadPool::INVALID_TASK_ID;
@@ -1301,7 +1303,10 @@ public:
 	RID raytracing_pipeline_create(Span<PipelineShader> p_raygen_shaders, Span<PipelineShader> p_miss_shaders, Span<HitGroup> p_hit_groups, uint32_t p_max_trace_recursion_depth);
 	bool raytracing_pipeline_is_valid(RID p_pipeline);
 
-	void update_pipeline_cache(bool p_closing = false);
+	void update_pipeline_cache(bool p_closing = false, bool p_now = false);
+
+	// For RenderingServer.get_shader_compilation_info(): the pipeline cache, as found at the start and as used since.
+	Dictionary get_pipeline_cache_info();
 
 private:
 	/****************/

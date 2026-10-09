@@ -1657,6 +1657,21 @@ void RendererSceneCull::mesh_generate_pipelines(RID p_mesh, bool p_background_co
 	scene_render->mesh_generate_pipelines(p_mesh, p_background_compilation);
 }
 
+void RendererSceneCull::mesh_precompile_pipelines(RID p_mesh, const Vector<RID> &p_materials) {
+	scene_render->mesh_precompile_pipelines(p_mesh, p_materials);
+}
+
+Dictionary RendererSceneCull::material_get_compilation_info(RID p_material) {
+	uint32_t compiled = 0;
+	uint32_t compiling = 0;
+	scene_render->material_get_pipeline_counts(p_material, compiled, compiling);
+	Dictionary info;
+	info["pipelines_compiled"] = compiled;
+	info["pipelines_compiling"] = compiling;
+	info["compiling"] = compiling > 0;
+	return info;
+}
+
 uint32_t RendererSceneCull::get_pipeline_compilations(RSE::PipelineSource p_source) {
 	return scene_render->get_pipeline_compilations(p_source);
 }

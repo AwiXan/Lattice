@@ -80,6 +80,7 @@ class RenderingServerDefault : public RenderingServer {
 	mutable CommandQueueMT command_queue;
 
 	Thread::ID server_thread = Thread::MAIN_ID;
+	void _save_pipeline_cache();
 	WorkerThreadPool::TaskID server_task_id = WorkerThreadPool::INVALID_TASK_ID;
 	bool exit = false;
 	bool create_thread = false;
@@ -995,6 +996,8 @@ public:
 	FUNC1(gi_set_use_half_resolution, bool)
 	FUNC1(gi_set_resolution, RSE::GIResolution)
 	FUNC1(refraction_set_max_layers, int)
+	FUNC2(mesh_precompile_pipelines, RID, const Vector<RID> &)
+	FUNC1RC(Dictionary, material_get_compilation_info, RID)
 
 #undef server_name
 #undef ServerName
@@ -1191,6 +1194,7 @@ public:
 #endif
 
 	virtual uint64_t get_rendering_info(RSE::RenderingInfo p_info) override;
+	virtual void save_pipeline_cache() override;
 #ifdef RD_ENABLED
 	virtual RenderingDeviceEnums::DeviceType get_video_adapter_type() const override;
 #endif

@@ -1728,6 +1728,8 @@
 			<description>
 				Returns what the renderer has compiled and is compiling: shader programs (the variants of each shader, built from source or loaded from the shader cache) and pipelines (a shader program ready for one way of drawing). Both are compiled on worker threads; while a pipeline is being compiled, the Forward+ and Mobile renderers draw with a slower general one.
 				The dictionary holds [code]compiling[/code] ([code]true[/code] while anything is), [code]shaders_compiling[/code], [code]shaders_compiled[/code], [code]shaders_from_cache[/code] (out of the compiled ones), [code]pipelines_compiling[/code], [code]pipelines_compiled[/code], and [code]types[/code]: the same numbers for each kind of shader, under [code]"spatial"[/code], [code]"canvas_item"[/code], [code]"particles"[/code], [code]"sky"[/code], [code]"fog"[/code] and [code]"engine"[/code] (the renderer's own effects). The numbers count up from the start of the game.
+				[code]pipeline_cache[/code] tells about the cache of compiled pipelines kept on disk between runs (see [member ProjectSettings.rendering/rendering_device/pipeline_cache/enable]): [code]enabled[/code]; [code]state[/code], [code]"loaded"[/code] (what was saved last time is used), [code]"empty"[/code] (there was none: the first start, or it was deleted), [code]"discarded"[/code] (it was made with another GPU, graphics driver version or engine build) or [code]"disabled"[/code]; [code]loaded[/code] ([code]state[/code] is [code]"loaded"[/code]); [code]size[/code] in bytes; and [code]hits[/code] and [code]misses[/code], how many pipelines were found in it and how many had to be compiled since the start ([code]-1[/code] when the graphics driver can't tell, as only Vulkan does).
+				[code]needs_compilation[/code] is [code]true[/code] when the cache had nothing to give ([code]"empty"[/code] or [code]"discarded"[/code]): every pipeline will be compiled as it is first needed, the time for a "compiling shaders" screen (see [method PackedScene.precompile_shaders]). Once the cache is [code]"loaded"[/code], pipelines it holds take a fraction of the time; a game that added materials since will still see [code]misses[/code] for them.
 				A loading screen waiting for the level's shaders, once the level is in the tree:
 				[codeblock]
 				func _process(_delta):
@@ -2460,12 +2462,27 @@
 				[b]Note:[/b] The equivalent resource is [Material].
 			</description>
 		</method>
+		<method name="material_get_compilation_info" qualifiers="const">
+			<return type="Dictionary" />
+			<param index="0" name="material" type="RID" />
+			<description>
+				Returns how far the pipelines of the [param material]'s shader are: [code]pipelines_compiled[/code], [code]pipelines_compiling[/code] (queued or being compiled on a worker thread) and [code]compiling[/code] ([code]true[/code] while any is). The numbers start again when the shader changes.
+				[b]Note:[/b] Counted by the Forward+ and Mobile renderers only; with Compatibility, all numbers stay at [code]0[/code].
+			</description>
+		</method>
 		<method name="material_get_param" qualifiers="const">
 			<return type="Variant" />
 			<param index="0" name="material" type="RID" />
 			<param index="1" name="parameter" type="StringName" />
 			<description>
 				Returns the value of a certain material's parameter.
+			</description>
+		</method>
+		<method name="material_precompile_pipelines">
+			<return type="void" />
+			<param index="0" name="material" type="RID" />
+			<description>
+				Queues the pipelines of the [param material] for compilation in the background, as [method mesh_precompile_pipelines] does, on a mesh of the usual vertex format (positions, normals, tangents and UVs). Meant for a material that is given to meshes in code: one that a scene file gives to its meshes is best compiled with [method PackedScene.precompile_shaders], on the meshes themselves.
 			</description>
 		</method>
 		<method name="material_set_next_pass">
@@ -2627,6 +2644,16 @@
 			<param index="0" name="mesh" type="RID" />
 			<description>
 				Returns a mesh's number of surfaces.
+			</description>
+		</method>
+		<method name="mesh_precompile_pipelines">
+			<return type="void" />
+			<param index="0" name="mesh" type="RID" />
+			<param index="1" name="materials" type="RID[]" default="[]" />
+			<description>
+				Queues the pipelines the [param mesh] is drawn with for compilation in the background, so that they are ready before it is first seen: those for the passes its materials need (color, depth, shadows), with the current rendering settings. [param materials] stand in for the materials of its surfaces where given (an [RID] per surface, an invalid one for a surface's own), as [member GeometryInstance3D.material_override] and [method MeshInstance3D.set_surface_override_material] do; their [member Material.next_pass] are compiled too. Follow the progress with [method get_shader_compilation_info] or [method material_get_compilation_info].
+				A mesh's pipelines with its own materials are queued already when it is made (loaded); this is for the materials that nodes give it, or for compiling again after a rendering setting that pipelines depend on has changed (such as MSAA).
+				[b]Note:[/b] Only the Forward+ and Mobile renderers compile pipelines ahead; with Compatibility, this does nothing.
 			</description>
 		</method>
 		<method name="mesh_set_blend_shape_mode">
@@ -3623,6 +3650,12 @@
 			<param index="0" name="callable" type="Callable" />
 			<description>
 				Schedules a callback to the given callable after a frame has been drawn.
+			</description>
+		</method>
+		<method name="save_pipeline_cache">
+			<return type="void" />
+			<description>
+				Writes the pipeline cache to disk now, in the background, instead of when it has grown by [member ProjectSettings.rendering/rendering_device/pipeline_cache/save_chunk_size_mb] or when the game exits: after a "compiling shaders" screen, so that what was compiled is kept even if the game does not exit normally. Does nothing when the pipeline cache is disabled, unchanged, or not supported.
 			</description>
 		</method>
 		<method name="scenario_create">

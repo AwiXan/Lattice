@@ -602,6 +602,11 @@ public:
 	virtual void pipeline_cache_free() = 0;
 	virtual size_t pipeline_cache_query_size() = 0;
 	virtual Vector<uint8_t> pipeline_cache_serialize() = 0;
+	// Whether the data given to pipeline_cache_create() was taken: made with this GPU, driver and engine.
+	virtual bool pipeline_cache_is_loaded() { return false; }
+	// How many pipelines were found in the pipeline cache, and how many had to be compiled, since the start.
+	// False when the driver can't tell.
+	virtual bool pipeline_cache_get_hits(uint64_t &r_hits, uint64_t &r_misses) { return false; }
 
 	/*******************/
 	/**** RENDERING ****/

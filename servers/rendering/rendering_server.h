@@ -1030,8 +1030,16 @@ public:
 	/* STATUS INFORMATION */
 
 	virtual uint64_t get_rendering_info(RSE::RenderingInfo p_info) = 0;
-	// Shader programs and pipelines compiled and compiling, by kind of shader.
+	// Shader programs and pipelines compiled and compiling, by kind of shader, and the pipeline cache.
 	Dictionary get_shader_compilation_info() const;
+	// The pipelines a mesh is drawn with, compiled ahead in the background, with these materials in place
+	// of its surfaces' own where given.
+	virtual void mesh_precompile_pipelines(RID p_mesh, const Vector<RID> &p_materials) = 0;
+	// The same for a material alone, on a mesh of the usual vertex format.
+	void material_precompile_pipelines(RID p_material);
+	virtual Dictionary material_get_compilation_info(RID p_material) const = 0;
+	// Writes the pipeline cache out now, in the background, rather than when it has grown enough or at exit.
+	virtual void save_pipeline_cache() = 0;
 	virtual String get_video_adapter_name() const = 0;
 	virtual String get_video_adapter_vendor() const = 0;
 #ifdef RD_ENABLED
@@ -1132,6 +1140,7 @@ private:
 	void _texture_3d_update(RID p_texture, const TypedArray<Image> &p_data);
 	TypedArray<Image> _texture_3d_get(RID p_texture) const;
 	TypedArray<Dictionary> _shader_get_shader_parameter_list(RID p_shader) const;
+	void _mesh_precompile_pipelines_bind(RID p_mesh, const TypedArray<RID> &p_materials);
 	RID _mesh_create_from_surfaces(const TypedArray<Dictionary> &p_surfaces, int p_blend_shape_count);
 	void _mesh_add_surface(RID p_mesh, const Dictionary &p_surface);
 	Dictionary _mesh_get_surface(RID p_mesh, int p_idx);

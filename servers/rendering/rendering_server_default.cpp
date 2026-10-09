@@ -304,6 +304,22 @@ void RenderingServerDefault::finish() {
 
 /* STATUS INFORMATION */
 
+void RenderingServerDefault::_save_pipeline_cache() {
+#ifdef RD_ENABLED
+	if (RenderingDevice::get_singleton()) {
+		RenderingDevice::get_singleton()->update_pipeline_cache(false, true);
+	}
+#endif
+}
+
+void RenderingServerDefault::save_pipeline_cache() {
+	if (Thread::get_caller_id() != server_thread) {
+		command_queue.push(this, &RenderingServerDefault::_save_pipeline_cache);
+	} else {
+		_save_pipeline_cache();
+	}
+}
+
 uint64_t RenderingServerDefault::get_rendering_info(RSE::RenderingInfo p_info) {
 	if (p_info == RSE::RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME) {
 		return RSG::viewport->get_total_objects_drawn();
