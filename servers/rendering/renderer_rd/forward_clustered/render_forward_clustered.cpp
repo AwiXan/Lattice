@@ -818,6 +818,9 @@ uint32_t RenderForwardClustered::_setup_environment(const RenderDataRD *p_render
 					ss_flags |= (rb_data.is_valid() && !rb_data->ss_effects_data.ssr.half_size) ? SCREEN_SPACE_EFFECTS_FLAGS_RESOLVE_SSR : 0;
 				}
 			}
+		} else {
+			// The transparent surfaces that trace their own reflections on screen do when the environment has SSR.
+			ss_flags |= environment_get_ssr_enabled(p_render_data->environment) ? SCREEN_SPACE_EFFECTS_FLAGS_USE_SSR_TRANSPARENT : 0;
 		}
 		scene_state.ubo.ss_effects_flags = ss_flags;
 	} else {

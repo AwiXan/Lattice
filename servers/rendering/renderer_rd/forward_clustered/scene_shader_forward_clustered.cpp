@@ -56,6 +56,7 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	uses_oit = false;
 	uses_shadow_catcher = false;
 	uses_shadow_catcher_reflections = false;
+	uses_screen_space_reflections = false;
 	depth_test_disabledi = 0;
 	depth_test_invertedi = 0;
 	alpha_antialiasing_mode = ALPHA_ANTIALIASING_OFF;
@@ -109,6 +110,7 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	actions.render_mode_flags["blend_oit"] = &uses_oit;
 	actions.render_mode_flags["shadow_catcher"] = &uses_shadow_catcher;
 	actions.render_mode_flags["shadow_catcher_reflections"] = &uses_shadow_catcher_reflections;
+	actions.render_mode_flags["screen_space_reflections"] = &uses_screen_space_reflections;
 
 	actions.render_mode_values["alpha_to_coverage"] = Pair<int *, int>(&alpha_antialiasing_mode, ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE);
 	actions.render_mode_values["alpha_to_coverage_and_one"] = Pair<int *, int>(&alpha_antialiasing_mode, ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE_AND_TO_ONE);
@@ -208,7 +210,7 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	uses_screen_texture_mipmaps = gen_code.uses_screen_texture_mipmaps;
 	uses_screen_texture = gen_code.uses_screen_texture;
 	uses_depth_texture = gen_code.uses_depth_texture;
-	if (uses_shadow_catcher && uses_shadow_catcher_reflections) {
+	if ((uses_shadow_catcher && uses_shadow_catcher_reflections) || uses_screen_space_reflections) {
 		// What it reflects is looked up on the screen.
 		uses_screen_texture = true;
 		uses_screen_texture_mipmaps = true;
@@ -930,6 +932,7 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 		actions.render_mode_defines["blend_oit"] = "#define BLEND_OIT_USED\n";
 		actions.render_mode_defines["shadow_catcher"] = "#define USE_SHADOW_CATCHER\n";
 		actions.render_mode_defines["shadow_catcher_reflections"] = "#define SHADOW_CATCHER_REFLECTIONS\n";
+		actions.render_mode_defines["screen_space_reflections"] = "#define USE_SCREEN_SPACE_REFLECTIONS\n";
 
 		actions.render_mode_defines["depth_draw_never"] = "#define DEPTH_DRAW_NEVER_USED\n";
 		actions.render_mode_defines["depth_draw_always"] = "#define DEPTH_DRAW_ALWAYS_USED\n";

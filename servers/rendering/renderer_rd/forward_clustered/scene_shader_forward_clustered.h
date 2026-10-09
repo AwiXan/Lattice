@@ -252,6 +252,7 @@ public:
 		// with shadow_catcher_reflections, what it reflects too.
 		bool uses_shadow_catcher = false;
 		bool uses_shadow_catcher_reflections = false;
+		bool uses_screen_space_reflections = false;
 		bool uses_alpha_clip = false;
 		bool uses_alpha_antialiasing = false;
 		bool uses_depth_prepass_alpha = false;

@@ -335,6 +335,7 @@ ShaderTypes::ShaderTypes() {
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("shadow_to_opacity") });
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("shadow_catcher") });
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("shadow_catcher_reflections") });
+		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("screen_space_reflections") });
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("vertex_lighting") });
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("particle_trails") });
 		shader_modes[RSE::SHADER_SPATIAL].modes.push_back({ PNAME("alpha_to_coverage") });

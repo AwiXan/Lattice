@@ -872,6 +872,9 @@ void BaseMaterial3D::_update_shader() {
 			code += ", shadow_catcher_reflections";
 		}
 	}
+	if (screen_space_reflections) {
+		code += ", screen_space_reflections";
+	}
 	if (flags[FLAG_DISABLE_FOG]) {
 		code += ", fog_disabled";
 	}
@@ -3384,6 +3387,18 @@ BaseMaterial3D::ShadowCatcher BaseMaterial3D::get_shadow_catcher() const {
 	return shadow_catcher;
 }
 
+void BaseMaterial3D::set_screen_space_reflections(bool p_enabled) {
+	if (screen_space_reflections == p_enabled) {
+		return;
+	}
+	screen_space_reflections = p_enabled;
+	_queue_shader_change();
+}
+
+bool BaseMaterial3D::is_screen_space_reflections_enabled() const {
+	return screen_space_reflections;
+}
+
 RID BaseMaterial3D::get_rid() const {
 	const_cast<BaseMaterial3D *>(this)->_update_shader();
 	const_cast<BaseMaterial3D *>(this)->_check_material_rid();
@@ -3759,6 +3774,9 @@ void BaseMaterial3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_shadow_catcher", "mode"), &BaseMaterial3D::set_shadow_catcher);
 	ClassDB::bind_method(D_METHOD("get_shadow_catcher"), &BaseMaterial3D::get_shadow_catcher);
 
+	ClassDB::bind_method(D_METHOD("set_screen_space_reflections", "enabled"), &BaseMaterial3D::set_screen_space_reflections);
+	ClassDB::bind_method(D_METHOD("is_screen_space_reflections_enabled"), &BaseMaterial3D::is_screen_space_reflections_enabled);
+
 	ClassDB::bind_method(D_METHOD("set_ao_light_affect", "amount"), &BaseMaterial3D::set_ao_light_affect);
 	ClassDB::bind_method(D_METHOD("get_ao_light_affect"), &BaseMaterial3D::get_ao_light_affect);
 
@@ -3841,6 +3859,7 @@ void BaseMaterial3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "cull_mode", PROPERTY_HINT_ENUM, "Back,Front,Disabled"), "set_cull_mode", "get_cull_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "depth_draw_mode", PROPERTY_HINT_ENUM, "Opaque Only,Always,Never"), "set_depth_draw_mode", "get_depth_draw_mode");
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "no_depth_test"), "set_flag", "get_flag", FLAG_DISABLE_DEPTH_TEST);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "screen_space_reflections"), "set_screen_space_reflections", "is_screen_space_reflections_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "depth_test", PROPERTY_HINT_ENUM, "Default,Inverted"), "set_depth_test", "get_depth_test");
 
 	ADD_GROUP("Shading", "");

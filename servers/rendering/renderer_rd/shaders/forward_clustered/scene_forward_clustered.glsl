@@ -1118,25 +1118,31 @@ layout(location = 2) out vec2 motion_vector;
 
 #include "../scene_forward_gi_inc.glsl"
 
-#if defined(USE_SHADOW_CATCHER) && defined(SHADOW_CATCHER_REFLECTIONS)
+#if (defined(USE_SHADOW_CATCHER) && defined(SHADOW_CATCHER_REFLECTIONS)) || defined(USE_SCREEN_SPACE_REFLECTIONS)
+#define USE_SCREEN_REFLECTION_TRACE
+#endif
+
+#ifdef USE_SCREEN_REFLECTION_TRACE
 #ifndef USE_MULTIVIEW
-// One reflected ray of a shadow catcher, marched across the screen against the
-// depth copy. What it lands on is read from the screen copy, averaged over
-// p_footprint (the part of the reflection the ray stands for, in view units
-// at one unit of distance). Nothing when it lands nowhere on screen.
-vec3 shadow_catcher_reflection_ray(vec3 p_vertex, vec3 p_normal, vec3 p_ray_dir, float p_footprint, int p_steps, float p_jitter, mat4 p_projection, mat4 p_inv_projection, float p_z_near, vec2 p_screen_pixel_size) {
+// One reflected ray, marched across the screen against the depth copy. What it
+// lands on is read from the screen copy, averaged over p_footprint (the part of
+// the reflection the ray stands for, in view units at one unit of distance).
+// Returns that color weighted by how much of it to trust (premultiplied), and
+// the weight: zero when it lands nowhere on screen.
+// p_reach is how far it may go, in multiples of the surface's distance to the camera.
+vec4 screen_reflection_ray(vec3 p_vertex, vec3 p_normal, vec3 p_ray_dir, float p_reach, float p_footprint, int p_steps, float p_jitter, mat4 p_projection, mat4 p_inv_projection, float p_z_near, vec2 p_screen_pixel_size) {
 	const int REFINE_STEPS = 5;
 
 	// Coming back at the camera, it would land on sides the screen does not show.
 	float fade = 1.0 - smoothstep(0.0, 0.35, p_ray_dir.z);
 	if (fade <= 0.0) {
-		return vec3(0.0);
+		return vec4(0.0);
 	}
 
-	// As far as the surface is from the camera, and never behind it.
+	// As far as it may reach, and never behind the camera.
 	float depth = -p_vertex.z;
 	vec3 ray_origin = p_vertex + p_normal * (depth * 0.002);
-	float ray_length = depth;
+	float ray_length = depth * p_reach;
 	if (p_ray_dir.z > 0.0) {
 		ray_length = min(ray_length, (depth - p_z_near) * 0.95 / p_ray_dir.z);
 	}
@@ -1150,42 +1156,55 @@ vec3 shadow_catcher_reflection_ray(vec3 p_vertex, vec3 p_normal, vec3 p_ray_dir,
 	float k_end = 1.0 / clip_end.w;
 	vec2 uv_origin = clip_origin.xy * k_origin * 0.5 + 0.5;
 	vec2 uv_end = clip_end.xy * k_end * 0.5 + 0.5;
-	float z_origin = ray_origin.z * k_origin;
-	float z_end = ray_end.z * k_end;
+	vec3 origin_k = ray_origin * k_origin;
+	vec3 end_k = ray_end * k_end;
+
+	// Only the part on screen is worth the steps: cut where it leaves it.
+	vec2 uv_delta = uv_end - uv_origin;
+	float on_screen = 1.0;
+	if (uv_delta.x != 0.0) {
+		on_screen = min(on_screen, ((uv_delta.x > 0.0 ? 1.0 : 0.0) - uv_origin.x) / uv_delta.x);
+	}
+	if (uv_delta.y != 0.0) {
+		on_screen = min(on_screen, ((uv_delta.y > 0.0 ? 1.0 : 0.0) - uv_origin.y) / uv_delta.y);
+	}
+	on_screen = clamp(on_screen, 0.0, 1.0);
+	uv_end = mix(uv_origin, uv_end, on_screen);
+	end_k = mix(origin_k, end_k, on_screen);
+	k_end = mix(k_origin, k_end, on_screen);
 
 	// From a depth to the view's z.
 	vec4 unproject = vec4(p_inv_projection[2][2], p_inv_projection[3][2], p_inv_projection[2][3], p_inv_projection[3][3]);
 
-	// How far behind what the screen shows the ray may be and still have hit it.
-	float thickness = ray_length * (1.5 / float(p_steps) + 0.03);
-
 	float hit = -1.0;
 	float before = 0.0;
+	vec3 previous_position = ray_origin;
 	for (int i = 0; i < p_steps; i++) {
 		float along = (float(i) + 0.5 + p_jitter) / float(p_steps);
 		vec2 uv = mix(uv_origin, uv_end, along);
-		if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
-			break;
-		}
-		float ray_z = mix(z_origin, z_end, along) / mix(k_origin, k_end, along);
+		vec3 ray_position = mix(origin_k, end_k, along) / mix(k_origin, k_end, along);
 		float scene_depth = textureLod(sampler2D(depth_buffer, SAMPLER_NEAREST_CLAMP), uv, 0.0).r;
 		float scene_z = (unproject.x * scene_depth + unproject.y) / (unproject.z * scene_depth + unproject.w);
-		float behind = scene_z - ray_z;
+		float behind = scene_z - ray_position.z;
+		// How far behind what the screen shows the ray may be and still have hit
+		// it: the way it came since the last step, and a little more far away.
+		float thickness = distance(ray_position, previous_position) * 1.5 - ray_position.z * 0.02;
 		if (behind > 0.0 && behind < thickness) {
 			hit = along;
 			break;
 		}
 		before = along;
+		previous_position = ray_position;
 	}
 	if (hit < 0.0) {
-		return vec3(0.0);
+		return vec4(0.0);
 	}
 
 	// Narrowed down to where it went in.
 	for (int i = 0; i < REFINE_STEPS; i++) {
 		float along = (before + hit) * 0.5;
 		vec2 uv = mix(uv_origin, uv_end, along);
-		float ray_z = mix(z_origin, z_end, along) / mix(k_origin, k_end, along);
+		float ray_z = mix(origin_k.z, end_k.z, along) / mix(k_origin, k_end, along);
 		float scene_depth = textureLod(sampler2D(depth_buffer, SAMPLER_NEAREST_CLAMP), uv, 0.0).r;
 		float scene_z = (unproject.x * scene_depth + unproject.y) / (unproject.z * scene_depth + unproject.w);
 		if (scene_z - ray_z > 0.0) {
@@ -1201,24 +1220,23 @@ vec3 shadow_catcher_reflection_ray(vec3 p_vertex, vec3 p_normal, vec3 p_ray_dir,
 
 	// The footprint where the ray lands, seen from the camera, is how many
 	// pixels of the screen copy it averages.
-	vec3 hit_position = mix(ray_origin * k_origin, ray_end * k_end, hit) / mix(k_origin, k_end, hit);
+	vec3 hit_position = mix(origin_k, end_k, hit) / mix(k_origin, k_end, hit);
 	float radius = distance(hit_position, ray_origin) * p_footprint;
 	float radius_pixels = radius * abs(p_projection[1][1]) * 0.5 / max(-hit_position.z, p_z_near) / p_screen_pixel_size.y;
 	float lod = log2(max(radius_pixels * 2.0, 1.0));
-	return textureLod(sampler2D(color_buffer, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP), hit_uv, lod).rgb * fade;
+	return vec4(textureLod(sampler2D(color_buffer, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP), hit_uv, lod).rgb * fade, fade);
 }
 #endif // !USE_MULTIVIEW
 
-// What a shadow catcher reflects of its surroundings: only what is on screen,
-// as the rest is in the background it is drawn over.
+// What a surface reflects of what is on screen around it.
 // A rough surface reflects a cone rather than a ray: GGX turned into the cone
 // of a specular power, as in cone-traced SSR. A smooth one gets the mirrored
 // ray; a rough one gets rays spread over the cone, so that the outline of what
 // it reflects softens with roughness and with distance as the colors do, the
 // spread turned per pixel (and per frame under TAA, which smooths it out).
-vec3 shadow_catcher_screen_reflection(vec3 p_vertex, vec3 p_normal, vec3 p_view, float p_roughness, mat4 p_projection, mat4 p_inv_projection, float p_z_near, vec2 p_screen_pixel_size, float p_noise_shift) {
+vec4 screen_reflection(vec3 p_vertex, vec3 p_normal, vec3 p_view, float p_roughness, float p_reach, mat4 p_projection, mat4 p_inv_projection, float p_z_near, vec2 p_screen_pixel_size, float p_noise_shift) {
 #ifdef USE_MULTIVIEW
-	return vec3(0.0);
+	return vec4(0.0);
 #else // USE_MULTIVIEW
 	vec3 mirrored = reflect(-p_view, p_normal);
 
@@ -1232,13 +1250,13 @@ vec3 shadow_catcher_screen_reflection(vec3 p_vertex, vec3 p_normal, vec3 p_view,
 
 	// About a pixel of spread at a typical distance: the mirrored ray alone.
 	if (cone_tan < 0.004) {
-		return shadow_catcher_reflection_ray(p_vertex, p_normal, mirrored, cone_tan, 48, noise, p_projection, p_inv_projection, p_z_near, p_screen_pixel_size);
+		return screen_reflection_ray(p_vertex, p_normal, mirrored, p_reach, cone_tan, 48, noise, p_projection, p_inv_projection, p_z_near, p_screen_pixel_size);
 	}
 
 	const int RAYS = 4;
 	vec3 tangent = normalize(cross(abs(mirrored.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), mirrored));
 	vec3 bitangent = cross(mirrored, tangent);
-	vec3 reflection = vec3(0.0);
+	vec4 reflection = vec4(0.0);
 	for (int i = 0; i < RAYS; i++) {
 		// Spread evenly over the cone's disk (Vogel), turned by the noise.
 		float radius = sqrt((float(i) + 0.5) / float(RAYS)) * cone_tan;
@@ -1246,12 +1264,12 @@ vec3 shadow_catcher_screen_reflection(vec3 p_vertex, vec3 p_normal, vec3 p_view,
 		vec3 ray_dir = normalize(mirrored + (tangent * cos(angle) + bitangent * sin(angle)) * radius);
 		// Into the surface it would see itself: back out of it, as a rough one scatters.
 		ray_dir = dot(ray_dir, p_normal) < 0.0 ? reflect(ray_dir, p_normal) : ray_dir;
-		reflection += shadow_catcher_reflection_ray(p_vertex, p_normal, ray_dir, cone_tan * inversesqrt(float(RAYS)), 24, fract(noise + float(i) * 0.618034), p_projection, p_inv_projection, p_z_near, p_screen_pixel_size);
+		reflection += screen_reflection_ray(p_vertex, p_normal, ray_dir, p_reach, cone_tan * inversesqrt(float(RAYS)), 24, fract(noise + float(i) * 0.618034), p_projection, p_inv_projection, p_z_near, p_screen_pixel_size);
 	}
 	return reflection / float(RAYS);
 #endif // USE_MULTIVIEW
 }
-#endif // USE_SHADOW_CATCHER && SHADOW_CATCHER_REFLECTIONS
+#endif // USE_SCREEN_REFLECTION_TRACE
 
 #endif //!defined(MODE_RENDER_DEPTH) && !defined(MODE_UNSHADED)
 
@@ -2481,22 +2499,41 @@ void fragment_shader(in SceneData scene_data) {
 			indirect_specular_light = indirect_specular_light * (1.0 - ssr.a) + ssr.rgb;
 		}
 
+#ifdef USE_SCREEN_REFLECTION_TRACE
 #ifdef USE_SHADOW_CATCHER
-#ifdef SHADOW_CATCHER_REFLECTIONS
-		vec3 caught_reflection = shadow_catcher_screen_reflection(vertex, normal, view, roughness, projection_matrix, inv_projection_matrix, scene_data.z_near, scene_data.screen_pixel_size, scene_data.taa_jitter != vec2(0.0) ? mod(scene_data.taa_frame_count, 64.0) * 5.588238 : 0.0);
-		// A rough surface spread its rays differently in each pixel: the four of a
-		// 2x2 quad, averaged through the derivatives, make a smoother reflection.
-		// Smooth ones keep their own pixel, as sharp as a mirror.
-		vec3 reflection_across = dFdxFine(caught_reflection);
-		vec3 reflection_down = dFdyFine(caught_reflection);
-		vec3 reflection_diagonal = dFdyFine(reflection_across);
-		vec2 quad_side = 1.0 - 2.0 * mod(floor(gl_FragCoord.xy), 2.0);
-		vec3 quad_reflection = caught_reflection + 0.5 * (quad_side.x * reflection_across + quad_side.y * reflection_down) + 0.25 * quad_side.x * quad_side.y * reflection_diagonal;
-		indirect_specular_light = mix(caught_reflection, max(quad_reflection, vec3(0.0)), smoothstep(0.08, 0.2, roughness));
+		// What a shadow catcher reflects is all on screen: the rest is the background it is drawn over.
+		const bool trace_reflection = true;
+		// Around it, as far from it as it is from the camera.
+		const float reflection_reach = 1.0;
 #else
+		// A transparent surface reflects what is on screen when the environment has screen-space reflections,
+		// and what the sky and the reflection probes give elsewhere.
+		bool trace_reflection = bool(implementation_data.ss_effects_flags & SCREEN_SPACE_EFFECTS_FLAGS_USE_SSR_TRANSPARENT);
+		// Anything on screen, however far.
+		const float reflection_reach = 64.0;
+#endif
+		if (trace_reflection) {
+			vec4 traced_reflection = screen_reflection(vertex, normal, view, roughness, reflection_reach, projection_matrix, inv_projection_matrix, scene_data.z_near, scene_data.screen_pixel_size, scene_data.taa_jitter != vec2(0.0) ? mod(scene_data.taa_frame_count, 64.0) * 5.588238 : 0.0);
+			// A rough surface spread its rays differently in each pixel: the four of a
+			// 2x2 quad, averaged through the derivatives, make a smoother reflection.
+			// Smooth ones keep their own pixel, as sharp as a mirror.
+			vec4 reflection_across = dFdxFine(traced_reflection);
+			vec4 reflection_down = dFdyFine(traced_reflection);
+			vec4 reflection_diagonal = dFdyFine(reflection_across);
+			vec2 quad_side = 1.0 - 2.0 * mod(floor(gl_FragCoord.xy), 2.0);
+			vec4 quad_reflection = traced_reflection + 0.5 * (quad_side.x * reflection_across + quad_side.y * reflection_down) + 0.25 * quad_side.x * quad_side.y * reflection_diagonal;
+			traced_reflection = mix(traced_reflection, clamp(quad_reflection, vec4(0.0), vec4(vec3(1e6), 1.0)), smoothstep(0.08, 0.2, roughness));
+#ifdef USE_SHADOW_CATCHER
+			indirect_specular_light = traced_reflection.rgb;
+#else
+			// Weighted by how surely it hit something, so it fades into the radiance where it did not.
+			indirect_specular_light = indirect_specular_light * (1.0 - traced_reflection.a) + traced_reflection.rgb;
+#endif
+		}
+#endif // USE_SCREEN_REFLECTION_TRACE
+#if defined(USE_SHADOW_CATCHER) && !defined(SHADOW_CATCHER_REFLECTIONS)
 		indirect_specular_light = vec3(0.0);
 #endif
-#endif // USE_SHADOW_CATCHER
 	}
 #endif // AMBIENT_LIGHT_DISABLED
 

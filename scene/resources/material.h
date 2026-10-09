@@ -399,6 +399,7 @@ private:
 		uint64_t grow : 1;
 		uint64_t proximity_fade : 1;
 		uint64_t orm : 1;
+		uint64_t screen_space_reflections : 1;
 
 		// flag bitfield
 		uint32_t texture_mask;
@@ -506,6 +507,7 @@ private:
 		mk.shadow_catcher = shadow_catcher;
 		mk.alpha_antialiasing_mode = alpha_antialiasing_mode;
 		mk.orm = orm;
+		mk.screen_space_reflections = screen_space_reflections;
 
 		mk.stencil_mode = stencil_mode;
 		mk.stencil_flags = stencil_flags;
@@ -685,6 +687,7 @@ private:
 	BillboardMode billboard_mode;
 	EmissionOperator emission_op = EMISSION_OP_ADD;
 	ShadowCatcher shadow_catcher = SHADOW_CATCHER_DISABLED;
+	bool screen_space_reflections = false;
 
 	TextureChannel metallic_texture_channel;
 	TextureChannel roughness_texture_channel;
@@ -932,6 +935,9 @@ public:
 
 	void set_shadow_catcher(ShadowCatcher p_mode);
 	ShadowCatcher get_shadow_catcher() const;
+
+	void set_screen_space_reflections(bool p_enabled);
+	bool is_screen_space_reflections_enabled() const;
 
 	void set_stencil_mode(StencilMode p_stencil_mode);
 	StencilMode get_stencil_mode() const;
