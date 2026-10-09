@@ -1014,7 +1014,8 @@ int OS_Unix::get_process_id() const {
 bool OS_Unix::process_exists(const ProcessID &p_pid) const {
 	// Signal 0 sends nothing, only checks; a process one may not signal is
 	// there all the same.
-	return kill(p_pid, 0) == 0 || errno == EPERM;
+	// ::kill, the system call: inside the class, kill() is OS_Unix::kill().
+	return ::kill(p_pid, 0) == 0 || errno == EPERM;
 }
 
 bool OS_Unix::is_process_running(const ProcessID &p_pid) const {

@@ -102,7 +102,10 @@ jobs:
         with:
           platform: macos
           target: ${{ matrix.target }}
+          # --keep-going: code only MSVC ever compiled may fail in more than one place,
+          # and one run should name them all.
           scons-flags: >-
+            --keep-going
             arch=arm64
             ${{ matrix.scons-flags }}
             vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED || 'no' }}
