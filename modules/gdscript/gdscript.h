@@ -146,6 +146,9 @@ private:
 	void _save_old_static_data();
 	void _restore_old_static_data();
 
+	// Where the members of this class and of its inner classes are kept in an instance.
+	void _get_member_places(HashMap<GDScript *, HashMap<StringName, int>> &r_places);
+
 	HashMap<StringName, int> member_lines;
 	HashMap<StringName, Variant> member_default_values;
 	List<PropertyInfo> members_cache;
@@ -630,6 +633,9 @@ public:
 	virtual void reload_all_scripts() override;
 	virtual void reload_scripts(const Array &p_scripts, bool p_soft_reload) override;
 	virtual void reload_tool_script(const Ref<Script> &p_script, bool p_soft_reload) override;
+#ifdef TOOLS_ENABLED
+	void _reload_inheriters(const HashSet<GDScript *> &p_bases, GDScript *p_reloaded);
+#endif
 
 	virtual void frame() override;
 
