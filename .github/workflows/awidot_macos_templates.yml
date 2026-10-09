@@ -1,0 +1,176 @@
+# macOS export templates of Awidot, for exporting games to Apple Silicon Macs from Windows.
+#
+# The result is the "macos-templates" artifact: macos.zip, which goes into the macOS
+# export preset as its custom template (both Debug and Release point at the same file),
+# and the release template's debug symbols, for reading crash backtraces from testers.
+#
+# Runs when the awidot-macos branch is moved to the commit to build, which needs nothing
+# but git:
+#     git push --force origin awidot:awidot-macos
+# The templates then come from the same commit as the editor that exports with them,
+# which they have to. A fixed branch rather than tags, because GitHub keeps the build
+# cache per branch: every later run only recompiles what changed.
+#
+# Needs the repository secret SCRIPT_AES256_ENCRYPTION_KEY: the key the game's .pck is
+# encrypted with, the same one the Windows templates are built with.
+
+name: 🍏 Awidot macOS templates
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - awidot-macos
+
+jobs:
+  build:
+    runs-on: macos-26
+    name: ${{ matrix.name }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Release template (arm64)
+            target: template_release
+            bundle-name: godot_macos_release.arm64
+            # Symbols go to a .dSYM next to the binary, which itself ships stripped.
+            scons-flags: production=yes debug_symbols=yes separate_debug_symbols=yes
+
+          - name: Debug template (arm64)
+            target: template_debug
+            bundle-name: godot_macos_debug.arm64
+            scons-flags: ""
+
+    env:
+      SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
+
+    steps:
+      - name: Check the encryption key
+        run: |
+          # A template without the key cannot read an encrypted .pck: better no build than that.
+          if ! printf '%s' "$SCRIPT_AES256_ENCRYPTION_KEY" | grep -Eq '^[0-9a-fA-F]{64}$'; then
+            echo "::error::The SCRIPT_AES256_ENCRYPTION_KEY secret is missing or is not 64 hex characters."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Restore Godot build cache
+        uses: ./.github/actions/godot-cache-restore
+        with:
+          cache-name: awidot-macos-${{ matrix.target }}
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/godot-deps
+
+      - name: Download pre-built ANGLE
+        id: angle-sdk
+        run: |
+          if python ./misc/scripts/install_angle.py; then
+            echo "ANGLE_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::ANGLE SDK installation failed, building without ANGLE support."
+            echo "ANGLE_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download pre-built AccessKit
+        id: accesskit-sdk
+        run: |
+          if python3 ./misc/scripts/install_accesskit.py; then
+            echo "ACCESSKIT_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::AccessKit SDK installation failed, building without AccessKit support."
+            echo "ACCESSKIT_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Vulkan SDK
+        id: vulkan-sdk
+        run: |
+          # Metal is the renderer on Apple Silicon; MoltenVK is only the fallback.
+          if sh misc/scripts/install_vulkan_sdk_macos.sh; then
+            echo "VULKAN_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Vulkan SDK installation failed, building without Vulkan support."
+            echo "VULKAN_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+        continue-on-error: true
+
+      - name: Compilation
+        uses: ./.github/actions/godot-build
+        with:
+          platform: macos
+          target: ${{ matrix.target }}
+          scons-flags: >-
+            arch=arm64
+            ${{ matrix.scons-flags }}
+            vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED || 'no' }}
+            accesskit=${{ steps.accesskit-sdk.outputs.ACCESSKIT_ENABLED }}
+            angle=${{ steps.angle-sdk.outputs.ANGLE_ENABLED }}
+
+      - name: Save Godot build cache
+        uses: ./.github/actions/godot-cache-save
+        with:
+          cache-name: awidot-macos-${{ matrix.target }}
+        continue-on-error: true
+
+      - name: Smoke test
+        run: ./bin/godot.macos.${{ matrix.target }}.arm64 --version
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p out
+          cp bin/godot.macos.${{ matrix.target }}.arm64 out/${{ matrix.bundle-name }}
+          chmod +x out/${{ matrix.bundle-name }}
+          if [ -d bin/godot.macos.${{ matrix.target }}.arm64.dSYM ]; then
+            cp -R bin/godot.macos.${{ matrix.target }}.arm64.dSYM out/${{ matrix.bundle-name }}.dSYM
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: awidot-macos-${{ matrix.target }}
+          path: out/
+          retention-days: 7
+
+  package:
+    needs: build
+    runs-on: macos-26
+    name: Package macos.zip
+    timeout-minutes: 15
+    steps:
+      - name: Checkout the bundle skeleton
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: misc/dist/macos_template.app
+          sparse-checkout-cone-mode: false
+
+      - name: Download the templates
+        uses: actions/download-artifact@v8
+        with:
+          pattern: awidot-macos-template_*
+          path: built
+          merge-multiple: true
+
+      - name: Assemble macos.zip
+        run: |
+          # The layout the macOS exporter reads: Contents/MacOS/godot_macos_<release|debug>.<arch>.
+          cp -R misc/dist/macos_template.app .
+          mkdir -p macos_template.app/Contents/MacOS
+          cp built/godot_macos_release.arm64 built/godot_macos_debug.arm64 macos_template.app/Contents/MacOS/
+          chmod +x macos_template.app/Contents/MacOS/godot_macos_*
+          mkdir -p out
+          zip -q -9 -r out/macos.zip macos_template.app
+          if [ -d built/godot_macos_release.arm64.dSYM ]; then
+            (cd built && zip -q -9 -r ../out/godot_macos_release.arm64.dSYM.zip godot_macos_release.arm64.dSYM)
+          fi
+          git rev-parse HEAD > out/commit.txt
+          ls -l out
+
+      - name: Upload macos.zip
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-templates
+          path: out/
+          retention-days: 14
