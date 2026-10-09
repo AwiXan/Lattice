@@ -5282,7 +5282,9 @@ void TextureStorage::render_target_copy_to_back_buffer(RID p_render_target, cons
 	}
 	RD::get_singleton()->draw_command_begin_label("Gaussian Blur Mipmaps");
 	//then mipmap blur
-	RID prev_texture = rt->color; //use color, not backbuffer, as bb has mipmaps.
+	// Mip 0 had its alpha set to one: blurring from it keeps an opaque image opaque in every level, whatever
+	// alpha the 3D passes left in color. Otherwise use color, not backbuffer, as bb has mipmaps.
+	RID prev_texture = rt->is_transparent ? rt->color : rt->backbuffer_mipmap0;
 
 	Size2i texture_size = rt->size;
 

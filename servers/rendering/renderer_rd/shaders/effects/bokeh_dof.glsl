@@ -224,7 +224,9 @@ void main() {
 
 	color.rgb = mix(color.rgb, bokeh.rgb, mix_amount); //blend between hires and lowres
 
-	color.a = 0; //reset alpha
+	// Reset the size kept in alpha. The image is opaque: viewports with a transparent background get no DOF,
+	// and a zero left here would follow the image into the screen texture of the 2D items drawn over it.
+	color.a = 1.0;
 	imageStore(color_image, pos, color);
 #endif
 }
