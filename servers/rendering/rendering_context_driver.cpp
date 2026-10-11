@@ -66,6 +66,13 @@ void RenderingContextDriver::window_set_vsync_mode(DisplayServerEnums::WindowID 
 	}
 }
 
+void RenderingContextDriver::window_set_transparent(DisplayServerEnums::WindowID p_window, bool p_transparent) {
+	SurfaceID surface = surface_get_from_window(p_window);
+	if (surface) {
+		surface_set_transparent(surface, p_transparent);
+	}
+}
+
 DisplayServerEnums::VSyncMode RenderingContextDriver::window_get_vsync_mode(DisplayServerEnums::WindowID p_window) const {
 	SurfaceID surface = surface_get_from_window(p_window);
 	if (surface) {

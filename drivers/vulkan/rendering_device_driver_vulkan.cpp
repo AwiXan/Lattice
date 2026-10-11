@@ -3812,7 +3812,11 @@ Error RenderingDeviceDriverVulkan::swap_chain_resize(CommandQueueID p_cmd_queue,
 	VkSurfaceTransformFlagBitsKHR surface_transform_bits = surface_capabilities.currentTransform;
 
 	VkCompositeAlphaFlagBitsKHR composite_alpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-	if (OS::get_singleton()->is_layered_allowed() || !(surface_capabilities.supportedCompositeAlpha & composite_alpha)) {
+	const bool layered_allowed = OS::get_singleton()->is_layered_allowed();
+	// Composited with alpha only while the window is see-through, where the display server tells: an alpha
+	// swap chain costs the compositor a blend of the whole window on every frame, whatever is drawn in it.
+	const bool window_transparent = layered_allowed && surface->transparent != 0;
+	if (window_transparent || !(surface_capabilities.supportedCompositeAlpha & composite_alpha)) {
 		// Find a supported composite alpha mode - one of these is guaranteed to be set.
 		VkCompositeAlphaFlagBitsKHR composite_alpha_flags[4] = {
 			VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR,
@@ -3827,8 +3831,18 @@ Error RenderingDeviceDriverVulkan::swap_chain_resize(CommandQueueID p_cmd_queue,
 				break;
 			}
 		}
-		has_comp_alpha[(uint64_t)p_cmd_queue.id] = (composite_alpha != VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR);
 	}
+	if (layered_allowed) {
+		// Whether windows can be see-through at all, not whether this one is now.
+		const VkCompositeAlphaFlagsKHR alpha_modes = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR | VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR | VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+		has_comp_alpha[(uint64_t)p_cmd_queue.id] = (surface_capabilities.supportedCompositeAlpha & alpha_modes) != 0;
+	}
+	if (layered_allowed && surface->transparent == 1 && composite_alpha == VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) {
+		// Seen with drivers that present through DXGI: once a window has shown an opaque swap chain, they offer
+		// no alpha-composited one for it, not even on a new surface.
+		WARN_PRINT_ONCE("The window can't be made transparent again: the graphics driver offers no alpha-composited swap chain for a window that has shown an opaque one. Per-pixel transparency can be turned off while the game runs, but getting it back takes a new window or a restart.");
+	}
+	print_verbose(vformat("Vulkan: swap chain composited %s.", composite_alpha == VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR ? "opaque" : "with alpha"));
 
 	// Determine the format and color space for the swap chain.
 	VkFormat format = VK_FORMAT_UNDEFINED;

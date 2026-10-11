@@ -1010,6 +1010,7 @@
 		</member>
 		<member name="display/window/per_pixel_transparency/allowed" type="bool" setter="" getter="" default="false">
 			If [code]true[/code], allows per-pixel transparency for the window background. This affects performance, so leave it on [code]false[/code] unless you need it. See also [member display/window/size/transparent] and [member rendering/viewport/transparent_background].
+			In a game on Windows with the Forward+ or Mobile renderer on Vulkan, the cost is only paid while a window is transparent: one whose [member Window.transparent] is [code]false[/code] is presented opaque, and turning it off while the game runs (after a see-through intro, for instance) switches the window over. It can't be turned back on for that window afterwards, see [member Window.transparent].
 		</member>
 		<member name="display/window/size/always_on_top" type="bool" setter="" getter="" default="false">
 			Forces the main window to be always on top.

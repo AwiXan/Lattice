@@ -791,6 +791,7 @@
 			If [code]true[/code], the [Window]'s background can be transparent. This is best used with embedded windows.
 			[b]Note:[/b] Transparency support is implemented on Linux, macOS and Windows, but availability might vary depending on GPU driver, display manager, and compositor capabilities.
 			[b]Note:[/b] This property has no effect if [member ProjectSettings.display/window/per_pixel_transparency/allowed] is set to [code]false[/code].
+			[b]Note:[/b] In a game on Windows with Vulkan, the window is composited with alpha only while this is [code]true[/code]: set it (and [member Viewport.transparent_bg]) to [code]false[/code] to stop paying for per-pixel transparency once it is no longer needed. The graphics driver may then refuse to make the same window transparent again (a warning is printed and [method DisplayServer.is_window_transparency_available] returns [code]false[/code]): getting it back takes a new window or a restart.
 		</member>
 		<member name="unfocusable" type="bool" setter="set_flag" getter="get_flag" default="false">
 			If [code]true[/code], the [Window] can't be focused nor interacted with. It can still be visible.

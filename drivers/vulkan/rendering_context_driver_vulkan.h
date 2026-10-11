@@ -138,6 +138,7 @@ public:
 	virtual SurfaceID surface_create(const void *p_platform_data) override;
 	virtual void surface_set_size(SurfaceID p_surface, uint32_t p_width, uint32_t p_height) override;
 	virtual void surface_set_vsync_mode(SurfaceID p_surface, DisplayServerEnums::VSyncMode p_vsync_mode) override;
+	virtual void surface_set_transparent(SurfaceID p_surface, bool p_transparent) override;
 	virtual DisplayServerEnums::VSyncMode surface_get_vsync_mode(SurfaceID p_surface) const override;
 	virtual void surface_set_hdr_output_enabled(SurfaceID p_surface, bool p_enabled) override;
 	virtual bool surface_get_hdr_output_enabled(SurfaceID p_surface) const override;
@@ -164,6 +165,8 @@ public:
 		uint32_t height = 0;
 		DisplayServerEnums::VSyncMode vsync_mode = DisplayServerEnums::VSYNC_ENABLED;
 		bool needs_resize = false;
+		// -1 until the display server says whether the window is see-through.
+		int8_t transparent = -1;
 
 		bool hdr_output = false;
 		// BT.2408 recommendation of 203 nits for HDR Reference White, rounded to 200

@@ -973,6 +973,15 @@ void RenderingContextDriverVulkan::surface_set_vsync_mode(SurfaceID p_surface, D
 	surface->needs_resize = true;
 }
 
+void RenderingContextDriverVulkan::surface_set_transparent(SurfaceID p_surface, bool p_transparent) {
+	Surface *surface = (Surface *)(p_surface);
+	if (surface->transparent != int8_t(p_transparent)) {
+		surface->transparent = int8_t(p_transparent);
+		// The swap chain is made again, with or without alpha in its composition.
+		surface->needs_resize = true;
+	}
+}
+
 DisplayServerEnums::VSyncMode RenderingContextDriverVulkan::surface_get_vsync_mode(SurfaceID p_surface) const {
 	Surface *surface = (Surface *)(p_surface);
 	return surface->vsync_mode;

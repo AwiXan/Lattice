@@ -1844,6 +1844,13 @@ DisplayServerEnums::WindowID DisplayServerWindows::create_sub_window(DisplayServ
 #endif
 
 	window_set_vsync_mode(p_vsync_mode, window_id);
+#if defined(RD_ENABLED)
+	if (rendering_context && !Engine::get_singleton()->is_editor_hint()) {
+		// A game's window is composited with alpha only while it is see-through. The editor's windows are
+		// left as they were: all with alpha.
+		rendering_context->window_set_transparent(window_id, (p_flags & DisplayServerEnums::WINDOW_FLAG_TRANSPARENT_BIT) != 0);
+	}
+#endif
 
 	WindowData &wd = windows[window_id];
 
@@ -2944,6 +2951,11 @@ void DisplayServerWindows::window_set_flag(DisplayServerEnums::WindowFlags p_fla
 					DwmEnableBlurBehindWindow(wd.hWnd, &bb);
 				}
 			}
+#if defined(RD_ENABLED)
+			if (rendering_context && !Engine::get_singleton()->is_editor_hint()) {
+				rendering_context->window_set_transparent(p_window, p_enabled);
+			}
+#endif
 		} break;
 		case DisplayServerEnums::WINDOW_FLAG_NO_FOCUS: {
 			wd.no_focus = p_enabled;
