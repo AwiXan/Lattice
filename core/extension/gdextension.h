@@ -33,6 +33,7 @@
 #include "core/extension/gdextension_interface.gen.h"
 #include "core/extension/gdextension_loader.h"
 #include "core/io/resource.h"
+#include "core/os/mutex.h"
 
 class GDExtensionMethodBind;
 
@@ -109,8 +110,20 @@ class GDExtension : public Resource {
 
 	static void _track_instance(void *p_user_data, void *p_instance);
 	static void _untrack_instance(void *p_user_data, void *p_instance);
+	// Objects are made and freed on any thread.
+	static inline BinaryMutex instances_mutex;
 
 	void _clear_extension(Extension *p_extension);
+
+	// What was alive of the classes this library unregistered on its own - outside a reload run by the engine,
+	// as a library that reloads modules of its own does - by class name, with what the objects held. They are
+	// given to the class registered under that name next.
+	HashMap<StringName, HashMap<ObjectID, Extension::InstanceState>> detached_instances;
+	bool reattach_queued = false;
+	bool is_deinitializing = false;
+
+	void _detach_instances(const StringName &p_class_name, Extension *p_extension);
+	void _reattach_instances();
 
 	// Only called by GDExtensionManager during the reload process.
 	void prepare_reload();
