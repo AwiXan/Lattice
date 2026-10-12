@@ -904,7 +904,9 @@ void Object::_gdvirtual_init_method_ptr(uint32_t p_compat_hash, void *&r_fn_ptr,
 #endif
 	}
 #ifdef TOOLS_ENABLED
-	if (_extension->reloadable) {
+	{
+		// For every extension class, reloadable or not: a library may drop a class on its own and register it
+		// again from other code (see GDExtension::_detach_instances()), and what is cached here must go then.
 		VirtualMethodTracker *tracker = memnew(VirtualMethodTracker);
 		tracker->method = (void **)&r_fn_ptr;
 		tracker->next = virtual_method_list;
@@ -2272,8 +2274,10 @@ void Object::clear_internal_extension() {
 
 	// Clear the virtual methods.
 	while (virtual_method_list) {
-		(*virtual_method_list->method) = nullptr;
-		virtual_method_list = virtual_method_list->next;
+		VirtualMethodTracker *tracker = virtual_method_list;
+		(*tracker->method) = nullptr;
+		virtual_method_list = tracker->next;
+		memdelete(tracker);
 	}
 }
 
@@ -2373,6 +2377,14 @@ Object::~Object() {
 		}
 		memfree(_instance_bindings);
 	}
+
+#ifdef TOOLS_ENABLED
+	while (virtual_method_list) {
+		VirtualMethodTracker *tracker = virtual_method_list;
+		virtual_method_list = tracker->next;
+		memdelete(tracker);
+	}
+#endif
 }
 
 bool predelete_handler(Object *p_object) {

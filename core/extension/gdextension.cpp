@@ -35,6 +35,7 @@
 #include "core/extension/gdextension_library_loader.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
+#include "core/object/message_queue.h"
 #include "core/object/method_bind.h"
 
 extern void gdextension_setup_interface();
@@ -85,6 +86,9 @@ protected:
 public:
 #ifdef TOOLS_ENABLED
 	virtual bool is_valid() const override { return valid; }
+
+	// Object lets this class, and no other here, see whether it is of an extension class.
+	static bool object_has_extension(const Object *p_object) { return p_object->_get_extension() != nullptr; }
 #endif
 
 #ifdef DEBUG_ENABLED
@@ -550,15 +554,11 @@ void GDExtension::_register_extension_class_internal(GDExtensionClassLibraryPtr 
 
 	extension->gdextension.reloadable = self->reloadable;
 #ifdef TOOLS_ENABLED
-	if (extension->gdextension.reloadable) {
-		extension->gdextension.tracking_userdata = extension;
-		extension->gdextension.track_instance = &GDExtension::_track_instance;
-		extension->gdextension.untrack_instance = &GDExtension::_untrack_instance;
-	} else {
-		extension->gdextension.tracking_userdata = nullptr;
-		extension->gdextension.track_instance = nullptr;
-		extension->gdextension.untrack_instance = nullptr;
-	}
+	// The instances of every class are tracked, of a reloadable library or not: any library can drop a class
+	// while objects of it are alive, see _detach_instances().
+	extension->gdextension.tracking_userdata = extension;
+	extension->gdextension.track_instance = &GDExtension::_track_instance;
+	extension->gdextension.untrack_instance = &GDExtension::_untrack_instance;
 #endif
 
 	extension->gdextension.create_gdtype();
@@ -571,6 +571,15 @@ void GDExtension::_register_extension_class_internal(GDExtensionClassLibraryPtr 
 			self->class_icon_paths[class_name] = icon_path;
 		}
 	}
+
+#ifdef TOOLS_ENABLED
+	if (!self->is_reloading && !self->reattach_queued && self->detached_instances.has(class_name) && MessageQueue::get_singleton()) {
+		// Objects of a class of this name outlived it. They are given to this one once the library is done
+		// registering: the class has no properties yet, and the classes it goes with may not be back.
+		self->reattach_queued = true;
+		callable_mp(self, &GDExtension::_reattach_instances).call_deferred();
+	}
+#endif
 }
 
 void GDExtension::_register_extension_class_method(GDExtensionClassLibraryPtr p_library, GDExtensionConstStringNamePtr p_class_name, const GDExtensionClassMethodInfo *p_method_info) {
@@ -744,6 +753,10 @@ void GDExtension::_unregister_extension_class(GDExtensionClassLibraryPtr p_libra
 	ERR_FAIL_COND_MSG(ext->gdextension.children.size(), vformat("Attempt to unregister class '%s' while other extension classes inherit from it.", class_name));
 
 #ifdef TOOLS_ENABLED
+	if (!ext->is_reloading && !self->is_deinitializing) {
+		// The library drops the class on its own, and the editor or the game goes on.
+		self->_detach_instances(class_name, ext);
+	}
 	ClassDB::unregister_extension_class(class_name, !ext->is_reloading);
 #else
 	ClassDB::unregister_extension_class(class_name);
@@ -831,6 +844,7 @@ void GDExtension::close_library() {
 
 #ifdef TOOLS_ENABLED
 	instance_bindings.clear();
+	detached_instances.clear();
 #endif
 }
 
@@ -861,7 +875,14 @@ void GDExtension::deinitialize_library(InitializationLevel p_level) {
 
 	ERR_FAIL_NULL(initialization.deinitialize);
 
+#ifdef TOOLS_ENABLED
+	// The classes unregistered from here go for good, and what is alive of them is left as it is.
+	is_deinitializing = true;
+#endif
 	initialization.deinitialize(initialization.userdata, GDExtensionInitializationLevel(p_level));
+#ifdef TOOLS_ENABLED
+	is_deinitializing = false;
+#endif
 }
 
 void GDExtension::_bind_methods() {
@@ -921,6 +942,32 @@ bool GDExtension::has_library_changed() const {
 	return loader->has_library_changed();
 }
 
+// What an instance holds, to be given back to it once its class is there again.
+static List<Pair<String, Variant>> _get_instance_state(Object *p_object) {
+	List<Pair<String, Variant>> state;
+	List<PropertyInfo> prop_list;
+	p_object->get_property_list(&prop_list);
+	for (const PropertyInfo &P : prop_list) {
+		if (!(P.usage & PROPERTY_USAGE_STORAGE)) {
+			continue;
+		}
+
+		Variant value = p_object->get(P.name);
+		Variant default_value = ClassDB::class_get_default_property_value(p_object->get_class_name(), P.name);
+
+		if (default_value.get_type() != Variant::NIL && bool(Variant::evaluate(Variant::OP_EQUAL, value, default_value))) {
+			continue;
+		}
+
+		if (P.type == Variant::OBJECT && value.is_zero() && !(P.usage & PROPERTY_USAGE_STORE_IF_NULL)) {
+			continue;
+		}
+
+		state.push_back(Pair<String, Variant>(P.name, value));
+	}
+	return state;
+}
+
 void GDExtension::prepare_reload() {
 	is_reloading = true;
 
@@ -931,36 +978,22 @@ void GDExtension::prepare_reload() {
 			M.value->is_reloading = true;
 		}
 
-		for (const ObjectID &obj_id : E.value.instances) {
+		LocalVector<ObjectID> instances;
+		{
+			MutexLock lock(instances_mutex);
+			for (const ObjectID &obj_id : E.value.instances) {
+				instances.push_back(obj_id);
+			}
+		}
+		for (const ObjectID &obj_id : instances) {
 			Object *obj = ObjectDB::get_instance(obj_id);
 			if (!obj) {
 				continue;
 			}
 
 			// Store instance state so it can be restored after reload.
-			List<Pair<String, Variant>> state;
-			List<PropertyInfo> prop_list;
-			obj->get_property_list(&prop_list);
-			for (const PropertyInfo &P : prop_list) {
-				if (!(P.usage & PROPERTY_USAGE_STORAGE)) {
-					continue;
-				}
-
-				Variant value = obj->get(P.name);
-				Variant default_value = ClassDB::class_get_default_property_value(obj->get_class_name(), P.name);
-
-				if (default_value.get_type() != Variant::NIL && bool(Variant::evaluate(Variant::OP_EQUAL, value, default_value))) {
-					continue;
-				}
-
-				if (P.type == Variant::OBJECT && value.is_zero() && !(P.usage & PROPERTY_USAGE_STORE_IF_NULL)) {
-					continue;
-				}
-
-				state.push_back(Pair<String, Variant>(P.name, value));
-			}
 			E.value.instance_state[obj_id] = {
-				std::move(state), // List<Pair<String, Variant>> properties;
+				_get_instance_state(obj), // List<Pair<String, Variant>> properties;
 				obj->is_extension_placeholder(), // bool is_placeholder;
 			};
 		}
@@ -974,7 +1007,14 @@ void GDExtension::_clear_extension(Extension *p_extension) {
 
 	// Clear all objects of any GDExtension data. It will become its native parent class
 	// until the reload can reset the object with the new GDExtension data.
-	for (const ObjectID &obj_id : p_extension->instances) {
+	LocalVector<ObjectID> instances;
+	{
+		MutexLock lock(instances_mutex);
+		for (const ObjectID &obj_id : p_extension->instances) {
+			instances.push_back(obj_id);
+		}
+	}
+	for (const ObjectID &obj_id : instances) {
 		Object *obj = ObjectDB::get_instance(obj_id);
 		if (!obj) {
 			continue;
@@ -984,6 +1024,144 @@ void GDExtension::_clear_extension(Extension *p_extension) {
 	}
 
 	p_extension->gdextension.destroy_gdtype();
+}
+
+void GDExtension::_detach_instances(const StringName &p_class_name, Extension *p_extension) {
+	// What an earlier round left waiting, and is gone since.
+	for (KeyValue<StringName, HashMap<ObjectID, Extension::InstanceState>> &E : detached_instances) {
+		LocalVector<ObjectID> gone;
+		for (const KeyValue<ObjectID, Extension::InstanceState> &S : E.value) {
+			if (!ObjectDB::get_instance(S.key)) {
+				gone.push_back(S.key);
+			}
+		}
+		for (const ObjectID &obj_id : gone) {
+			E.value.erase(obj_id);
+		}
+	}
+
+	// A copy: an instance being freed may free other objects of the class, which leave the set as they go.
+	LocalVector<ObjectID> instances;
+	{
+		MutexLock lock(instances_mutex);
+		for (const ObjectID &obj_id : p_extension->instances) {
+			instances.push_back(obj_id);
+		}
+		p_extension->instances.clear();
+	}
+	if (instances.is_empty()) {
+		return;
+	}
+
+	// These would keep pointing at the class data freed right after this, and crash on their next notification
+	// - being freed, at the latest. They become objects of the engine class under theirs instead, while the
+	// library can still free what it holds for them.
+	HashMap<ObjectID, Extension::InstanceState> &detached = detached_instances[p_class_name];
+	for (const ObjectID &obj_id : instances) {
+		Object *obj = ObjectDB::get_instance(obj_id);
+		if (!obj || !GDExtensionMethodBind::object_has_extension(obj)) {
+			continue;
+		}
+		// From all of them before any is touched: what one holds may be another.
+		detached[obj_id] = {
+			_get_instance_state(obj), // List<Pair<String, Variant>> properties;
+			obj->is_extension_placeholder(), // bool is_placeholder;
+		};
+	}
+	int count = 0;
+	for (const ObjectID &obj_id : instances) {
+		Object *obj = ObjectDB::get_instance(obj_id);
+		if (!obj || !GDExtensionMethodBind::object_has_extension(obj)) {
+			continue;
+		}
+		obj->clear_internal_extension();
+		count++;
+	}
+	print_verbose(vformat("GDExtension: %d object(s) of the class '%s' outlived it, and wait for it to be registered again.", count, p_class_name));
+}
+
+void GDExtension::_reattach_instances() {
+	reattach_queued = false;
+
+	struct Reattached {
+		ObjectID id;
+		List<Pair<String, Variant>> properties;
+	};
+	LocalVector<Reattached> reattached;
+	LocalVector<StringName> classes_back;
+
+	for (KeyValue<StringName, HashMap<ObjectID, Extension::InstanceState>> &E : detached_instances) {
+		Extension *extension = extension_classes.getptr(E.key);
+		if (!extension) {
+			// Not back, at least not yet.
+			continue;
+		}
+		classes_back.push_back(E.key);
+
+		// The engine class the new one is built on: the objects are of the one the old class was built on.
+		const ObjectGDExtension *base = &extension->gdextension;
+		while (base->parent) {
+			base = base->parent;
+		}
+
+		int given = 0;
+		int kept_plain = 0;
+		bool can_recreate = extension->gdextension.recreate_instance != nullptr;
+		for (const KeyValue<ObjectID, Extension::InstanceState> &S : E.value) {
+			Object *obj = ObjectDB::get_instance(S.key);
+			if (!obj || GDExtensionMethodBind::object_has_extension(obj)) {
+				continue;
+			}
+			if (!can_recreate || !obj->is_class(base->parent_class_name)) {
+				kept_plain++;
+				continue;
+			}
+
+			obj->reset_internal_extension(S.value.is_placeholder ? ClassDB::get_placeholder_extension(E.key) : &extension->gdextension);
+			if (!GDExtensionMethodBind::object_has_extension(obj)) {
+				// The library doesn't recreate instances, and has said so once.
+				can_recreate = false;
+				kept_plain++;
+				continue;
+			}
+			{
+				// A library that tells the object of its new instance has it tracked by that, and another not.
+				MutexLock lock(instances_mutex);
+				extension->instances.insert(S.key);
+			}
+			Reattached entry;
+			entry.id = S.key;
+			entry.properties = S.value.properties;
+			reattached.push_back(entry);
+			given++;
+		}
+		if (given) {
+			print_verbose(vformat("GDExtension: %d object(s) that outlived the class '%s' belong to the one registered in its place.", given, E.key));
+		}
+		if (kept_plain) {
+			WARN_PRINT(vformat("%d object(s) that were alive when the extension class '%s' was unregistered could not be given to the class registered in its place, and stay plain objects of the engine class under it. Scenes holding them are to be reloaded rather than saved.", kept_plain, E.key));
+		}
+	}
+	for (const StringName &class_name : classes_back) {
+		detached_instances.erase(class_name);
+	}
+
+	// As after a reload: every class is back before any object gets what it held, and is told last.
+	for (const Reattached &R : reattached) {
+		Object *obj = ObjectDB::get_instance(R.id);
+		if (!obj) {
+			continue;
+		}
+		for (const Pair<String, Variant> &state : R.properties) {
+			obj->set(state.first, state.second);
+		}
+	}
+	for (const Reattached &R : reattached) {
+		Object *obj = ObjectDB::get_instance(R.id);
+		if (obj) {
+			obj->notification(NOTIFICATION_EXTENSION_RELOADED);
+		}
+	}
 }
 
 void GDExtension::track_instance_binding(Object *p_object) {
@@ -1087,6 +1265,7 @@ void GDExtension::_track_instance(void *p_user_data, void *p_instance) {
 	Extension *extension = reinterpret_cast<Extension *>(p_user_data);
 	Object *obj = reinterpret_cast<Object *>(p_instance);
 
+	MutexLock lock(instances_mutex);
 	extension->instances.insert(obj->get_instance_id());
 }
 
@@ -1094,6 +1273,7 @@ void GDExtension::_untrack_instance(void *p_user_data, void *p_instance) {
 	Extension *extension = reinterpret_cast<Extension *>(p_user_data);
 	Object *obj = reinterpret_cast<Object *>(p_instance);
 
+	MutexLock lock(instances_mutex);
 	extension->instances.erase(obj->get_instance_id());
 }
 
