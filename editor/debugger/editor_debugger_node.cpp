@@ -382,15 +382,21 @@ void EditorDebuggerNode::_notification(int p_what) {
 			_update_errors();
 
 			// Remote scene tree update.
+			if (remote_scene_tree_wait) {
+				// An answer that never comes - the game closed, or is stuck -
+				// doesn't end the refreshing for good.
+				remote_scene_tree_wait_time += get_process_delta_time();
+				if (remote_scene_tree_wait_time > 5.0) {
+					remote_scene_tree_wait = false;
+				}
+			}
 			if (!remote_scene_tree_wait) {
 				remote_scene_tree_timeout -= get_process_delta_time();
 				if (remote_scene_tree_timeout < 0) {
 					remote_scene_tree_timeout = EDITOR_GET("debugger/remote_scene_tree_refresh_interval");
 
-					if (remote_scene_tree->is_visible_in_tree()) {
-						remote_scene_tree_wait = true;
-						get_current_debugger()->request_remote_tree();
-					}
+					remote_scene_tree_wait = _request_visible_remote_trees();
+					remote_scene_tree_wait_time = 0.0;
 				}
 			}
 
@@ -541,9 +547,7 @@ void EditorDebuggerNode::_debugger_changed(int p_tab) {
 		prev_debug->clear_inspector();
 		_text_editor_stack_clear(prev_debug);
 	}
-	if (remote_scene_tree->is_visible_in_tree()) {
-		get_current_debugger()->request_remote_tree();
-	}
+	_request_visible_remote_trees();
 	if (get_current_debugger()->is_breaked()) {
 		_text_editor_stack_goto(get_current_debugger());
 	}
@@ -552,13 +556,18 @@ void EditorDebuggerNode::_debugger_changed(int p_tab) {
 }
 
 void EditorDebuggerNode::_debug_data(const String &p_msg, const Array &p_data, int p_debugger) {
+	if (p_msg == "scene:scene_tree") {
+		// From any session: a tree in a pane may be watching one that is not in
+		// front.
+		remote_scene_tree_wait = false;
+		return;
+	}
+
 	if (p_debugger != tabs->get_current_tab()) {
 		return;
 	}
 
-	if (p_msg == "scene:scene_tree") {
-		remote_scene_tree_wait = false;
-	} else if (p_msg == "scene:inspect_objects") {
+	if (p_msg == "scene:inspect_objects") {
 		inspect_edited_object_wait = false;
 	}
 }
@@ -735,6 +744,34 @@ void EditorDebuggerNode::request_remote_tree() {
 			debugger->request_remote_tree();
 		}
 	}
+}
+
+bool EditorDebuggerNode::_request_visible_remote_trees() {
+	// The sessions watched by a tree that is on screen. Not by the Scene dock's
+	// own tree alone: a Scene panel in a pane has one too, and the dock need not
+	// be open at all.
+	HashSet<int> wanted;
+	const int current = tabs->get_current_tab();
+	for (const KeyValue<ObjectID, int> &E : remote_trees) {
+		const EditorDebuggerTree *tree = ObjectDB::get_instance<EditorDebuggerTree>(E.key);
+		if (tree && tree->is_visible_in_tree()) {
+			wanted.insert(E.value == FOLLOW_CURRENT ? current : E.value);
+		}
+	}
+
+	bool asked = false;
+	for (const int &session : wanted) {
+		if (session < 0 || session >= tabs->get_tab_count()) {
+			continue;
+		}
+		ScriptEditorDebugger *debugger = get_debugger(session);
+		// One with no game at the other end never answers.
+		if (debugger && debugger->is_session_active()) {
+			debugger->request_remote_tree();
+			asked = true;
+		}
+	}
+	return asked;
 }
 
 void EditorDebuggerNode::set_remote_selection(const TypedArray<int64_t> &p_ids) {

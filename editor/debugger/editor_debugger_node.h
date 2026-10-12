@@ -111,6 +111,7 @@ private:
 	// "whichever session is in front", which is what the Scene dock's does.
 	HashMap<ObjectID, int> remote_trees;
 	bool remote_scene_tree_wait = false;
+	float remote_scene_tree_wait_time = 0.0;
 	float remote_scene_tree_timeout = 0.0;
 	bool remote_scene_tree_clear_msg = true;
 	bool auto_switch_remote_scene_tree = false;
@@ -128,6 +129,7 @@ private:
 	ScriptEditorDebugger *_add_debugger();
 	void _update_errors(bool p_force = false);
 	void _update_margins();
+	bool _request_visible_remote_trees();
 
 	friend class DebuggerEditorPlugin;
 	friend class DebugAdapterParser;
