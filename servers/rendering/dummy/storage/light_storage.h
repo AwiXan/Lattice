@@ -108,6 +108,10 @@ public:
 	virtual bool light_area_get_normalize_energy(RID p_light) const override { return true; }
 	virtual void light_area_set_texture(RID p_light, RID p_texture) override {}
 	virtual RID light_area_get_texture(RID p_light) const override { return RID(); }
+	virtual void light_area_set_shadow_mode(RID p_light, RSE::LightAreaShadowMode p_mode) override {}
+	virtual RSE::LightAreaShadowMode light_area_get_shadow_mode(RID p_light) const override { return RSE::LIGHT_AREA_SHADOW_CUBE; }
+	virtual void light_area_set_shape(RID p_light, RSE::LightAreaShape p_shape) override {}
+	virtual RSE::LightAreaShape light_area_get_shape(RID p_light) const override { return RSE::LIGHT_AREA_SHAPE_RECTANGLE; }
 
 	virtual bool light_has_shadow(RID p_light) const override { return false; }
 	virtual bool light_has_projector(RID p_light) const override { return false; }

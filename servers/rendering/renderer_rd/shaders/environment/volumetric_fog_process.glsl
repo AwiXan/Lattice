@@ -14,11 +14,10 @@ layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 #endif
 
+#include "../area_lights_inc.glsl"
 #include "../cluster_data_inc.glsl"
 #include "../light_data_inc.glsl"
 #include "../oct_inc.glsl"
-
-#include "../area_lights_inc.glsl"
 
 #define M_TAU 6.28318530718
 #define M_PI 3.14159265359
@@ -193,13 +192,13 @@ layout(set = 0, binding = 16) uniform texture3D prev_density_texture;
 #ifdef NO_IMAGE_ATOMICS
 layout(set = 0, binding = 17) buffer density_only_map_buffer {
 	uint density_only_map[];
-};
+}
 layout(set = 0, binding = 18) buffer light_only_map_buffer {
 	uint light_only_map[];
-};
+}
 layout(set = 0, binding = 19) buffer emissive_only_map_buffer {
 	uint emissive_only_map[];
-};
+}
 #else
 layout(r32ui, set = 0, binding = 17) uniform uimage3D density_only_map;
 layout(r32ui, set = 0, binding = 18) uniform uimage3D light_only_map;
@@ -643,7 +642,8 @@ void main() {
 						vec3 light_center = area_lights.data[light_index].position;
 						vec3 light_to_vert = view_pos - light_center;
 						vec3 pos_local_to_light = vec3(dot(light_to_vert, area_width_norm), dot(light_to_vert, area_height_norm), dot(light_to_vert, -area_direction)); // view_pos in LIGHT SPACE
-						vec3 closest_point_local_to_light = vec3(clamp(pos_local_to_light.x, -a_half_len, a_half_len), clamp(pos_local_to_light.y, -b_half_len, b_half_len), 0.0); // LIGHT SPACE
+						bool ellipse = area_lights.data[light_index].area_shape == LIGHT_AREA_SHAPE_ELLIPSE;
+						vec3 closest_point_local_to_light = vec3(area_light_closest_point(pos_local_to_light.xy, vec2(a_half_len, b_half_len), ellipse), 0.0); // LIGHT SPACE
 						float inv_center_range = area_lights.data[light_index].cone_attenuation;
 						vec3 closest_point_on_light = light_center + closest_point_local_to_light.x * area_width_norm + closest_point_local_to_light.y * area_height_norm; // VIEW SPACE
 
@@ -675,7 +675,7 @@ void main() {
 							vec3 normal = light_vec;
 							float max_mipmap = area_lights.data[light_index].cone_angle;
 							vec3 texture_color = vec3(1.0);
-							ltc_evaluate_diff(normal, light_points, area_lights.data[light_index].projector_rect, max_mipmap, area_light_atlas, linear_sampler_with_mipmaps, ltc_diffuse, texture_color);
+							ltc_evaluate_diff(normal, light_points, ellipse, area_lights.data[light_index].projector_rect, max_mipmap, area_light_atlas, linear_sampler_with_mipmaps, ltc_diffuse, texture_color);
 							attenuation *= ltc_diffuse * cutoff;
 							vec3 light_color = area_lights.data[light_index].color * texture_color;
 

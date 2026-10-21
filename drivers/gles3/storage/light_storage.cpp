@@ -400,6 +400,40 @@ RID LightStorage::light_area_get_texture(RID p_light) const {
 	return RID(); // not implemented
 }
 
+void LightStorage::light_area_set_shadow_mode(RID p_light, RSE::LightAreaShadowMode p_mode) {
+	Light *light = light_owner.get_or_null(p_light);
+	ERR_FAIL_NULL(light);
+
+	light->area_shadow_mode = p_mode;
+
+	light->version++;
+	light->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_LIGHT);
+}
+
+RSE::LightAreaShadowMode LightStorage::light_area_get_shadow_mode(RID p_light) const {
+	const Light *light = light_owner.get_or_null(p_light);
+	ERR_FAIL_NULL_V(light, RSE::LIGHT_AREA_SHADOW_CUBE);
+
+	return light->area_shadow_mode;
+}
+
+void LightStorage::light_area_set_shape(RID p_light, RSE::LightAreaShape p_shape) {
+	Light *light = light_owner.get_or_null(p_light);
+	ERR_FAIL_NULL(light);
+
+	light->area_shape = p_shape;
+
+	light->version++;
+	light->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_LIGHT);
+}
+
+RSE::LightAreaShape LightStorage::light_area_get_shape(RID p_light) const {
+	const Light *light = light_owner.get_or_null(p_light);
+	ERR_FAIL_NULL_V(light, RSE::LIGHT_AREA_SHAPE_RECTANGLE);
+
+	return light->area_shape;
+}
+
 RSE::LightBakeMode LightStorage::light_get_bake_mode(RID p_light) {
 	const Light *light = light_owner.get_or_null(p_light);
 	ERR_FAIL_NULL_V(light, RSE::LIGHT_BAKE_DISABLED);

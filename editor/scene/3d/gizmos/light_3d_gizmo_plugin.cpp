@@ -393,15 +393,25 @@ void Light3DGizmoPlugin::redraw(EditorNode3DGizmo *p_gizmo) {
 			float a = area_size.x;
 			float b = area_size.y;
 
-			// Draw rectangle
-			points.push_back(Vector3(-a / 2, b / 2, 0));
-			points.push_back(Vector3(a / 2, b / 2, 0));
-			points.push_back(Vector3(a / 2, b / 2, 0));
-			points.push_back(Vector3(a / 2, -b / 2, 0));
-			points.push_back(Vector3(a / 2, -b / 2, 0));
-			points.push_back(Vector3(-a / 2, -b / 2, 0));
-			points.push_back(Vector3(-a / 2, -b / 2, 0));
-			points.push_back(Vector3(-a / 2, b / 2, 0));
+			if (cl->get_area_shape() == AreaLight3D::SHAPE_ELLIPSE) {
+				// Draw ellipse
+				for (int i = 0; i < 120; i++) {
+					const float ra = Math::deg_to_rad((float)(i * 3));
+					const float rb = Math::deg_to_rad((float)((i + 1) * 3));
+					points.push_back(Vector3(Math::cos(ra) * a / 2, Math::sin(ra) * b / 2, 0));
+					points.push_back(Vector3(Math::cos(rb) * a / 2, Math::sin(rb) * b / 2, 0));
+				}
+			} else {
+				// Draw rectangle
+				points.push_back(Vector3(-a / 2, b / 2, 0));
+				points.push_back(Vector3(a / 2, b / 2, 0));
+				points.push_back(Vector3(a / 2, b / 2, 0));
+				points.push_back(Vector3(a / 2, -b / 2, 0));
+				points.push_back(Vector3(a / 2, -b / 2, 0));
+				points.push_back(Vector3(-a / 2, -b / 2, 0));
+				points.push_back(Vector3(-a / 2, -b / 2, 0));
+				points.push_back(Vector3(-a / 2, b / 2, 0));
+			}
 
 			p_gizmo->add_lines(points, material, false, color);
 

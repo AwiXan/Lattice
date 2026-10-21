@@ -143,7 +143,7 @@ void LightmapperRD::add_spot_light(const String &p_name, bool p_static, const Ve
 	light_metadata.push_back(md);
 }
 
-void LightmapperRD::add_area_light(const String &p_name, bool p_static, const Vector3 &p_position, const Vector3 &p_direction, const Color &p_color, float p_energy, float p_indirect_energy, float p_range, float p_attenuation, const Vector3 &p_area_width, const Vector3 &p_area_height, float p_size, float p_shadow_blur, const Rect2 &p_texture_rect, float p_max_mipmap) {
+void LightmapperRD::add_area_light(const String &p_name, bool p_static, const Vector3 &p_position, const Vector3 &p_direction, const Color &p_color, float p_energy, float p_indirect_energy, float p_range, float p_attenuation, const Vector3 &p_area_width, const Vector3 &p_area_height, bool p_ellipse, float p_shadow_blur, const Rect2 &p_texture_rect, float p_max_mipmap) {
 	Light l;
 	l.type = LIGHT_TYPE_AREA;
 	l.position[0] = p_position.x;
@@ -155,6 +155,7 @@ void LightmapperRD::add_area_light(const String &p_name, bool p_static, const Ve
 	l.area_width[0] = p_area_width.x;
 	l.area_width[1] = p_area_width.y;
 	l.area_width[2] = p_area_width.z;
+	l.area_width[3] = p_ellipse ? 1.0 : 0.0; // Read as the shape.
 	l.area_height[0] = p_area_height.x;
 	l.area_height[1] = p_area_height.y;
 	l.area_height[2] = p_area_height.z;
@@ -166,7 +167,7 @@ void LightmapperRD::add_area_light(const String &p_name, bool p_static, const Ve
 	l.energy = p_energy;
 	l.indirect_energy = p_indirect_energy;
 	l.static_bake = p_static;
-	l.size = p_size;
+	l.size = 0.0; // Soft shadows follow the emitter.
 	l.shadow_blur = p_shadow_blur;
 
 	if (RenderingServer::get_singleton()->get_current_rendering_method() == "gl_compatibility") {

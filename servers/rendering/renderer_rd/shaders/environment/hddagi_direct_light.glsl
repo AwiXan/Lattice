@@ -368,7 +368,8 @@ void compute_area_light(uint index, vec3 position, out float attenuation, out ve
 	vec3 light_center = lights.data[index].position;
 	vec3 light_to_vert = position - light_center;
 	vec3 pos_local_to_light = vec3(dot(light_to_vert, area_width_norm), dot(light_to_vert, area_height_norm), dot(light_to_vert, -area_direction)); // position in LIGHT SPACE
-	vec3 closest_point_local_to_light = vec3(clamp(pos_local_to_light.x, -a_half_len, a_half_len), clamp(pos_local_to_light.y, -b_half_len, b_half_len), 0.0); // LIGHT SPACE
+	bool ellipse = lights.data[index].area_width.w > 0.5; // The shape is in w.
+	vec3 closest_point_local_to_light = vec3(area_light_closest_point(pos_local_to_light.xy, vec2(a_half_len, b_half_len), ellipse), 0.0); // LIGHT SPACE
 	float inv_center_range = lights.data[index].inv_spot_attenuation;
 	vec3 closest_point_on_light = light_center + closest_point_local_to_light.x * area_width_norm + closest_point_local_to_light.y * area_height_norm; // VIEW SPACE
 	vec3 light_rel_vec = closest_point_on_light - position;
@@ -396,7 +397,7 @@ void compute_area_light(uint index, vec3 position, out float attenuation, out ve
 	attenuation = get_omni_attenuation(light_distance, 1.0 / lights.data[index].radius, lights.data[index].attenuation - 2.0);
 	float ltc_diffuse = 0.0;
 	vec3 normal = light_vec;
-	ltc_evaluate_diff(normal, light_points, lights.data[index].area_projector_rect, max_mipmap, area_light_atlas, linear_sampler_with_mipmaps, ltc_diffuse, texture_color);
+	ltc_evaluate_diff(normal, light_points, ellipse, lights.data[index].area_projector_rect, max_mipmap, area_light_atlas, linear_sampler_with_mipmaps, ltc_diffuse, texture_color);
 	attenuation *= ltc_diffuse;
 }
 

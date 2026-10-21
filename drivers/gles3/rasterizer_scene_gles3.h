@@ -203,7 +203,7 @@ private:
 		float pad[3];
 		uint32_t bake_mode;
 
-		float area_width[4]; // 4th is padding
+		float area_width[4]; // 4th is the shape of an area light
 		float area_height[4];
 	};
 	static_assert(sizeof(LightData) % 16 == 0, "LightData size must be a multiple of 16 bytes");

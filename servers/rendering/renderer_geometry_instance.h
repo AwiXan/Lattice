@@ -74,6 +74,8 @@ public:
 	virtual void pair_voxel_gi_instances(const RID *p_voxel_gi_instances, uint32_t p_voxel_gi_instance_count) = 0;
 
 	virtual void set_softshadow_projector_pairing(bool p_softshadow, bool p_projector) = 0;
+	// Whether an area light reaches the instance, for renderers that pay for area lights per instance.
+	virtual void set_area_light_pairing(bool p_area_lights) {}
 };
 
 // Base implementation of RenderGeometryInstance shared by internal renderers.

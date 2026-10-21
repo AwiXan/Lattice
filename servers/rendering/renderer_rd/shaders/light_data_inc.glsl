@@ -2,6 +2,9 @@
 #define LIGHT_BAKE_STATIC 1
 #define LIGHT_BAKE_DYNAMIC 2
 
+#define LIGHT_AREA_SHAPE_RECTANGLE 0
+#define LIGHT_AREA_SHAPE_ELLIPSE 1
+
 struct LightData { //this structure needs to be as packed as possible
 	vec3 position;
 	float inv_radius;
@@ -21,7 +24,7 @@ struct LightData { //this structure needs to be as packed as possible
 	float specular_amount;
 	float shadow_opacity;
 	uint sscs_index; // layer of its screen space contact shadow, 0xFFFFFFFF for none
-	float pad;
+	uint area_shape; // LIGHT_AREA_SHAPE_*
 
 	vec4 atlas_rect; // rect in the shadow atlas
 	mat4 shadow_matrix;

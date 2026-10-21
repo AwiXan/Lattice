@@ -2624,6 +2624,8 @@ void RenderingServer::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("light_area_set_size", "light", "size"), &RenderingServer::light_area_set_size);
 	ClassDB::bind_method(D_METHOD("light_area_set_normalize_energy", "light", "enable"), &RenderingServer::light_area_set_normalize_energy);
+	ClassDB::bind_method(D_METHOD("light_area_set_shadow_mode", "light", "mode"), &RenderingServer::light_area_set_shadow_mode);
+	ClassDB::bind_method(D_METHOD("light_area_set_shape", "light", "shape"), &RenderingServer::light_area_set_shape);
 
 	ClassDB::bind_method(D_METHOD("light_projectors_set_filter", "filter"), &RenderingServer::light_projectors_set_filter);
 	ClassDB::bind_method(D_METHOD("lightmaps_set_bicubic_filter", "enable"), &RenderingServer::lightmaps_set_bicubic_filter);
@@ -2671,6 +2673,12 @@ void RenderingServer::_bind_methods() {
 
 	BIND_ENUM_CONSTANT(RSE::LIGHT_OMNI_SHADOW_DUAL_PARABOLOID);
 	BIND_ENUM_CONSTANT(RSE::LIGHT_OMNI_SHADOW_CUBE);
+
+	BIND_ENUM_CONSTANT(RSE::LIGHT_AREA_SHADOW_PARABOLOID);
+	BIND_ENUM_CONSTANT(RSE::LIGHT_AREA_SHADOW_CUBE);
+
+	BIND_ENUM_CONSTANT(RSE::LIGHT_AREA_SHAPE_RECTANGLE);
+	BIND_ENUM_CONSTANT(RSE::LIGHT_AREA_SHAPE_ELLIPSE);
 
 	BIND_ENUM_CONSTANT(RSE::LIGHT_DIRECTIONAL_SHADOW_ORTHOGONAL);
 	BIND_ENUM_CONSTANT(RSE::LIGHT_DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS);
