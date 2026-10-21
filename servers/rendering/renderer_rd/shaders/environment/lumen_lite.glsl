@@ -32,6 +32,7 @@ layout(local_size_x = GROUP_SIZE, local_size_y = GROUP_SIZE, local_size_z = 1) i
 #define HIT_SCREEN 1.0
 #define HIT_WORLD 2.0
 #define HIT_CACHE 3.0
+#define HIT_BELOW 4.0 // Only samples under the surface (no light) so far.
 
 #define DEBUG_PROBES 0
 #define DEBUG_TRACE_HITS 1
@@ -471,17 +472,29 @@ void main() {
 					vec4 prev_clip = params.prev_reprojection * vec4(world_pos, 1.0);
 					if (prev_clip.w > 0.0) {
 						vec2 prev_pixel = ((prev_clip.xy / prev_clip.w) * 0.5 + 0.5) * vec2(params.screen_size);
-						ivec2 prev_probe = ivec2(floor(prev_pixel / float(tile_size)));
-						if (all(greaterThanEqual(prev_probe, ivec2(0))) && all(lessThan(prev_probe, params.probe_count))) {
+						ivec2 prev_center = ivec2(floor(prev_pixel / float(tile_size)));
+						// A tile seen at a grazing angle covers that much more of its surface.
+						float facing = max(abs(dot(world_normal, normalize(world_pos))), 0.15);
+						float tile_world_size = float(tile_size) * depth * params.pixel_angle / facing;
+						float best_distance = tile_world_size * 1.5 + 0.05;
+						// A tile across an edge has its probe on one surface one frame and on the
+						// other the next: look for this surface in the tiles around too, and take
+						// the closest probe that is on it.
+						for (int k = 0; k < 9; k++) {
+							ivec2 prev_probe = prev_center + ivec2(k % 3, k / 3) - ivec2(1);
+							if (any(lessThan(prev_probe, ivec2(0))) || any(greaterThanEqual(prev_probe, params.probe_count))) {
+								continue;
+							}
 							vec4 prev_pos = imageLoad(prev_probe_position, prev_probe);
+							if (prev_pos.w <= 0.0) {
+								continue;
+							}
 							vec3 prev_normal = imageLoad(prev_probe_normal, prev_probe).xyz;
 							vec3 offset = prev_pos.xyz - (world_pos + params.cam_origin.xyz);
-							// A tile seen at a grazing angle covers that much more of its surface.
-							float facing = max(abs(dot(world_normal, normalize(world_pos))), 0.15);
-							float tile_world_size = float(tile_size) * depth * params.pixel_angle / facing;
 							bool same_plane = abs(dot(offset, world_normal)) < 0.05 * depth / facing + 0.02;
-							bool close = length(offset) < tile_world_size * 1.5 + 0.05;
-							if (prev_pos.w > 0.0 && same_plane && close && dot(prev_normal, world_normal) > 0.8) {
+							float distance = length(offset);
+							if (same_plane && distance < best_distance && dot(prev_normal, world_normal) > 0.8) {
+								best_distance = distance;
 								history_valid = true;
 								history_probe = prev_probe;
 							}
@@ -518,7 +531,12 @@ void main() {
 
 	const vec3 luminance_weights = vec3(0.2126, 0.7152, 0.0722);
 	uint index = gl_LocalInvocationIndex;
-	bool above = dot(dir, world_normal) > 0.0;
+	// A texel counts as above the surface if any of it can be: its centre is less than
+	// half a texel below the horizon. Rays of it that land below the surface are
+	// samples without light (none comes from there), so a texel across the horizon
+	// keeps its value and history whichever way its jitter falls this frame.
+	vec3 texel_center_dir = octahedron_decode((vec2(texel) + 0.5) / float(PROBE_OCT_SIZE));
+	bool above = dot(texel_center_dir, world_normal) > -0.2;
 	float history_luminance = history.a > 0.0 ? dot(history.rgb, luminance_weights) : 0.0;
 
 	// Low quality: half of the texels keep their history this frame, and give no ray away.
@@ -586,7 +604,8 @@ void main() {
 		ray_dir = octahedron_decode((vec2(target_texel) + target_jitter) / float(PROBE_OCT_SIZE));
 	}
 
-	bool tracing = (traces_own || donor) && weight_total > 0.0 && dot(ray_dir, world_normal) > 0.0;
+	bool sampling = (traces_own || donor) && weight_total > 0.0;
+	bool tracing = sampling && dot(ray_dir, world_normal) > 0.0;
 	vec3 radiance = vec3(0.0);
 	float hit = HIT_NONE;
 	if (tracing) {
@@ -608,7 +627,7 @@ void main() {
 	}
 
 	extra_ray[index] = vec4(radiance, hit);
-	extra_target[index] = (donor && tracing) ? ray_target : -1;
+	extra_target[index] = (donor && sampling) ? ray_target : -1;
 	memoryBarrierShared();
 	barrier();
 
@@ -622,17 +641,21 @@ void main() {
 	// uniformly inside the texel, so their mean stays an unbiased estimate of it.
 	vec3 sum = vec3(0.0);
 	float count = 0.0;
-	float last_hit = history.a;
-	if (traces_own && tracing) {
+	float last_hit = history.a > 0.0 ? history.a : HIT_BELOW;
+	if (traces_own && sampling) {
 		sum = radiance;
 		count = 1.0;
-		last_hit = hit;
+		if (hit != HIT_NONE) {
+			last_hit = hit;
+		}
 	}
 	for (int k = 0; k < 64; k++) {
 		if (extra_target[k] == int(index)) {
 			sum += extra_ray[k].rgb;
 			count += 1.0;
-			last_hit = extra_ray[k].a;
+			if (extra_ray[k].a != HIT_NONE) {
+				last_hit = extra_ray[k].a;
+			}
 		}
 	}
 
@@ -671,14 +694,18 @@ void main() {
 		vec3 center_normal = imageLoad(probe_normal, probe).xyz;
 		vec3 accum = radiance.rgb;
 		float weight_accum = 1.0;
-		// The 3x3 probes around, the diagonal ones at half the weight of the sides, so that
-		// an outlier spreads as a soft blob and not as a cross.
-		for (int i = 0; i < 9; i++) {
-			ivec2 offset = ivec2(i % 3, i / 3) - ivec2(1);
-			if (i == 4) {
+		// The probes around over about the same screen area whatever the tile size: 3x3
+		// with 16 px tiles, 5x5 with 8 px ones. The weight halves every tile_size*radius
+		// pixels away in each axis (sides 0.5, diagonals 0.25 for 3x3), so that an outlier
+		// spreads as a soft blob and not as a cross.
+		const int radius = params.tile_size <= 8u ? 2 : 1;
+		const int width = radius * 2 + 1;
+		for (int i = 0; i < width * width; i++) {
+			ivec2 offset = ivec2(i % width, i / width) - ivec2(radius);
+			if (offset == ivec2(0)) {
 				continue;
 			}
-			float neighbour_weight = (offset.x != 0 && offset.y != 0) ? 0.25 : 0.5;
+			float neighbour_weight = pow(0.5, float(abs(offset.x) + abs(offset.y)) / float(radius));
 			ivec2 n = probe + offset;
 			if (any(lessThan(n, ivec2(0))) || any(greaterThanEqual(n, params.probe_count))) {
 				continue;
@@ -849,8 +876,8 @@ void main() {
 				}
 			} else {
 				float hit = imageLoad(radiance_trace, radiance_pos).a;
-				const vec3 hit_colors[4] = vec3[](vec3(0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.25, 1.0), vec3(1.0, 0.0, 0.0));
-				color = hit_colors[clamp(int(hit + 0.5), 0, 3)];
+				const vec3 hit_colors[5] = vec3[](vec3(0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.25, 1.0), vec3(1.0, 0.0, 0.0), vec3(0.2));
+				color = hit_colors[clamp(int(hit + 0.5), 0, 4)];
 			}
 			if (any(equal(local, ivec2(0)))) {
 				color *= 0.5; // Tile borders.
