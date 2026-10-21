@@ -227,6 +227,14 @@ void RendererSceneCull::_instance_pair(Instance *p_A, Instance *p_B) {
 			}
 		}
 
+		if (light->is_area) {
+			geom->area_light_count++;
+			if (geom->area_light_count == 1) {
+				InstanceData &idata = A->scenario->instance_data[A->array_index];
+				idata.flags |= InstanceData::FLAG_GEOM_PROJECTOR_SOFTSHADOW_DIRTY;
+			}
+		}
+
 	} else if (self->geometry_instance_pair_mask & (1 << RSE::INSTANCE_REFLECTION_PROBE) && B->base_type == RSE::INSTANCE_REFLECTION_PROBE && ((1 << A->base_type) & RSE::INSTANCE_GEOMETRY_MASK)) {
 		if (!(A->layer_mask & RSG::light_storage->reflection_probe_get_reflection_mask(B->base))) {
 			// Early return if the object's layer mask doesn't match the reflection mask.
@@ -357,6 +365,19 @@ void RendererSceneCull::_instance_unpair(Instance *p_A, Instance *p_B) {
 #endif
 			geom->softshadow_count--;
 			if (geom->softshadow_count == 0) {
+				InstanceData &idata = A->scenario->instance_data[A->array_index];
+				idata.flags |= InstanceData::FLAG_GEOM_PROJECTOR_SOFTSHADOW_DIRTY;
+			}
+		}
+
+		if (light->is_area) {
+#ifdef DEBUG_ENABLED
+			if (geom->area_light_count == 0) {
+				ERR_PRINT("geom->area_light_count==0 - BUG!");
+			}
+#endif
+			geom->area_light_count--;
+			if (geom->area_light_count == 0) {
 				InstanceData &idata = A->scenario->instance_data[A->array_index];
 				idata.flags |= InstanceData::FLAG_GEOM_PROJECTOR_SOFTSHADOW_DIRTY;
 			}
@@ -1876,7 +1897,8 @@ void RendererSceneCull::_update_instance(Instance *p_instance) const {
 				InstanceLightData *light_data = static_cast<InstanceLightData *>(p_instance->base_data);
 				idata.instance_data_rid = light_data->instance.get_id();
 				light_data->uses_projector = RSG::light_storage->light_has_projector(p_instance->base);
-				light_data->uses_softshadow = RSG::light_storage->light_get_type(p_instance->base) == RSE::LIGHT_AREA || RSG::light_storage->light_get_param(p_instance->base, RSE::LIGHT_PARAM_SIZE) > CMP_EPSILON;
+				light_data->is_area = RSG::light_storage->light_get_type(p_instance->base) == RSE::LIGHT_AREA;
+				light_data->uses_softshadow = light_data->is_area || RSG::light_storage->light_get_param(p_instance->base, RSE::LIGHT_PARAM_SIZE) > CMP_EPSILON;
 			} break;
 			case RSE::INSTANCE_REFLECTION_PROBE: {
 				idata.instance_data_rid = static_cast<InstanceReflectionProbeData *>(p_instance->base_data)->instance.get_id();
@@ -3436,6 +3458,7 @@ void RendererSceneCull::_scene_cull(CullData &cull_data, InstanceCullResult &cul
 						ERR_FAIL_NULL(geom->geometry_instance);
 						cull_data.cull->lock.lock();
 						geom->geometry_instance->set_softshadow_projector_pairing(geom->softshadow_count > 0, geom->projector_count > 0);
+						geom->geometry_instance->set_area_light_pairing(geom->area_light_count > 0);
 						cull_data.cull->lock.unlock();
 						idata.flags &= ~InstanceData::FLAG_GEOM_PROJECTOR_SOFTSHADOW_DIRTY;
 					}

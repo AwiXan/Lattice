@@ -419,18 +419,33 @@ void clip_quad_to_horizon(inout vec3 L[5], out int vertex_count) {
 	}
 }
 
-float ltc_integrate_clipped_quad(vec3 L[5], vec3 L_proj[5], int vertices_above_horizon) {
+// The points are projected onto the unit sphere as they're needed, rather than all kept at once, which needs fewer registers.
+float ltc_integrate_clipped_quad(vec3 L[5], int vertices_above_horizon) {
+	vec3 L0_proj = normalize(L[0]);
+	vec3 L1_proj = normalize(L[1]);
+	vec3 L2_proj = normalize(L[2]);
+	vec3 L3_proj = normalize(L[3]);
 	float I;
-	I = integrate_edge(L_proj[0], L_proj[1], L[0], L[1]);
-	I += integrate_edge(L_proj[1], L_proj[2], L[1], L[2]);
-	I += integrate_edge(L_proj[2], L_proj[3], L[2], L[3]);
+	I = integrate_edge(L0_proj, L1_proj, L[0], L[1]);
+	I += integrate_edge(L1_proj, L2_proj, L[1], L[2]);
+	I += integrate_edge(L2_proj, L3_proj, L[2], L[3]);
 	if (vertices_above_horizon >= 4) {
-		I += integrate_edge(L_proj[3], L_proj[4], L[3], L[4]);
-	}
-	if (vertices_above_horizon == 5) {
-		I += integrate_edge(L_proj[4], L_proj[0], L[4], L[0]);
+		vec3 L4_proj = normalize(L[4]);
+		I += integrate_edge(L3_proj, L4_proj, L[3], L[4]);
+		if (vertices_above_horizon == 5) {
+			I += integrate_edge(L4_proj, L0_proj, L[4], L[0]);
+		}
 	}
 	return abs(I);
+}
+
+// Whether the plane of the light goes through (or close to) the shaded point, where the integral is unreliable.
+bool ltc_light_through_point(vec3 L[5]) {
+	vec3 L0_proj = normalize(L[0]);
+	vec3 L1_proj = normalize(L[1]);
+	vec3 L2_proj = normalize(L[2]);
+	vec3 pnorm = normalize(cross(L0_proj - L1_proj, L2_proj - L1_proj));
+	return abs(dot(pnorm, L0_proj)) < 1e-10;
 }
 
 // points are the corners of the light, or of the rectangle an ellipse fills when ellipse is true.
@@ -451,19 +466,18 @@ void ltc_evaluate(vec3 normal, vec3 eye_vec, mat3 M_inv, vec3 points[4], bool el
 	L[2] = M_inv * points[2];
 	L[3] = M_inv * points[3];
 
-	vec3 L_unclipped[4];
-	L_unclipped[0] = L[0];
-	L_unclipped[1] = L[1];
-	L_unclipped[2] = L[2];
-	L_unclipped[3] = L[3];
-
 	if (ellipse) {
 		vec3 dir;
 		integral = ltc_integrate_ellipse(0.5 * (L[0] + L[2]), 0.5 * (L[1] - L[0]), 0.5 * (L[3] - L[0]), dir);
 		if (texture_rect != vec4(0.0)) {
-			tex_color = fetch_ltc_texture_along(dir, texture_rect, L_unclipped, max_mipmap, area_light_atlas, texture_sampler);
+			tex_color = fetch_ltc_texture_along(dir, texture_rect, vec3[4](L[0], L[1], L[2], L[3]), max_mipmap, area_light_atlas, texture_sampler);
 		}
 		return;
+	}
+
+	if (texture_rect != vec4(0.0)) {
+		// Before clipping, which changes the corners.
+		tex_color = vec3(fetch_ltc_filtered_texture_with_form_factor(texture_rect, vec3[4](L[0], L[1], L[2], L[3]), max_mipmap, area_light_atlas, texture_sampler));
 	}
 
 	int n;
@@ -473,21 +487,8 @@ void ltc_evaluate(vec3 normal, vec3 eye_vec, mat3 M_inv, vec3 points[4], bool el
 		return;
 	}
 
-	// project onto unit sphere
-	vec3 L_proj[5];
-	L_proj[0] = normalize(L[0]);
-	L_proj[1] = normalize(L[1]);
-	L_proj[2] = normalize(L[2]);
-	L_proj[3] = normalize(L[3]);
-	L_proj[4] = normalize(L[4]);
-
-	if (texture_rect != vec4(0.0)) {
-		tex_color = vec3(fetch_ltc_filtered_texture_with_form_factor(texture_rect, L_unclipped, max_mipmap, area_light_atlas, texture_sampler));
-	}
-
 	// Prevent abnormal values when the light goes through (or close to) the fragment
-	vec3 pnorm = normalize(cross(L_proj[0] - L_proj[1], L_proj[2] - L_proj[1]));
-	if (abs(dot(pnorm, L_proj[0])) < 1e-10) {
+	if (ltc_light_through_point(L)) {
 		// we could just return black, but that would lead to some black pixels in front of the light.
 		// Better, we check if the fragment is on the light, and return white if so.
 		vec3 r10 = points[0] - points[1];
@@ -503,11 +504,12 @@ void ltc_evaluate(vec3 normal, vec3 eye_vec, mat3 M_inv, vec3 points[4], bool el
 		}
 	}
 
-	float I = ltc_integrate_clipped_quad(L, L_proj, n);
+	float I = ltc_integrate_clipped_quad(L, n);
 	integral = I / (2.0 * M_PI);
 }
 
-void ltc_evaluate_specular(vec3 normal, vec3 eye_vec, float roughness, vec3 points[4], bool ellipse, vec4 texture_rect, float max_mipmap, texture2D area_light_atlas, sampler texture_sampler, sampler lut_sampler, texture2D ltc_lut1, texture2D ltc_lut2, out float ltc_specular, out vec2 fresnel, out vec3 ltc_specular_tex_color) {
+// The matrix that turns the GGX lobe for this view and roughness into a cosine, and the terms of its Fresnel.
+void ltc_specular_matrix(vec3 normal, vec3 eye_vec, float roughness, sampler lut_sampler, texture2D ltc_lut1, texture2D ltc_lut2, out mat3 M_inv, out vec2 fresnel) {
 	float theta = acos_approx(dot(normal, eye_vec));
 	const float LTC_LUT_SIZE = float(64.0);
 	vec2 lut_pos = vec2(max(roughness, float(0.02)), theta / float(0.5 * M_PI));
@@ -516,13 +518,17 @@ void ltc_evaluate_specular(vec3 normal, vec3 eye_vec, float roughness, vec3 poin
 	vec3 M_brdf_e_mag_fres = texture(sampler2D(ltc_lut2, lut_sampler), lut_uv).xyz;
 	float scale = 1.0 / (M_brdf_abcd.x * M_brdf_e_mag_fres.x - M_brdf_abcd.y * M_brdf_abcd.w);
 
-	mat3 M_inv = mat3(
+	M_inv = mat3(
 			vec3(0, 0, 1.0 / M_brdf_abcd.z),
 			vec3(-M_brdf_abcd.w * scale, M_brdf_abcd.x * scale, 0),
 			vec3(-M_brdf_e_mag_fres.x * scale, M_brdf_abcd.y * scale, 0));
-
-	ltc_evaluate(normal, eye_vec, M_inv, points, ellipse, texture_rect, max_mipmap, area_light_atlas, texture_sampler, ltc_specular, ltc_specular_tex_color);
 	fresnel = vec2(M_brdf_e_mag_fres.yz);
+}
+
+void ltc_evaluate_specular(vec3 normal, vec3 eye_vec, float roughness, vec3 points[4], bool ellipse, vec4 texture_rect, float max_mipmap, texture2D area_light_atlas, sampler texture_sampler, sampler lut_sampler, texture2D ltc_lut1, texture2D ltc_lut2, out float ltc_specular, out vec2 fresnel, out vec3 ltc_specular_tex_color) {
+	mat3 M_inv;
+	ltc_specular_matrix(normal, eye_vec, roughness, lut_sampler, ltc_lut1, ltc_lut2, M_inv, fresnel);
+	ltc_evaluate(normal, eye_vec, M_inv, points, ellipse, texture_rect, max_mipmap, area_light_atlas, texture_sampler, ltc_specular, ltc_specular_tex_color);
 }
 
 void ltc_evaluate_diff(vec3 normal, vec3 points[4], bool ellipse, vec4 texture_rect, float max_mipmap, texture2D area_light_atlas, sampler texture_sampler, out float integral, out vec3 tex_color) {
@@ -565,17 +571,8 @@ void ltc_evaluate_diff(vec3 normal, vec3 points[4], bool ellipse, vec4 texture_r
 		return;
 	}
 
-	// project onto unit sphere
-	vec3 L_proj[5];
-	L_proj[0] = normalize(L[0]);
-	L_proj[1] = normalize(L[1]);
-	L_proj[2] = normalize(L[2]);
-	L_proj[3] = normalize(L[3]);
-	L_proj[4] = normalize(L[4]);
-
 	// Prevent abnormal values when the light goes through (or close to) the fragment
-	vec3 pnorm = normalize(cross(L_proj[0] - L_proj[1], L_proj[2] - L_proj[1]));
-	if (abs(dot(pnorm, L_proj[0])) < 1e-10) {
+	if (ltc_light_through_point(L)) {
 		// we could just return black, but that would lead to some black pixels in front of the light.
 		// for global illumination that shouldn't cause any visual artifacts
 		integral = 0.0;
@@ -586,7 +583,7 @@ void ltc_evaluate_diff(vec3 normal, vec3 points[4], bool ellipse, vec4 texture_r
 		tex_color = fetch_ltc_filtered_texture_with_form_factor(texture_rect, L_unclipped, max_mipmap, area_light_atlas, texture_sampler);
 	}
 
-	float I = ltc_integrate_clipped_quad(L, L_proj, n);
+	float I = ltc_integrate_clipped_quad(L, n);
 	integral = I; // no division by (2.0 * M_PI) for GI calculations
 }
 

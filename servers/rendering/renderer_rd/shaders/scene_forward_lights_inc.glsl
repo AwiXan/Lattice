@@ -1050,6 +1050,12 @@ void light_process_area(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 	half light_length = max(half(0.0), dist);
 	half light_attenuation_raw = get_omni_attenuation(float(light_length), area_lights.data[idx].inv_radius, area_lights.data[idx].attenuation);
 	half light_attenuation_ltc = light_attenuation_raw * half(light_length * light_length); // solid angle already decreases by inverse square, so attenuation power is 2.0 by default -> subtract 2.0
+#if !(defined(LIGHT_CODE_USED) && defined(AREA_LIGHT_CODE_USED))
+	if (light_attenuation_raw <= HALF_FLT_MIN) {
+		// Out of range: the box of the clusters is larger than the light reaches.
+		return;
+	}
+#endif
 	half shadow = half(1.0);
 
 #ifndef SHADOWS_DISABLED
@@ -1173,12 +1179,27 @@ void light_process_area(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 	vec3 ltc_specular_tex_color = vec3(1.0);
 	vec2 ltc_fresnel = vec2(0.0);
 	hvec3 fresnel_color = hvec3(0.0);
-	ltc_evaluate(vec3(normal), vec3(eye_vec), mat3(1), points, ellipse, area_lights.data[idx].projector_rect, max_mipmap, area_light_atlas, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP, ltc_diffuse, ltc_diffuse_tex_color);
-
 #if !defined(SPECULAR_DISABLED) || (defined(LIGHT_CODE_USED) && defined(AREA_LIGHT_CODE_USED))
-	ltc_evaluate_specular(vec3(normal), vec3(eye_vec), roughness, points, ellipse, area_lights.data[idx].projector_rect, max_mipmap, area_light_atlas, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP, SAMPLER_LINEAR_CLAMP, ltc_lut1, ltc_lut2, ltc_specular, ltc_fresnel, ltc_specular_tex_color);
+	mat3 ltc_specular_m_inv;
+	ltc_specular_matrix(vec3(normal), vec3(eye_vec), roughness, SAMPLER_LINEAR_CLAMP, ltc_lut1, ltc_lut2, ltc_specular_m_inv, ltc_fresnel);
+
+	// Diffuse, then specular, in a loop: the integration is compiled once, and doesn't hold the registers of both.
+	[[dont_unroll]] for (int i = 0; i < 2; i++) {
+		float integral;
+		vec3 tex_color;
+		ltc_evaluate(vec3(normal), vec3(eye_vec), i == 0 ? mat3(1.0) : ltc_specular_m_inv, points, ellipse, area_lights.data[idx].projector_rect, max_mipmap, area_light_atlas, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP, integral, tex_color);
+		if (i == 0) {
+			ltc_diffuse = integral;
+			ltc_diffuse_tex_color = tex_color;
+		} else {
+			ltc_specular = integral;
+			ltc_specular_tex_color = tex_color;
+		}
+	}
 	half f90 = clamp(dot(f0, hvec3(50.0 * 0.33)), metallic, half(1.0));
 	fresnel_color = f0 * max(half(ltc_fresnel.x), half(0.0)) + (f90 - f0) * max(half(ltc_fresnel.y), half(0.0));
+#else
+	ltc_evaluate(vec3(normal), vec3(eye_vec), mat3(1), points, ellipse, area_lights.data[idx].projector_rect, max_mipmap, area_light_atlas, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP, ltc_diffuse, ltc_diffuse_tex_color);
 #endif
 
 #if defined(LIGHT_CODE_USED) && defined(AREA_LIGHT_CODE_USED)

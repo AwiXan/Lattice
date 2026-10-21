@@ -493,8 +493,9 @@ private:
 				uint32_t uses_forward_gi : 1;
 				uint32_t uses_lightmap : 1;
 
-				// This value is not part of the sort key as there are no more available bits.
+				// These values are not part of the sort key as there are no more available bits.
 				uint32_t uses_lightmap_specular : 1;
+				uint32_t uses_area_lights : 1;
 			};
 			uint32_t value;
 		};
@@ -610,6 +611,7 @@ private:
 		bool can_hddagi = false;
 		bool using_projectors = false;
 		bool using_softshadows = false;
+		bool using_area_lights = false;
 
 		//used during setup
 		uint64_t prev_transform_change_frame = 0xFFFFFFFF;
@@ -640,6 +642,7 @@ private:
 		virtual void pair_voxel_gi_instances(const RID *p_voxel_gi_instances, uint32_t p_voxel_gi_instance_count) override;
 
 		virtual void set_softshadow_projector_pairing(bool p_softshadow, bool p_projector) override;
+		virtual void set_area_light_pairing(bool p_area_lights) override;
 	};
 
 	// These are not used in the Forward+ path, it has different light clustering tech.

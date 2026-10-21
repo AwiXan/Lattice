@@ -655,6 +655,7 @@ public:
 		bool material_is_animated;
 		uint32_t projector_count = 0;
 		uint32_t softshadow_count = 0;
+		uint32_t area_light_count = 0;
 
 		HashSet<Instance *> decals;
 		HashSet<Instance *> reflection_probes;
@@ -725,6 +726,7 @@ public:
 
 		bool uses_projector = false;
 		bool uses_softshadow = false;
+		bool is_area = false;
 
 		HashSet<Instance *> geometries;
 
