@@ -115,6 +115,10 @@
 		<member name="dynamic_gi_min_cell_size" type="float" setter="set_dynamic_gi_min_cell_size" getter="get_dynamic_gi_min_cell_size" default="0.2">
 			The minimum size of a voxel cell when processing Dynamic GI (a probe is placed every 8 voxel cells). It is recommended to have the cascade 0 probes visible when adjusting this value, which you can do via the viewport menu (Advanced -&gt; Dynamic GI Probes).
 		</member>
+		<member name="dynamic_gi_mode" type="int" setter="set_dynamic_gi_mode" getter="get_dynamic_gi_mode" enum="Environment.DynamicGIMode" default="0">
+			How the global illumination of [member dynamic_gi_enabled] is gathered on screen. Both modes keep the same world-space cascades, so the other [code]dynamic_gi_*[/code] properties apply to both.
+			[b]Note:[/b] [constant DYNAMIC_GI_MODE_LUMEN_LITE] is only supported in the Forward+ renderer with a single view; otherwise [constant DYNAMIC_GI_MODE_HDDAGI] is used. Its quality is set in [member ProjectSettings.rendering/global_illumination/lumen_lite/quality].
+		</member>
 		<member name="dynamic_gi_normal_bias" type="float" setter="set_dynamic_gi_normal_bias" getter="get_dynamic_gi_normal_bias" default="1.1">
 			Used for unocclusion. If unsure, leave this value unmodified.
 		</member>
@@ -470,6 +474,12 @@
 		</constant>
 		<constant name="FOG_MODE_DEPTH" value="1" enum="FogMode">
 			Use a simple fog model defined by start and end positions and a custom curve. While not physically accurate, this model can be useful when you need more artistic control.
+		</constant>
+		<constant name="DYNAMIC_GI_MODE_HDDAGI" value="0" enum="DynamicGIMode">
+			Every pixel interpolates the light of the probes of Dynamic GI's cascades (HDDAGI). Smooth and stable, but no finer than the probe spacing.
+		</constant>
+		<constant name="DYNAMIC_GI_MODE_LUMEN_LITE" value="1" enum="DynamicGIMode">
+			Lumen Lite: probes placed on the screen trace rays, first against the depth buffer (reading the previous frame's lit scene), then through Dynamic GI's voxels, falling back to its probes for distant hits and the sky. The rays are accumulated over frames and filtered, and every pixel interpolates the nearby screen probes. Shows contact bounce and small light sources that the probe grid misses, at a higher cost and with more noise. Reflections are still those of [constant DYNAMIC_GI_MODE_HDDAGI].
 		</constant>
 		<constant name="DYNAMIC_GI_CASCADE_FORMAT_16x8x16" value="0" enum="DynamicGICascadeFormat">
 			Uses a cascade format with half the vertical resolution. This is the default, as most level geometry is generally fine with this.

@@ -3704,6 +3704,14 @@ void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_nor
 		RD::get_singleton()->buffer_update(rbgi->scene_data_ubo, 0, sizeof(SceneData), &scene_data);
 	}
 
+	// Lumen Lite replaces the ambient HDDAGI's gather writes; one view only for now.
+	const bool use_lumen_lite = p_render_buffers->has_custom_data(RB_SCOPE_HDDAGI) && p_view_count == 1 && p_environment.is_valid() && RendererSceneRenderRD::get_singleton()->environment_get_dynamic_gi_mode(p_environment) == RSE::ENV_DYNAMIC_GI_MODE_LUMEN_LITE;
+	if (use_lumen_lite) {
+		prepare_lumen_lite(p_render_buffers, projections[0], p_cam_transform);
+	} else if (p_render_buffers->has_custom_data(RB_SCOPE_LUMEN_LITE)) {
+		p_render_buffers->set_custom_data(RB_SCOPE_LUMEN_LITE, Ref<RenderBufferCustomDataRD>());
+	}
+
 	// Now compute the contents of our buffers.
 	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
 
@@ -3826,13 +3834,9 @@ void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_nor
 		RD::get_singleton()->compute_list_dispatch_threads(compute_list, size.x, size.y, 1);
 	}
 
-	// Lumen Lite replaces the ambient HDDAGI's gather just wrote; one view only for now.
-	const bool use_lumen_lite = use_hddagi && p_view_count == 1 && p_environment.is_valid() && RendererSceneRenderRD::get_singleton()->environment_get_dynamic_gi_mode(p_environment) == RSE::ENV_DYNAMIC_GI_MODE_LUMEN_LITE;
 	if (use_lumen_lite) {
 		RD::get_singleton()->compute_list_add_barrier(compute_list);
 		process_lumen_lite(compute_list, p_render_buffers, p_normal_roughness_slices[0], projections[0], p_cam_transform, size, shift);
-	} else if (p_render_buffers->has_custom_data(RB_SCOPE_LUMEN_LITE)) {
-		p_render_buffers->set_custom_data(RB_SCOPE_LUMEN_LITE, Ref<RenderBufferCustomDataRD>());
 	}
 
 	if (use_hddagi && hddagi->using_reflection_filter) {
@@ -3992,10 +3996,7 @@ GI::LumenLite::~LumenLite() {
 	free_data();
 }
 
-void GI::process_lumen_lite(RD::ComputeListID p_compute_list, Ref<RenderSceneBuffersRD> p_render_buffers, const RID &p_normal_roughness, const Projection &p_projection, const Transform3D &p_cam_transform, const Size2i &p_gi_size, uint32_t p_shift) {
-	Ref<HDDAGI> hddagi = p_render_buffers->get_custom_data(RB_SCOPE_HDDAGI);
-	ERR_FAIL_COND(hddagi.is_null());
-
+void GI::prepare_lumen_lite(Ref<RenderSceneBuffersRD> p_render_buffers, const Projection &p_projection, const Transform3D &p_cam_transform) {
 	Ref<LumenLite> lumen_lite;
 	if (p_render_buffers->has_custom_data(RB_SCOPE_LUMEN_LITE)) {
 		lumen_lite = p_render_buffers->get_custom_data(RB_SCOPE_LUMEN_LITE);
@@ -4094,6 +4095,17 @@ void GI::process_lumen_lite(RD::ComputeListID p_compute_list, Ref<RenderSceneBuf
 	ubo.pixel_angle = 2.0f / (Math::abs(p_projection.columns[1][1]) * float(screen_size.y));
 	RD::get_singleton()->buffer_update(lumen_lite->ubo, 0, sizeof(LumenLiteShader::UBO), &ubo);
 
+	lumen_lite->debug_mode = debug_mode;
+}
+
+void GI::process_lumen_lite(RD::ComputeListID p_compute_list, Ref<RenderSceneBuffersRD> p_render_buffers, const RID &p_normal_roughness, const Projection &p_projection, const Transform3D &p_cam_transform, const Size2i &p_gi_size, uint32_t p_shift) {
+	Ref<HDDAGI> hddagi = p_render_buffers->get_custom_data(RB_SCOPE_HDDAGI);
+	ERR_FAIL_COND(hddagi.is_null());
+	Ref<LumenLite> lumen_lite = p_render_buffers->get_custom_data(RB_SCOPE_LUMEN_LITE);
+	ERR_FAIL_COND(lumen_lite.is_null() || !lumen_lite->is_allocated());
+
+	const Size2i screen_size = lumen_lite->screen_size;
+	const uint32_t debug_mode = lumen_lite->debug_mode;
 	const uint32_t current = lumen_lite->frame & 1;
 	const uint32_t previous = current ^ 1;
 
@@ -4161,7 +4173,9 @@ void GI::process_lumen_lite(RD::ComputeListID p_compute_list, Ref<RenderSceneBuf
 
 	RD::get_singleton()->draw_command_end_label();
 
-	lumen_lite->prev_projection = projection;
+	Projection correction;
+	correction.set_depth_correction(true);
+	lumen_lite->prev_projection = correction * p_projection;
 	lumen_lite->prev_cam_transform = p_cam_transform;
 	lumen_lite->history_valid = true;
 	lumen_lite->frame++;

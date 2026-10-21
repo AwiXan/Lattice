@@ -767,6 +767,18 @@
 			Draws the atlas used by [AreaLight3D] nodes in the upper left quadrant of the [Viewport].
 			[b]Note:[/b] Only supported when using the Forward+ or Mobile rendering method.
 		</constant>
+		<constant name="DEBUG_DRAW_LUMEN_LITE_PROBES" value="29" enum="DebugDraw">
+			Draws the radiance of each Lumen Lite screen probe over its tile, with the probe's pixel in magenta. See [member Environment.dynamic_gi_mode].
+			[b]Note:[/b] Only supported when using the Forward+ rendering method.
+		</constant>
+		<constant name="DEBUG_DRAW_LUMEN_LITE_TRACE_HITS" value="30" enum="DebugDraw">
+			Draws how each Lumen Lite ray ended, in the layout of [constant DEBUG_DRAW_LUMEN_LITE_PROBES]: green on screen, blue in Dynamic GI's voxels, red in the radiance cache, black not traced.
+			[b]Note:[/b] Only supported when using the Forward+ rendering method.
+		</constant>
+		<constant name="DEBUG_DRAW_LUMEN_LITE_RADIANCE_CACHE" value="31" enum="DebugDraw">
+			Draws the radiance cache Lumen Lite rays fall back to (Dynamic GI's probes), in the direction of each pixel's normal.
+			[b]Note:[/b] Only supported when using the Forward+ rendering method.
+		</constant>
 		<constant name="DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST" value="0" enum="DefaultCanvasItemTextureFilter">
 			The texture filter reads from the nearest pixel only. This makes the texture look pixelated from up close, and grainy from a distance (due to mipmaps not being sampled).
 		</constant>

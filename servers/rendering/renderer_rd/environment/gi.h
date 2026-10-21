@@ -855,6 +855,7 @@ public:
 
 		uint32_t frame = 0;
 		bool history_valid = false;
+		uint32_t debug_mode = UINT32_MAX; // Which debug view the debug pass draws, if any.
 		Projection prev_projection; // Depth corrected.
 		Transform3D prev_cam_transform;
 
@@ -1042,6 +1043,8 @@ public:
 
 	void setup_voxel_gi_instances(RenderDataRD *p_render_data, Ref<RenderSceneBuffersRD> p_render_buffers, const Transform3D &p_transform, const PagedArray<RID> &p_voxel_gi_instances, uint32_t &r_voxel_gi_instances_used);
 	void process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_normal_roughness_slices, RID p_voxel_gi_buffer, RID p_environment, uint32_t p_view_count, const Projection *p_projections, const Vector3 *p_eye_offsets, const Transform3D &p_cam_transform, const PagedArray<RID> &p_voxel_gi_instances);
+	// Lumen Lite's buffers and settings for this frame, before process_gi()'s compute list.
+	void prepare_lumen_lite(Ref<RenderSceneBuffersRD> p_render_buffers, const Projection &p_projection, const Transform3D &p_cam_transform);
 	// Lumen Lite's passes, in process_gi()'s compute list, after HDDAGI's gather.
 	void process_lumen_lite(RD::ComputeListID p_compute_list, Ref<RenderSceneBuffersRD> p_render_buffers, const RID &p_normal_roughness, const Projection &p_projection, const Transform3D &p_cam_transform, const Size2i &p_gi_size, uint32_t p_shift);
 

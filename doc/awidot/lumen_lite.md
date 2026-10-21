@@ -1,6 +1,8 @@
 # Lumen Lite: screen-probe global illumination on top of HDDAGI
 
-Status: design, plus a first rough implementation (Forward+ only).
+Status: design, plus a first rough implementation (Forward+ only). Sections 2–5
+describe what the first version does; where it is simpler than the design, the
+text says so, and section 6 lists what is missing.
 
 Lumen Lite is a second real-time GI mode next to HDDAGI. It keeps HDDAGI's
 world-space scene representation and replaces only the *final gather*: instead
@@ -21,11 +23,11 @@ and scrolled in 8-cell regions):
 | --- | --- | --- |
 | `voxel_region_tex` | `r8ui` 3D, one texel per 8³ region | "region has geometry" bit |
 | `voxel_bits_tex` | `rg32ui` 3D, one texel per 4³ block | 64-bit occupancy mask of the block |
-| `voxel_light_tex` | `r32ui`/E5B9G9R9 3D, one texel per cell | outgoing light of the empty cell in front of a surface: direct light (static + dynamic, shadowed by ray marching the voxels) + emission + `bounce_feedback` × albedo × probe irradiance (so it is multi-bounce) |
+| `voxel_light_tex` | E5B9G9R9 3D (`r32ui` storage), one texel per cell | outgoing light of the empty cell in front of a surface: direct light (static + dynamic, shadowed by ray marching the voxels) + emission + `bounce_feedback` × albedo × probe irradiance (so it is multi-bounce) |
 | `voxel_disocclusion_tex`, `voxel_light_neighbour_data` | `r8ui`, `r32ui` | which faces of a solid cell are open, which of the 26 neighbours are lit (used to filter hits) |
-| `lightprobe_specular_tex` | `rgba` 2D array, 5×5 octahedral + border per probe, one layer per cascade | per-direction radiance seen from each probe (the moving average of its rays, sky included when *Read Sky Light* is on) |
+| `lightprobe_specular_tex` | E5B9G9R9 2D array, 5×5 octahedral + border per probe, one layer per cascade | per-direction radiance seen from each probe (the moving average of its rays, sky included when *Read Sky Light* is on) |
 | `lightprobe_diffuse_tex` / `_filter_tex` | same layout | the cosine-convolved irradiance of the above |
-| `occlusion_tex[2]` | `rgba8` 3D | per-cell visibility weights of the 8 surrounding probes (stops leaking through walls) |
+| `occlusion_tex[2]` | R4G4B4A4 3D (`r16ui` storage) | per-cell visibility weights of the 8 surrounding probes (stops leaking through walls) |
 | `hddagi_ubo` | UBO | grid size, cascade origins (camera-relative, world-aligned), `to_cell`, region offsets, energy, biases |
 
 The scene-facing part is `gi.glsl` (`MODE_HDDAGI*`), dispatched from
@@ -87,7 +89,8 @@ away. That is exactly the part Lumen replaces with screen probes.
      with HDDAGI's neighbour filtering. Read-only: Lumen Lite adds no voxel
      data of its own.
    * **Radiance cache for distant hits / misses**: when the world trace
-     leaves the last cascade, or after its maximum distance, the ray reads
+     leaves the last cascade (or starts outside all of them, or hits the
+     cell it started in), the ray reads
      HDDAGI's probe radiance (`lightprobe_specular`, interpolated with the
      occlusion weights) at its origin in its direction. These probes already
      include the sky, so this is also the sky term.
@@ -109,7 +112,7 @@ away. That is exactly the part Lumen replaces with screen probes.
    irradiance / π into the existing `ambient` GI buffer with blend 1. Pixels
    with no valid probe around keep HDDAGI's own value.
 
-Importance sampling (planned, not in the first version): Lumen distributes a
+Importance sampling (planned, **not in the first version**): Lumen distributes a
 probe's rays with the product of the BRDF (cosine around the pixel normals in
 the tile) and the previous frame's radiance in the probe (directions that were
 bright get more rays). The first version traces the octahedron uniformly with
@@ -172,11 +175,17 @@ feedback, energy, sky) keep their meaning.
 Settings live under `rendering/global_illumination/lumen_lite/` (read every
 frame, so they apply live in the editor):
 
-| Tier | Tile | Rays / probe / frame | Screen steps | Spatial filter | History |
-| --- | --- | --- | --- | --- | --- |
-| Low | 16 px | 32 (checkerboard over the 64 texels) | 12 | 1 pass | 16 frames |
-| Medium (default) | 16 px | 64 | 16 | 1 pass | 12 frames |
-| High | 8 px | 64 | 24 | 1 pass | 8 frames |
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `quality` | Medium | Low: 16 px tiles, 32 of the 64 rays per probe per frame (checkerboard; the others keep their history), 12 screen steps. Medium: 16 px, 64 rays, 16 steps. High: 8 px, 64 rays, 24 steps. |
+| `history_frames` | 12 | The temporal blend weight of a new ray is `1 / history_frames`. |
+| `screen_traces` | on | Off: rays go straight to the voxels (no contact detail, steadier). |
+| `screen_trace_distance` | 4 m | How far a ray marches the depth buffer before the voxels take over. |
+| `spatial_filter` | on | Averages each probe texel with the four neighbouring probes on the same plane. |
+
+The mode itself is `Environment.dynamic_gi_mode` (HDDAGI or Lumen Lite) inside
+the existing *Dynamic GI* group, so the two are exclusive by construction and
+share `dynamic_gi_enabled`, the cascade settings and `dynamic_gi_energy`.
 
 Expected cost at 1080p internal resolution on an RTX 3060-class GPU,
 *estimated* from ray counts and the cost of the existing HDDAGI passes (not
@@ -191,8 +200,10 @@ measured yet; the first version runs in a software Vulkan rasterizer here):
 HDDAGI's world update (voxelisation of scrolled regions, light, probes) costs
 the same as with HDDAGI itself, typically 0.5–1.5 ms; the HDDAGI per-pixel
 gather still runs for reflections (~0.3 ms at half resolution).
-Memory: per probe 8×8 RGBA16F × 3 maps + SH (3 × RGBA16F) + position
-(RGBA32F) ≈ 1.6 KB; Medium at 1080p ≈ 13 MB, High ≈ 52 MB.
+Memory: per probe 8×8 RGBA16F × 3 maps + SH (3 × RGBA16F) + position and
+normal for two frames ≈ 1.6 KB; Medium at 1080p ≈ 13 MB, High ≈ 52 MB, plus
+the half-size copy of the lit scene (4 MB at 1080p) and, only while a debug view
+is shown, a full-size debug texture.
 
 The world fallback dominates the trace cost (a DDA through up to 8 cascades);
 screen hits are cheap. In closed rooms most rays hit on screen.
@@ -211,7 +222,27 @@ menu):
   (HDDAGI probes) returns in the pixel's normal direction: the value a
   ray reaching that point would fall back to.
 
-## 6. Roadmap
+## 6. Roadmap and what the first version lacks
+
+Known limitations of the first version:
+
+* Uniform ray directions (no importance sampling): small bright emitters give
+  blotchy noise that the 4-neighbour filter and 12-frame history don't fully
+  hide.
+* Screen trace is a linear march of the full depth buffer, no HZB; rays that
+  go behind thin objects or off screen fall back to voxels.
+* History is matched per probe (tile reprojection + plane test), not per
+  texel; fast camera motion resets it, dynamic objects get no motion vectors.
+* No adaptive extra probes at depth/normal edges; the gather falls back to
+  any facing probe in the 3×3 tiles, else to HDDAGI's own value.
+* Reflections, transparent objects, fog and multiview stay on HDDAGI.
+* Settings are project-wide (read every frame); there is no per-Environment
+  quality and no RenderingServer setter beyond the mode.
+* The editor's settings update in `editor_node.cpp` is untouched; the
+  settings apply live anyway because they are read with `GLOBAL_GET_CACHED`.
+
+Roadmap:
+
 
 1. (this PR) Screen probes, screen → voxel → cache tracing, temporal +
    spatial filter, SH gather, settings, debug views; Forward+ only.

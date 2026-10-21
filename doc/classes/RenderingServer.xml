@@ -1389,6 +1389,14 @@
 				Sets the maximum layer to use if using Canvas background mode.
 			</description>
 		</method>
+		<method name="environment_set_dynamic_gi_mode">
+			<return type="void" />
+			<param index="0" name="env" type="RID" />
+			<param index="1" name="mode" type="int" enum="RenderingServer.EnvironmentDynamicGIMode" />
+			<description>
+				Sets how DynamicGI's light is gathered on screen. See [member Environment.dynamic_gi_mode] for more details.
+			</description>
+		</method>
 		<method name="environment_set_fog">
 			<return type="void" />
 			<param index="0" name="env" type="RID" />
@@ -5784,6 +5792,18 @@
 			Internal buffer is drawn instead of regular scene so you can see the per-pixel output that will be used by post-processing effects.
 			[b]Note:[/b] Only supported when using the Forward+ or Mobile rendering methods.
 		</constant>
+		<constant name="VIEWPORT_DEBUG_DRAW_LUMEN_LITE_PROBES" value="29" enum="ViewportDebugDraw">
+			Draws the radiance of each Lumen Lite screen probe over its tile, with the probe's pixel in magenta. See [member Environment.dynamic_gi_mode].
+			[b]Note:[/b] Only supported when using the Forward+ rendering method.
+		</constant>
+		<constant name="VIEWPORT_DEBUG_DRAW_LUMEN_LITE_TRACE_HITS" value="30" enum="ViewportDebugDraw">
+			Draws how each Lumen Lite ray ended, in the layout of [constant VIEWPORT_DEBUG_DRAW_LUMEN_LITE_PROBES]: green on screen, blue in DynamicGI's voxels, red in the radiance cache, black not traced.
+			[b]Note:[/b] Only supported when using the Forward+ rendering method.
+		</constant>
+		<constant name="VIEWPORT_DEBUG_DRAW_LUMEN_LITE_RADIANCE_CACHE" value="31" enum="ViewportDebugDraw">
+			Draws the radiance cache Lumen Lite rays fall back to (DynamicGI's probes), in the direction of each pixel's normal.
+			[b]Note:[/b] Only supported when using the Forward+ rendering method.
+		</constant>
 		<constant name="VIEWPORT_VRS_DISABLED" value="0" enum="ViewportVRSMode">
 			Variable rate shading is disabled.
 		</constant>
@@ -5977,6 +5997,15 @@
 		</constant>
 		<constant name="ENV_SSIL_QUALITY_ULTRA" value="4" enum="EnvironmentSSILQuality">
 			Highest quality screen-space indirect lighting. Uses the adaptive target setting which can be dynamically adjusted to smoothly balance performance and visual quality.
+		</constant>
+		<constant name="ENV_DYNAMIC_GI_MODE_HDDAGI" value="0" enum="EnvironmentDynamicGIMode">
+			DynamicGI's light is gathered from its probes at every pixel (HDDAGI).
+		</constant>
+		<constant name="ENV_DYNAMIC_GI_MODE_LUMEN_LITE" value="1" enum="EnvironmentDynamicGIMode">
+			DynamicGI's light is gathered by screen probes (Lumen Lite).
+		</constant>
+		<constant name="ENV_DYNAMIC_GI_MODE_MAX" value="2" enum="EnvironmentDynamicGIMode">
+			Represents the size of the [enum EnvironmentDynamicGIMode] enum.
 		</constant>
 		<constant name="ENV_HDDAGI_CASCADE_FORMAT_16x8x16" value="0" enum="EnvironmentHDDAGICascadeFormat">
 			Half resolution cascade format for DynamicGI (HDDAGI).
