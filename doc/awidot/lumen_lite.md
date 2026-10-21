@@ -229,6 +229,11 @@ Known limitations of the first version:
 * Uniform ray directions (no importance sampling): small bright emitters give
   blotchy noise that the 4-neighbour filter and 12-frame history don't fully
   hide.
+* The world trace starts where the screen trace last saw free space, with a
+  smaller normal push, and steps out of a solid start cell once. That cleared
+  the cache fallbacks clustered in corners, but scattered single fallbacks
+  across the screen went up (about 2× in the test room); they don't show after
+  filtering, cause not pinned down yet.
 * Screen trace is a linear march of the full depth buffer, no HZB; rays that
   go behind thin objects or off screen fall back to voxels.
 * History is matched per probe (tile reprojection + plane test), not per

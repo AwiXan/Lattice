@@ -290,8 +290,10 @@ vec3 radiance_cache_sample(vec3 p_pos, vec3 p_dir) {
 
 // A ray through HDDAGI's voxels; returns HIT_WORLD with the light of the hit, or
 // HIT_CACHE with the radiance cache's.
-float world_trace(vec3 p_pos, vec3 p_normal, vec3 p_dir, out vec3 r_radiance) {
-	vec3 pos = to_hddagi_space(p_pos);
+// p_skip: how far along the ray is already known to be free (the screen trace saw
+// nothing there); starting past it keeps rays from corners out of the next wall.
+float world_trace(vec3 p_pos, vec3 p_normal, vec3 p_dir, float p_skip, out vec3 r_radiance) {
+	vec3 pos = to_hddagi_space(p_pos + p_dir * p_skip);
 	vec3 normal = normalize(to_hddagi_space(p_normal));
 	vec3 dir = normalize(to_hddagi_space(p_dir));
 
@@ -301,16 +303,30 @@ float world_trace(vec3 p_pos, vec3 p_normal, vec3 p_dir, out vec3 r_radiance) {
 		return HIT_CACHE;
 	}
 
-	// Out of the cell of the surface the probe is on, as HDDAGI's reflections do.
+	// Out of the cell of the surface the probe is on, as HDDAGI's reflections do; less
+	// so once the ray is already away from it, so that in a corner it doesn't start in
+	// the other wall.
 	vec3 start_cell = (pos - hddagi.cascades[cascade].position) * hddagi.cascades[cascade].to_cell;
 	vec3 abs_normal = abs(normal);
-	start_cell += normal / max(abs_normal.x, max(abs_normal.y, abs_normal.z)) * hddagi.reflection_bias;
+	float skip_cells = p_skip * hddagi.cascades[cascade].to_cell;
+	float bias = mix(hddagi.reflection_bias, 0.5, clamp(skip_cells - 1.0, 0.0, 1.0));
+	start_cell += normal / max(abs_normal.x, max(abs_normal.y, abs_normal.z)) * bias;
 	vec3 ray_pos = start_cell / hddagi.cascades[cascade].to_cell + hddagi.cascades[cascade].position;
 
 	ivec3 hit_cell;
 	ivec3 hit_face;
 	int hit_cascade;
 	if (trace_ray_hdda(ray_pos, dir, cascade, hit_cell, hit_face, hit_cascade)) {
+		if (hit_cascade == cascade && ivec3(start_cell) == hit_cell) {
+			// Started inside a solid cell (a corner): step out along the ray and try again.
+			vec3 retry_pos = ray_pos + dir * (1.5 / hddagi.cascades[cascade].to_cell);
+			start_cell = (retry_pos - hddagi.cascades[cascade].position) * hddagi.cascades[cascade].to_cell;
+			if (!trace_ray_hdda(retry_pos, dir, cascade, hit_cell, hit_face, hit_cascade)) {
+				r_radiance = radiance_cache_sample(retry_pos, dir);
+				return HIT_CACHE;
+			}
+			ray_pos = retry_pos;
+		}
 		if (hit_cascade != cascade || ivec3(start_cell) != hit_cell) {
 			hit_cell += hit_face;
 			ivec3 read_cell = (hit_cell + (hddagi.cascades[hit_cascade].region_world_offset * REGION_SIZE)) & (ivec3(hddagi.grid_size) - 1);
@@ -344,9 +360,12 @@ shared ivec2 history_probe;
 shared bool history_valid;
 
 // Marches the depth buffer; on a hit, reads last frame's lit scene there.
-bool screen_trace(vec3 p_origin, vec3 p_dir, float p_jitter, out vec3 r_radiance) {
+// r_free: how far the ray went without passing behind anything.
+bool screen_trace(vec3 p_origin, vec3 p_dir, float p_jitter, out vec3 r_radiance, out float r_free) {
 	float max_distance = params.screen_trace_distance;
 	uint steps = params.screen_steps;
+	bool free = true;
+	r_free = 0.0;
 	for (uint i = 0; i < steps; i++) {
 		float s = (float(i) + p_jitter) / float(steps);
 		float t = max_distance * s * s;
@@ -383,6 +402,11 @@ bool screen_trace(vec3 p_origin, vec3 p_dir, float p_jitter, out vec3 r_radiance
 			}
 			r_radiance = textureLod(sampler2D(last_lit, linear_sampler), prev_uv, 0.0).rgb;
 			return true;
+		}
+		if (behind > 0.0) {
+			free = false; // Behind something thick: what lies further is unknown.
+		} else if (free) {
+			r_free = t;
 		}
 	}
 	return false;
@@ -429,8 +453,10 @@ void main() {
 							vec4 prev_pos = imageLoad(prev_probe_position, prev_probe);
 							vec3 prev_normal = imageLoad(prev_probe_normal, prev_probe).xyz;
 							vec3 offset = prev_pos.xyz - (world_pos + params.cam_origin.xyz);
-							float tile_world_size = float(tile_size) * depth * params.pixel_angle;
-							bool same_plane = abs(dot(offset, world_normal)) < 0.05 * depth + 0.02;
+							// A tile seen at a grazing angle covers that much more of its surface.
+							float facing = max(abs(dot(world_normal, normalize(world_pos))), 0.15);
+							float tile_world_size = float(tile_size) * depth * params.pixel_angle / facing;
+							bool same_plane = abs(dot(offset, world_normal)) < 0.05 * depth / facing + 0.02;
 							bool close = length(offset) < tile_world_size * 1.5 + 0.05;
 							if (prev_pos.w > 0.0 && same_plane && close && dot(prev_normal, world_normal) > 0.8) {
 								history_valid = true;
@@ -481,23 +507,24 @@ void main() {
 
 	vec3 radiance = vec3(0.0);
 	float hit = HIT_NONE;
+	float free_distance = 0.0;
 
 	if (bool(params.flags & FLAG_SCREEN_TRACES)) {
 		float depth = -probe_view_pos.z;
 		vec3 origin = probe_view_pos + probe_view_normal * (0.01 + depth * 0.005);
 		vec3 view_dir = mat3(params.inv_cam_basis) * dir;
-		if (screen_trace(origin, view_dir, hash_float(ray_seed + 2u), radiance)) {
+		if (screen_trace(origin, view_dir, hash_float(ray_seed + 2u), radiance, free_distance)) {
 			hit = HIT_SCREEN;
 		}
 	}
 
 	if (hit == HIT_NONE) {
-		hit = world_trace(world_pos, world_normal, dir, radiance);
+		hit = world_trace(world_pos, world_normal, dir, free_distance, radiance);
 	}
 
 	// Keep a single bright texel from flashing the whole probe.
 	float luminance = dot(radiance, vec3(0.2126, 0.7152, 0.0722));
-	radiance *= min(1.0, 64.0 / max(luminance, 0.0001));
+	radiance *= min(1.0, 16.0 / max(luminance, 0.0001));
 
 	if (history.a > 0.0) {
 		radiance = mix(history.rgb, radiance, params.history_alpha);
@@ -527,9 +554,15 @@ void main() {
 		vec3 center_normal = imageLoad(probe_normal, probe).xyz;
 		vec3 accum = radiance.rgb;
 		float weight_accum = 1.0;
-		const ivec2 neighbours[4] = ivec2[](ivec2(-1, 0), ivec2(1, 0), ivec2(0, -1), ivec2(0, 1));
-		for (int i = 0; i < 4; i++) {
-			ivec2 n = probe + neighbours[i];
+		// The 3x3 probes around, the diagonal ones at half the weight of the sides, so that
+		// an outlier spreads as a soft blob and not as a cross.
+		for (int i = 0; i < 9; i++) {
+			ivec2 offset = ivec2(i % 3, i / 3) - ivec2(1);
+			if (i == 4) {
+				continue;
+			}
+			float neighbour_weight = (offset.x != 0 && offset.y != 0) ? 0.25 : 0.5;
+			ivec2 n = probe + offset;
 			if (any(lessThan(n, ivec2(0))) || any(greaterThanEqual(n, params.probe_count))) {
 				continue;
 			}
@@ -544,8 +577,8 @@ void main() {
 			}
 			vec4 n_radiance = imageLoad(radiance_trace, n * PROBE_OCT_SIZE + texel);
 			if (n_radiance.a > 0.0) {
-				accum += n_radiance.rgb * 0.5;
-				weight_accum += 0.5;
+				accum += n_radiance.rgb * neighbour_weight;
+				weight_accum += neighbour_weight;
 			}
 		}
 		radiance.rgb = accum / weight_accum;
