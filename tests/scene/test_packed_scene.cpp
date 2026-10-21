@@ -32,8 +32,13 @@
 
 TEST_FORCE_LINK(test_packed_scene)
 
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
+#include "core/io/resource_loader.h"
+#include "core/io/resource_saver.h"
 #include "core/object/callable_mp.h"
 #include "scene/resources/packed_scene.h"
+#include "tests/test_utils.h"
 
 namespace TestPackedScene {
 
@@ -281,5 +286,77 @@ TEST_CASE("[PackedScene] Recreate State") {
 
 	memdelete(scene);
 }
+
+#ifdef TOOLS_ENABLED
+TEST_CASE("[PackedScene] Exposed nodes are saved and loaded") {
+	// A scene with a node marked for exposure, as the editor marks it.
+	Node *scene = memnew(Node);
+	scene->set_name("TestScene");
+	Node *sprite = memnew(Node);
+	sprite->set_name("Sprite");
+	scene->add_child(sprite);
+	sprite->set_owner(scene);
+	Node *hidden = memnew(Node);
+	hidden->set_name("Hidden");
+	scene->add_child(hidden);
+	hidden->set_owner(scene);
+	sprite->set_meta(META_MARKED_FOR_EXPOSURE, true);
+
+	Ref<PackedScene> packed_scene;
+	packed_scene.instantiate();
+	REQUIRE(packed_scene->pack(scene) == OK);
+
+	Vector<NodePath> exposed = packed_scene->get_state()->get_exposed_nodes();
+	REQUIRE(exposed.size() == 1);
+	CHECK(exposed[0] == NodePath("Sprite"));
+
+	for (const String extension : { "tscn", "scn" }) {
+		{
+			INFO("Saved as .", extension);
+			const String path = TestUtils::get_temp_path("exposed_nodes_test." + extension);
+			REQUIRE(ResourceSaver::save(packed_scene, path) == OK);
+
+			if (extension == "tscn") {
+				const String text = FileAccess::get_file_as_string(path);
+				CHECK(text.contains("[exposed path=\"Sprite\"]"));
+				// The exposure is kept in the [exposed] tag, not as metadata of the node.
+				CHECK_FALSE(text.contains("_marked_for_exposure"));
+			}
+
+			Error err = OK;
+			Ref<PackedScene> loaded = ResourceLoader::load(path, "PackedScene", ResourceFormatLoader::CACHE_MODE_IGNORE, &err);
+			REQUIRE(err == OK);
+			REQUIRE(loaded.is_valid());
+			Vector<NodePath> loaded_exposed = loaded->get_state()->get_exposed_nodes();
+			REQUIRE(loaded_exposed.size() == 1);
+			CHECK(loaded_exposed[0] == NodePath("Sprite"));
+
+			// Instantiated in another scene, the exposed node is flagged as such, and the other is not.
+			Node *instance = loaded->instantiate(PackedScene::GEN_EDIT_STATE_INSTANCE);
+			REQUIRE(instance != nullptr);
+			CHECK(instance->has_meta(META_CONTAINS_EXPOSED_NODES));
+			CHECK(instance->get_node(NodePath("Sprite"))->has_meta(META_EXPOSED_IN_OWNER));
+			CHECK(Object::cast_to<Node>(instance->get_node(NodePath("Sprite"))->get_meta(META_EXPOSED_IN_INSTANCE)) == instance);
+			CHECK_FALSE(instance->get_node(NodePath("Hidden"))->has_meta(META_EXPOSED_IN_OWNER));
+			memdelete(instance);
+
+			// Opened for editing, it stays marked, so it is saved exposed again.
+			Node *edited = loaded->instantiate(PackedScene::GEN_EDIT_STATE_MAIN);
+			REQUIRE(edited != nullptr);
+			CHECK(edited->get_node(NodePath("Sprite"))->has_meta(META_MARKED_FOR_EXPOSURE));
+			CHECK_FALSE(edited->get_node(NodePath("Hidden"))->has_meta(META_MARKED_FOR_EXPOSURE));
+			Ref<PackedScene> repacked;
+			repacked.instantiate();
+			REQUIRE(repacked->pack(edited) == OK);
+			CHECK(repacked->get_state()->get_exposed_nodes().size() == 1);
+			memdelete(edited);
+
+			DirAccess::remove_file_or_error(path);
+		}
+	}
+
+	memdelete(scene);
+}
+#endif // TOOLS_ENABLED
 
 } // namespace TestPackedScene
