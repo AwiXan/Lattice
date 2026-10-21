@@ -2036,6 +2036,7 @@ void RasterizerSceneGLES3::_setup_lights(const RenderDataGLES3 *p_render_data, b
 			light_data.area_width[0] = area_vec_a.x;
 			light_data.area_width[1] = area_vec_a.y;
 			light_data.area_width[2] = area_vec_a.z;
+			light_data.area_width[3] = light->area_shape; // Read as the shape.
 
 			light_data.area_height[0] = area_vec_b.x;
 			light_data.area_height[1] = area_vec_b.y;
@@ -2044,7 +2045,7 @@ void RasterizerSceneGLES3::_setup_lights(const RenderDataGLES3 *p_render_data, b
 
 			if (light->area_normalize_energy) {
 				// normalization to make larger lights output same amount of light as smaller lights with same energy
-				float surface_area = area_size.x * area_size.y;
+				float surface_area = RendererLightStorage::light_area_get_surface(area_size, light->area_shape);
 				light_data.color[0] /= surface_area;
 				light_data.color[1] /= surface_area;
 				light_data.color[2] /= surface_area;

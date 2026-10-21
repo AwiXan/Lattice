@@ -341,6 +341,7 @@ public:
 	virtual void light_area_set_normalize_energy(RID p_light, bool p_enabled) = 0;
 	virtual void light_area_set_texture(RID p_light, RID texture) = 0;
 	virtual void light_area_set_shadow_mode(RID p_light, RSE::LightAreaShadowMode p_mode) = 0;
+	virtual void light_area_set_shape(RID p_light, RSE::LightAreaShape p_shape) = 0;
 
 	// Shadow atlas
 
@@ -1175,6 +1176,7 @@ VARIANT_ENUM_CAST_EXT(RSE::LightParam, RenderingServer::LightParam);
 VARIANT_ENUM_CAST_EXT(RSE::LightBakeMode, RenderingServer::LightBakeMode);
 VARIANT_ENUM_CAST_EXT(RSE::LightOmniShadowMode, RenderingServer::LightOmniShadowMode);
 VARIANT_ENUM_CAST_EXT(RSE::LightAreaShadowMode, RenderingServer::LightAreaShadowMode);
+VARIANT_ENUM_CAST_EXT(RSE::LightAreaShape, RenderingServer::LightAreaShape);
 VARIANT_ENUM_CAST_EXT(RSE::LightDirectionalShadowMode, RenderingServer::LightDirectionalShadowMode);
 VARIANT_ENUM_CAST_EXT(RSE::LightDirectionalSkyMode, RenderingServer::LightDirectionalSkyMode);
 VARIANT_ENUM_CAST_EXT(RSE::LightProjectorFilter, RenderingServer::LightProjectorFilter);

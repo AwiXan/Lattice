@@ -1581,6 +1581,7 @@ void GI::HDDAGI::pre_process_gi(const Transform3D &p_transform, RenderDataRD *p_
 				lights[idx].area_width[0] = area_vec_a.x;
 				lights[idx].area_width[1] = area_vec_a.y;
 				lights[idx].area_width[2] = area_vec_a.z;
+				lights[idx].area_width[3] = RSG::light_storage->light_area_get_shape(light); // Read as the shape.
 				lights[idx].area_height[0] = area_vec_b.x;
 				lights[idx].area_height[1] = area_vec_b.y;
 				lights[idx].area_height[2] = area_vec_b.z;
@@ -1595,7 +1596,7 @@ void GI::HDDAGI::pre_process_gi(const Transform3D &p_transform, RenderDataRD *p_
 
 				if (RSG::light_storage->light_area_get_normalize_energy(light)) {
 					// normalization to make larger lights output same amount of light as smaller lights with same energy
-					float surface_area = area_size.x * area_size.y;
+					float surface_area = RendererLightStorage::light_area_get_surface(area_size, RSG::light_storage->light_area_get_shape(light));
 					lights[idx].energy /= surface_area;
 				}
 			}
@@ -2092,6 +2093,7 @@ void GI::HDDAGI::render_static_lights(RenderDataRD *p_render_data, Ref<RenderSce
 					lights[idx].area_width[0] = area_vec_a.x;
 					lights[idx].area_width[1] = area_vec_a.y;
 					lights[idx].area_width[2] = area_vec_a.z;
+					lights[idx].area_width[3] = RSG::light_storage->light_area_get_shape(light); // Read as the shape.
 					lights[idx].area_height[0] = area_vec_b.x;
 					lights[idx].area_height[1] = area_vec_b.y;
 					lights[idx].area_height[2] = area_vec_b.z;
@@ -2106,7 +2108,7 @@ void GI::HDDAGI::render_static_lights(RenderDataRD *p_render_data, Ref<RenderSce
 
 					if (RSG::light_storage->light_area_get_normalize_energy(light)) {
 						// normalization to make larger lights output same amount of light as smaller lights with same energy
-						float surface_area = area_size.x * area_size.y;
+						float surface_area = RendererLightStorage::light_area_get_surface(area_size, RSG::light_storage->light_area_get_shape(light));
 						lights[idx].energy /= surface_area;
 					}
 				}
@@ -2626,6 +2628,7 @@ void GI::VoxelGIInstance::update(bool p_update_light_instances, const Vector<RID
 					l.area_width[0] = area_vec_a.x;
 					l.area_width[1] = area_vec_a.y;
 					l.area_width[2] = area_vec_a.z;
+					l.area_width[3] = RSG::light_storage->light_area_get_shape(light); // Read as the shape.
 
 					l.area_height[0] = area_vec_b.x;
 					l.area_height[1] = area_vec_b.y;
@@ -2640,7 +2643,7 @@ void GI::VoxelGIInstance::update(bool p_update_light_instances, const Vector<RID
 					l.cos_spot_angle = MIN(Math::floor(Math::log2(MAX(MIN(texture_size.x, texture_size.y), 1.0f))), RendererRD::TextureStorage::get_singleton()->area_light_atlas_get_mipmaps()) - 1.0f; // max mipmaps
 					if (RSG::light_storage->light_area_get_normalize_energy(light)) {
 						// normalization to make larger lights output same amount of light as smaller lights with same energy
-						float surface_area = area_size.x * area_size.y;
+						float surface_area = RendererLightStorage::light_area_get_surface(area_size, RSG::light_storage->light_area_get_shape(light));
 						l.energy /= surface_area;
 					}
 				}

@@ -112,6 +112,7 @@ private:
 		bool area_normalize_energy = true;
 		RID area_texture;
 		RSE::LightAreaShadowMode area_shadow_mode = RSE::LIGHT_AREA_SHADOW_CUBE;
+		RSE::LightAreaShape area_shape = RSE::LIGHT_AREA_SHAPE_RECTANGLE;
 		uint64_t version = 0;
 		bool allow_contact_shadows = true;
 
@@ -189,7 +190,7 @@ private:
 		float shadow_opacity;
 
 		uint32_t sscs_index; // layer of its screen space contact shadow, 0xFFFFFFFF for none
-		float pad;
+		uint32_t area_shape; // RSE::LightAreaShape
 		float atlas_rect[4]; // in omni, used for atlas uv, in spot, used for projector uv
 		float shadow_matrix[16];
 		float shadow_bias;
@@ -577,6 +578,8 @@ public:
 	virtual RID light_area_get_texture(RID p_light) const override;
 	virtual void light_area_set_shadow_mode(RID p_light, RSE::LightAreaShadowMode p_mode) override;
 	virtual RSE::LightAreaShadowMode light_area_get_shadow_mode(RID p_light) const override;
+	virtual void light_area_set_shape(RID p_light, RSE::LightAreaShape p_shape) override;
+	virtual RSE::LightAreaShape light_area_get_shape(RID p_light) const override;
 
 	virtual RSE::LightType light_get_type(RID p_light) const override {
 		const Light *light = light_owner.get_or_null(p_light);

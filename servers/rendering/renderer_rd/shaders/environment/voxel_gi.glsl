@@ -365,7 +365,8 @@ bool compute_area_light(uint index, vec3 pos, vec3 normal, inout vec3 light) {
 	vec3 light_center = lights.data[index].position;
 	vec3 light_to_vert = vertex - light_center;
 	vec3 pos_local_to_light = vec3(dot(light_to_vert, area_width_norm), dot(light_to_vert, area_height_norm), dot(light_to_vert, -area_direction)); // vertex in LIGHT SPACE
-	vec3 closest_point_local_to_light = vec3(clamp(pos_local_to_light.x, -a_half_len, a_half_len), clamp(pos_local_to_light.y, -b_half_len, b_half_len), 0); // LIGHT SPACE
+	bool ellipse = lights.data[index].area_width.w > 0.5; // The shape is in w.
+	vec3 closest_point_local_to_light = vec3(area_light_closest_point(pos_local_to_light.xy, vec2(a_half_len, b_half_len), ellipse), 0.0); // LIGHT SPACE
 	vec3 closest_point_on_light = light_center + closest_point_local_to_light.x * area_width_norm + closest_point_local_to_light.y * area_height_norm; // VIEW SPACE
 	float dist = length(closest_point_on_light - vertex);
 
@@ -394,7 +395,7 @@ bool compute_area_light(uint index, vec3 pos, vec3 normal, inout vec3 light) {
 	}
 	vec3 light_tex_color = vec3(1.0);
 	float ltc;
-	ltc_evaluate_diff(normal, points, lights.data[index].area_projector_rect, lights.data[index].cos_spot_angle, area_light_atlas, texture_sampler, ltc, light_tex_color);
+	ltc_evaluate_diff(normal, points, ellipse, lights.data[index].area_projector_rect, lights.data[index].cos_spot_angle, area_light_atlas, texture_sampler, ltc, light_tex_color);
 	vec3 ltc_diffuse = ltc * light_tex_color;
 
 	light = lights.data[index].color * ltc_diffuse * attenuation * lights.data[index].energy;

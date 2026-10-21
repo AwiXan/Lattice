@@ -467,6 +467,7 @@ void trace_direct_light(vec3 p_position, vec3 p_normal, uint p_light_index, bool
 		vec3 area_height_norm = normalize(area_height);
 		float a_half_len = length(area_width) / 2.0;
 		float b_half_len = length(area_height) / 2.0;
+		bool ellipse = light_data.area_width.w > 0.5; // The shape is in w.
 
 		vec3 points[4];
 		points[0] = light_data.position - h_area_width - h_area_height - p_position;
@@ -475,12 +476,12 @@ void trace_direct_light(vec3 p_position, vec3 p_normal, uint p_light_index, bool
 		points[3] = light_data.position - h_area_width + h_area_height - p_position;
 
 		float ltc_diffuse;
-		ltc_evaluate_diff(p_normal, points, light_data.area_texture_rect, light_data.cos_spot_angle, area_light_atlas, area_light_atlas_sampler, ltc_diffuse, light_texture_color);
+		ltc_evaluate_diff(p_normal, points, ellipse, light_data.area_texture_rect, light_data.cos_spot_angle, area_light_atlas, area_light_atlas_sampler, ltc_diffuse, light_texture_color);
 
 		vec3 light_to_vert = p_position - light_data.position;
 		vec3 pos_local_to_light = vec3(dot(light_to_vert, area_width_norm), dot(light_to_vert, area_height_norm), dot(light_to_vert, -light_data.direction)); // p_position in LIGHT SPACE
 
-		vec3 closest_point_local_to_light = vec3(clamp(pos_local_to_light.x, -a_half_len, a_half_len), clamp(pos_local_to_light.y, -b_half_len, b_half_len), 0);
+		vec3 closest_point_local_to_light = vec3(area_light_closest_point(pos_local_to_light.xy, vec2(a_half_len, b_half_len), ellipse), 0.0);
 		dist = max(0.0001, distance(closest_point_local_to_light, pos_local_to_light));
 		if (dist > light_data.range) {
 			return;
@@ -586,7 +587,7 @@ void trace_direct_light(vec3 p_position, vec3 p_normal, uint p_light_index, bool
 					float sample_dist = dist;
 					if (light_data.type == LIGHT_TYPE_AREA) {
 						// Towards a point of the emitter.
-						vec2 emitter = area_light_emitter_point(get_vogel_disk(vogel_index, a, shadowing_ray_count_sqrt), false) * light_data.shadow_blur;
+						vec2 emitter = area_light_emitter_point(get_vogel_disk(vogel_index, a, shadowing_ray_count_sqrt), light_data.area_width.w > 0.5) * light_data.shadow_blur;
 						vec3 to_emitter = light_data.position + (emitter.x * light_data.area_width.xyz + emitter.y * light_data.area_height.xyz) * 0.5 - p_position;
 						sample_dist = length(to_emitter);
 						light_disk_to_point = -to_emitter / sample_dist;

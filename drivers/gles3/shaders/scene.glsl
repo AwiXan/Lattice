@@ -183,7 +183,7 @@ layout(location = 21) in highp uvec4 prev_instance_color_custom_data;
 
 layout(std140) uniform GlobalShaderUniformData { //ubo:1
 	vec4 global_shader_uniforms[MAX_GLOBAL_SHADER_UNIFORMS];
-};
+}
 
 struct SceneData {
 	highp mat4 projection_matrix;
@@ -262,7 +262,7 @@ struct PositionalShadowData {
 
 layout(std140) uniform PositionalShadows { // ubo:10
 	PositionalShadowData positional_shadows[MAX_LIGHT_DATA_STRUCTS];
-};
+}
 
 uniform lowp uint positional_shadow_index;
 
@@ -284,7 +284,7 @@ struct DirectionalShadowData {
 
 layout(std140) uniform DirectionalShadows { // ubo:11
 	DirectionalShadowData directional_shadows[MAX_DIRECTIONAL_LIGHT_DATA_STRUCTS];
-};
+}
 
 uniform lowp uint directional_shadow_index;
 
@@ -317,7 +317,7 @@ struct DirectionalLightData {
 
 layout(std140) uniform DirectionalLights { // ubo:8
 	DirectionalLightData directional_lights[MAX_DIRECTIONAL_LIGHT_DATA_STRUCTS];
-};
+}
 
 #define DIRECTIONAL_LIGHT_ENABLED uint(1 << 0)
 #define DIRECTIONAL_LIGHT_BAKE_STATIC uint(1 << 1)
@@ -352,7 +352,7 @@ struct LightData { // This structure needs to be as packed as possible.
 #if !defined(DISABLE_LIGHT_OMNI) || defined(ADDITIVE_OMNI)
 layout(std140) uniform OmniLightData { // ubo:5
 	LightData omni_lights[MAX_LIGHT_DATA_STRUCTS];
-};
+}
 #ifdef BASE_PASS
 uniform uint omni_light_indices[MAX_FORWARD_LIGHTS];
 uniform uint omni_light_count;
@@ -362,7 +362,7 @@ uniform uint omni_light_count;
 #if !defined(DISABLE_LIGHT_SPOT) || defined(ADDITIVE_SPOT)
 layout(std140) uniform SpotLightData { // ubo:6
 	LightData spot_lights[MAX_LIGHT_DATA_STRUCTS];
-};
+}
 #ifdef BASE_PASS
 uniform uint spot_light_indices[MAX_FORWARD_LIGHTS];
 uniform uint spot_light_count;
@@ -372,7 +372,7 @@ uniform uint spot_light_count;
 #if !defined(DISABLE_LIGHT_AREA)
 layout(std140) uniform AreaLightData { // ubo:7
 	LightData area_lights[MAX_LIGHT_DATA_STRUCTS];
-};
+}
 #if defined(BASE_PASS) && !defined(USE_VERTEX_LIGHTING)
 uniform uint area_light_indices[MAX_FORWARD_LIGHTS];
 uniform uint area_light_count;
@@ -1188,7 +1188,7 @@ decal_data_block;
 
 layout(std140) uniform GlobalShaderUniformData { //ubo:1
 	vec4 global_shader_uniforms[MAX_GLOBAL_SHADER_UNIFORMS];
-};
+}
 
 /* Material Uniforms */
 #ifdef MATERIAL_UNIFORMS_USED
@@ -1307,7 +1307,7 @@ struct DirectionalLightData {
 
 layout(std140) uniform DirectionalLights { // ubo:8
 	DirectionalLightData directional_lights[MAX_DIRECTIONAL_LIGHT_DATA_STRUCTS];
-};
+}
 
 #if defined(USE_ADDITIVE_LIGHTING) && (!defined(ADDITIVE_OMNI) && !defined(ADDITIVE_SPOT))
 // Directional shadows can be in the base pass or in the additive passes
@@ -1344,7 +1344,7 @@ struct LightData { // This structure needs to be as packed as possible.
 #if !defined(DISABLE_LIGHT_OMNI) || defined(ADDITIVE_OMNI)
 layout(std140) uniform OmniLightData { // ubo:5
 	LightData omni_lights[MAX_LIGHT_DATA_STRUCTS];
-};
+}
 #if defined(BASE_PASS) && !defined(USE_VERTEX_LIGHTING)
 uniform uint omni_light_indices[MAX_FORWARD_LIGHTS];
 uniform uint omni_light_count;
@@ -1354,7 +1354,7 @@ uniform uint omni_light_count;
 #if !defined(DISABLE_LIGHT_SPOT) || defined(ADDITIVE_SPOT)
 layout(std140) uniform SpotLightData { // ubo:6
 	LightData spot_lights[MAX_LIGHT_DATA_STRUCTS];
-};
+}
 #if defined(BASE_PASS) && !defined(USE_VERTEX_LIGHTING)
 uniform uint spot_light_indices[MAX_FORWARD_LIGHTS];
 uniform uint spot_light_count;
@@ -1364,7 +1364,7 @@ uniform uint spot_light_count;
 #if !defined(DISABLE_LIGHT_AREA)
 layout(std140) uniform AreaLightData { // ubo:7
 	LightData area_lights[MAX_LIGHT_DATA_STRUCTS];
-};
+}
 uniform highp sampler2D ltc_lut1; // texunit:-10
 uniform highp sampler2D ltc_lut2; // texunit:-11
 
@@ -1397,7 +1397,7 @@ struct PositionalShadowData {
 
 layout(std140) uniform PositionalShadows { // ubo:10
 	PositionalShadowData positional_shadows[MAX_LIGHT_DATA_STRUCTS];
-};
+}
 
 uniform lowp uint positional_shadow_index;
 #else // ADDITIVE_DIRECTIONAL
@@ -1417,7 +1417,7 @@ struct DirectionalShadowData {
 
 layout(std140) uniform DirectionalShadows { // ubo:11
 	DirectionalShadowData directional_shadows[MAX_DIRECTIONAL_LIGHT_DATA_STRUCTS];
-};
+}
 
 uniform lowp uint directional_shadow_index;
 #endif // !(defined(ADDITIVE_OMNI) || defined(ADDITIVE_SPOT))
@@ -1915,7 +1915,8 @@ void light_process_area(uint idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 f
 	vec3 light_to_vert = vertex - light_center;
 	vec3 pos_local_to_light = vec3(dot(light_to_vert, normalize(area_width)), dot(light_to_vert, normalize(area_height)), dot(light_to_vert, -area_direction));
 
-	vec3 closest_point_local_to_light = vec3(clamp(pos_local_to_light.x, -a_half_len, a_half_len), clamp(pos_local_to_light.y, -b_half_len, b_half_len), 0);
+	bool ellipse = area_lights[idx].area_width.w > 0.5; // The shape is in w.
+	vec3 closest_point_local_to_light = vec3(area_light_closest_point(pos_local_to_light.xy, vec2(a_half_len, b_half_len), ellipse), 0.0);
 	float dist = length(closest_point_local_to_light - pos_local_to_light);
 
 	vec3 points[4];
@@ -1929,8 +1930,8 @@ void light_process_area(uint idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 f
 	float ltc_diffuse = 0.0;
 	float ltc_specular = 0.0;
 	vec2 ltc_fresnel = vec2(0.0);
-	ltc_evaluate(normal, eye_vec, mat3(1), points, ltc_diffuse);
-	ltc_evaluate_specular(normal, eye_vec, roughness, points, ltc_lut1, ltc_lut2, ltc_specular, ltc_fresnel);
+	ltc_evaluate(normal, eye_vec, mat3(1), points, ellipse, ltc_diffuse);
+	ltc_evaluate_specular(normal, eye_vec, roughness, points, ellipse, ltc_lut1, ltc_lut2, ltc_specular, ltc_fresnel);
 
 	float f90 = clamp(dot(f0, vec3(50.0 * 0.33)), metallic, 1.0);
 	vec3 fresnel_color = f0 * max(ltc_fresnel.x, 0.0) + (f90 - f0) * max(ltc_fresnel.y, 0.0);
@@ -1966,17 +1967,17 @@ void light_process_area(uint idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 f
 	/* clang-format on */
 
 #else
-	float area = a_len * b_len;
+	float area = a_len * b_len * (ellipse ? M_PI / 4.0 : 1.0);
 	float cc_attenuation = 1.0;
 
 #if defined(LIGHT_BACKLIGHT_USED) || defined(LIGHT_RIM_USED) || defined(DIFFUSE_TOON) || defined(SPECULAR_TOON)
-	float solid_angle = quad_solid_angle(points);
+	float solid_angle = quad_solid_angle(points) * (ellipse ? M_PI / 4.0 : 1.0); // Of the rectangle around an ellipse, scaled by their ratio.
 #endif
 
 #if defined(LIGHT_CLEARCOAT_USED)
 	float cc_specular_ltc = 0.0;
 	vec2 cc_fresnel = vec2(0.0);
-	ltc_evaluate_specular(vertex_normal, eye_vec, sqrt(mix(0.001, 0.1, float(clearcoat_roughness))), points, ltc_lut1, ltc_lut2, cc_specular_ltc, cc_fresnel);
+	ltc_evaluate_specular(vertex_normal, eye_vec, sqrt(mix(0.001, 0.1, float(clearcoat_roughness))), points, ellipse, ltc_lut1, ltc_lut2, cc_specular_ltc, cc_fresnel);
 	float Fr = (0.04 * max(cc_fresnel.x, 0.0) + (1.0 - 0.04) * max(cc_fresnel.y, 0.0)) * clearcoat;
 	cc_attenuation = 1.0 - Fr;
 	specular_light += cc_specular_ltc * Fr * light_color * light_attenuation_ltc * specular_amount;
@@ -1985,7 +1986,7 @@ void light_process_area(uint idx, vec3 vertex, vec3 eye_vec, vec3 normal, vec3 f
 	if (metallic < 1.0) {
 #if defined(DIFFUSE_TOON)
 		float backface_ltc_diffuse = 0.0;
-		ltc_evaluate(vec3(-normal), vec3(eye_vec), mat3(1), points, backface_ltc_diffuse);
+		ltc_evaluate(vec3(-normal), vec3(eye_vec), mat3(1), points, ellipse, backface_ltc_diffuse);
 		float NdotL = (ltc_diffuse - backface_ltc_diffuse) / (max(solid_angle, 0.001) / M_PI);
 		float diffuse_brdf_NL = smoothstep(-roughness, max(roughness, 0.01), NdotL) * (1.0 / M_PI);
 		diffuse_light += diffuse_brdf_NL * light_color * area * light_attenuation * cc_attenuation;

@@ -1043,7 +1043,8 @@ void light_process_area(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 	hvec3 area_direction = hvec3(area_lights.data[idx].direction);
 	hvec3 pos_local_to_light = hvec3(dot(light_to_vert, area_a_dir), dot(light_to_vert, area_b_dir), dot(light_to_vert, -area_direction));
 
-	hvec3 closest_point_local_to_light = hvec3(clamp(pos_local_to_light.x, -a_half_len, a_half_len), clamp(pos_local_to_light.y, -b_half_len, b_half_len), 0);
+	bool ellipse = area_lights.data[idx].area_shape == LIGHT_AREA_SHAPE_ELLIPSE;
+	hvec3 closest_point_local_to_light = hvec3(area_light_closest_point(vec2(pos_local_to_light.xy), vec2(a_half_len, b_half_len), ellipse), 0.0);
 	half dist = length(closest_point_local_to_light - pos_local_to_light);
 
 	half light_length = max(half(0.0), dist);
@@ -1088,7 +1089,7 @@ void light_process_area(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 			SPEC_CONSTANT_LOOP_ANNOTATION
 			for (uint i = 0; i < sc_penumbra_shadow_samples(); i++) {
 				vec2 disk = disk_rotation * scene_data_block.data.penumbra_shadow_kernel[i].xy;
-				vec3 to_emitter = vec3(area_light_emitter_point(disk, false) * emitter_half_size, 0.0) - local_vert;
+				vec3 to_emitter = vec3(area_light_emitter_point(disk, ellipse) * emitter_half_size, 0.0) - local_vert;
 				if (dot(to_emitter, local_normal) <= 0.0) {
 					continue;
 				}
@@ -1114,7 +1115,7 @@ void light_process_area(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 				SPEC_CONSTANT_LOOP_ANNOTATION
 				for (uint i = 0; i < sc_penumbra_shadow_samples(); i++) {
 					vec2 disk = disk_rotation * scene_data_block.data.penumbra_shadow_kernel[i].xy;
-					vec3 to_emitter = vec3(area_light_emitter_point(disk, false) * emitter_half_size, 0.0) - local_vert;
+					vec3 to_emitter = vec3(area_light_emitter_point(disk, ellipse) * emitter_half_size, 0.0) - local_vert;
 					float to_emitter_len2 = dot(to_emitter, to_emitter);
 					float weight = max(dot(to_emitter, local_normal), 0.0) * abs(to_emitter.z) / (to_emitter_len2 * to_emitter_len2);
 					vec3 pos = local_vert + to_emitter * t;
@@ -1172,10 +1173,10 @@ void light_process_area(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 	vec3 ltc_specular_tex_color = vec3(1.0);
 	vec2 ltc_fresnel = vec2(0.0);
 	hvec3 fresnel_color = hvec3(0.0);
-	ltc_evaluate(vec3(normal), vec3(eye_vec), mat3(1), points, area_lights.data[idx].projector_rect, max_mipmap, area_light_atlas, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP, ltc_diffuse, ltc_diffuse_tex_color);
+	ltc_evaluate(vec3(normal), vec3(eye_vec), mat3(1), points, ellipse, area_lights.data[idx].projector_rect, max_mipmap, area_light_atlas, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP, ltc_diffuse, ltc_diffuse_tex_color);
 
 #if !defined(SPECULAR_DISABLED) || (defined(LIGHT_CODE_USED) && defined(AREA_LIGHT_CODE_USED))
-	ltc_evaluate_specular(vec3(normal), vec3(eye_vec), roughness, points, area_lights.data[idx].projector_rect, max_mipmap, area_light_atlas, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP, SAMPLER_LINEAR_CLAMP, ltc_lut1, ltc_lut2, ltc_specular, ltc_fresnel, ltc_specular_tex_color);
+	ltc_evaluate_specular(vec3(normal), vec3(eye_vec), roughness, points, ellipse, area_lights.data[idx].projector_rect, max_mipmap, area_light_atlas, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP, SAMPLER_LINEAR_CLAMP, ltc_lut1, ltc_lut2, ltc_specular, ltc_fresnel, ltc_specular_tex_color);
 	half f90 = clamp(dot(f0, hvec3(50.0 * 0.33)), metallic, half(1.0));
 	fresnel_color = f0 * max(half(ltc_fresnel.x), half(0.0)) + (f90 - f0) * max(half(ltc_fresnel.y), half(0.0));
 #endif
@@ -1237,7 +1238,7 @@ void light_process_area(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 
 #else
 	half specular_amount = half(area_lights.data[idx].specular_amount);
-	half area = a_len * b_len;
+	half area = a_len * b_len * (ellipse ? half(M_PI / 4.0) : half(1.0));
 	half cc_attenuation = half(1.0);
 
 #if defined(LIGHT_TRANSMITTANCE_USED) || defined(LIGHT_BACKLIGHT_USED) || defined(LIGHT_RIM_USED) || defined(DIFFUSE_TOON)
@@ -1288,14 +1289,14 @@ void light_process_area(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 #endif //LIGHT_TRANSMITTANCE_USED
 
 #if defined(LIGHT_BACKLIGHT_USED) || defined(LIGHT_RIM_USED) || defined(DIFFUSE_TOON) || defined(SPECULAR_TOON)
-	float solid_angle = quad_solid_angle(points);
+	float solid_angle = quad_solid_angle(points) * (ellipse ? M_PI / 4.0 : 1.0); // Of the rectangle around an ellipse, scaled by their ratio.
 #endif
 
 #if defined(LIGHT_CLEARCOAT_USED)
 	vec3 cc_specular_tex_color = vec3(1.0);
 	float cc_specular_ltc = 0.0;
 	vec2 cc_fresnel;
-	ltc_evaluate_specular(vec3(vertex_normal), vec3(eye_vec), sqrt(mix(0.001, 0.1, float(clearcoat_roughness))), points, area_lights.data[idx].projector_rect, max_mipmap, area_light_atlas, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP, SAMPLER_LINEAR_CLAMP, ltc_lut1, ltc_lut2, cc_specular_ltc, cc_fresnel, cc_specular_tex_color);
+	ltc_evaluate_specular(vec3(vertex_normal), vec3(eye_vec), sqrt(mix(0.001, 0.1, float(clearcoat_roughness))), points, ellipse, area_lights.data[idx].projector_rect, max_mipmap, area_light_atlas, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP, SAMPLER_LINEAR_CLAMP, ltc_lut1, ltc_lut2, cc_specular_ltc, cc_fresnel, cc_specular_tex_color);
 	half Fr = (half(0.04) * max(half(cc_fresnel.x), half(0.0)) + half(1.0 - 0.04) * max(half(cc_fresnel.y), half(0.0))) * clearcoat;
 	cc_attenuation = half(1.0) - Fr;
 	specular_light += half(cc_specular_ltc) * hvec3(cc_specular_tex_color) * Fr * color * light_attenuation_ltc * specular_amount;
@@ -1305,7 +1306,7 @@ void light_process_area(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 #if defined(DIFFUSE_TOON)
 		float backface_ltc_diffuse = 0.0;
 		vec3 backface_ltc_tex_color_discard = vec3(1.0);
-		ltc_evaluate(vec3(-normal), vec3(eye_vec), mat3(1), points, vec4(0.0), max_mipmap, area_light_atlas, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP, backface_ltc_diffuse, backface_ltc_tex_color_discard);
+		ltc_evaluate(vec3(-normal), vec3(eye_vec), mat3(1), points, ellipse, vec4(0.0), max_mipmap, area_light_atlas, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP, backface_ltc_diffuse, backface_ltc_tex_color_discard);
 		half NdotL = half((ltc_diffuse - backface_ltc_diffuse) / (max(solid_angle, 0.001) / M_PI));
 		half diffuse_brdf_NL = smoothstep(-roughness, max(roughness, half(0.01)), NdotL) * half(1.0 / M_PI);
 		diffuse_light += diffuse_brdf_NL * isotropic_light_color * color * area * light_attenuation * cc_attenuation;

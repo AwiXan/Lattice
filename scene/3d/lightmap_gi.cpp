@@ -1406,15 +1406,16 @@ LightmapGI::BakeError LightmapGI::bake(Node *p_from_node, String p_image_data_pa
 				}
 				Vector3 area_vec_x = xf.basis.get_column(Vector3::AXIS_X).normalized() * l->get_area_size().x;
 				Vector3 area_vec_y = xf.basis.get_column(Vector3::AXIS_Y).normalized() * l->get_area_size().y;
+				const bool ellipse = l->get_area_shape() == AreaLight3D::SHAPE_ELLIPSE;
 				if (l->is_area_normalizing_energy()) {
-					float surface_area = l->get_area_size().x * l->get_area_size().y;
+					float surface_area = l->get_area_size().x * l->get_area_size().y * (ellipse ? Math::PI / 4.0 : 1.0);
 					energy /= surface_area;
 				}
 				AreaLightAtlasTexture tex;
 				if (l->get_area_texture().is_valid()) {
 					tex = area_light_atlas_textures[l->get_area_texture()];
 				}
-				lightmapper->add_area_light(light->get_name(), light->get_bake_mode() == Light3D::BAKE_STATIC, xf.origin, -xf.basis.get_column(Vector3::AXIS_Z).normalized(), linear_color, energy, indirect_energy, l->get_param(Light3D::PARAM_RANGE), l->get_param(Light3D::PARAM_ATTENUATION), area_vec_x, area_vec_y, l->get_param(Light3D::PARAM_SIZE), l->get_param(Light3D::PARAM_SHADOW_BLUR), tex.texture_rect, tex.max_mipmap);
+				lightmapper->add_area_light(light->get_name(), light->get_bake_mode() == Light3D::BAKE_STATIC, xf.origin, -xf.basis.get_column(Vector3::AXIS_Z).normalized(), linear_color, energy, indirect_energy, l->get_param(Light3D::PARAM_RANGE), l->get_param(Light3D::PARAM_ATTENUATION), area_vec_x, area_vec_y, ellipse, l->get_param(Light3D::PARAM_SHADOW_BLUR), tex.texture_rect, tex.max_mipmap);
 			}
 		}
 		for (int i = 0; i < probes_found.size(); i++) {

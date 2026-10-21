@@ -263,11 +263,18 @@ public:
 		SHADOW_CUBE,
 	};
 
+	// The same order as RenderingServer::LightAreaShape.
+	enum Shape {
+		SHAPE_RECTANGLE,
+		SHAPE_ELLIPSE,
+	};
+
 private:
 	Vector2 area_size;
 	Ref<Texture2D> area_texture;
 	bool area_normalize_energy = true;
 	ShadowMode shadow_mode = SHADOW_CUBE;
+	Shape area_shape = SHAPE_RECTANGLE;
 
 protected:
 	static void _bind_methods();
@@ -285,6 +292,9 @@ public:
 	void set_shadow_mode(ShadowMode p_mode);
 	ShadowMode get_shadow_mode() const;
 
+	void set_area_shape(Shape p_shape);
+	Shape get_area_shape() const;
+
 	PackedStringArray get_configuration_warnings() const override;
 
 	AreaLight3D();
@@ -292,3 +302,4 @@ public:
 };
 
 VARIANT_ENUM_CAST(AreaLight3D::ShadowMode)
+VARIANT_ENUM_CAST(AreaLight3D::Shape)

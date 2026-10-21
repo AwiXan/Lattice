@@ -94,6 +94,13 @@ public:
 	virtual RID light_area_get_texture(RID p_light) const = 0;
 	virtual void light_area_set_shadow_mode(RID p_light, RSE::LightAreaShadowMode p_mode) = 0;
 	virtual RSE::LightAreaShadowMode light_area_get_shadow_mode(RID p_light) const = 0;
+	virtual void light_area_set_shape(RID p_light, RSE::LightAreaShape p_shape) = 0;
+	virtual RSE::LightAreaShape light_area_get_shape(RID p_light) const = 0;
+
+	// The surface of an area light, which its energy is divided by when it's normalized.
+	static float light_area_get_surface(const Vector2 &p_size, RSE::LightAreaShape p_shape) {
+		return p_size.x * p_size.y * (p_shape == RSE::LIGHT_AREA_SHAPE_ELLIPSE ? float(Math::PI / 4.0) : 1.0f);
+	}
 
 	virtual bool light_has_shadow(RID p_light) const = 0;
 

@@ -555,6 +555,23 @@ RSE::LightAreaShadowMode LightStorage::light_area_get_shadow_mode(RID p_light) c
 	return light->area_shadow_mode;
 }
 
+void LightStorage::light_area_set_shape(RID p_light, RSE::LightAreaShape p_shape) {
+	Light *light = light_owner.get_or_null(p_light);
+	ERR_FAIL_NULL(light);
+
+	light->area_shape = p_shape;
+
+	light->version++;
+	light->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_LIGHT);
+}
+
+RSE::LightAreaShape LightStorage::light_area_get_shape(RID p_light) const {
+	const Light *light = light_owner.get_or_null(p_light);
+	ERR_FAIL_NULL_V(light, RSE::LIGHT_AREA_SHAPE_RECTANGLE);
+
+	return light->area_shape;
+}
+
 uint32_t LightStorage::light_get_max_hddagi_cascade(RID p_light) {
 	const Light *light = light_owner.get_or_null(p_light);
 	ERR_FAIL_NULL_V(light, 0);
@@ -1180,7 +1197,9 @@ void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const Paged
 		light_data.inv_spot_attenuation = 1.0f / light->param[RSE::LIGHT_PARAM_SPOT_ATTENUATION];
 		float spot_angle = light->param[RSE::LIGHT_PARAM_SPOT_ANGLE];
 		light_data.cos_spot_angle = Math::cos(Math::deg_to_rad(spot_angle));
+		light_data.area_shape = RSE::LIGHT_AREA_SHAPE_RECTANGLE;
 		if (type == RSE::LIGHT_AREA) {
+			light_data.area_shape = light->area_shape;
 			Vector3 area_vec_a = inverse_transform.basis.xform(light_transform.basis.xform(Vector3(1, 0, 0))).normalized() * area_size.x;
 			Vector3 area_vec_b = inverse_transform.basis.xform(light_transform.basis.xform(Vector3(0, 1, 0))).normalized() * area_size.y;
 
@@ -1195,7 +1214,7 @@ void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const Paged
 
 			if (light->area_normalize_energy) {
 				// normalization to make larger lights output same amount of light as smaller lights with same energy
-				float surface_area = area_size.x * area_size.y;
+				float surface_area = light_area_get_surface(area_size, light->area_shape);
 				light_data.color[0] /= surface_area;
 				light_data.color[1] /= surface_area;
 				light_data.color[2] /= surface_area;

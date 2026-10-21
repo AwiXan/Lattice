@@ -2196,6 +2196,14 @@
 				Sets how the shadow map of an [AreaLight3D] is drawn. Equivalent to [member AreaLight3D.area_shadow_mode].
 			</description>
 		</method>
+		<method name="light_area_set_shape">
+			<return type="void" />
+			<param index="0" name="light" type="RID" />
+			<param index="1" name="shape" type="int" enum="RenderingServer.LightAreaShape" />
+			<description>
+				Sets the shape of an [AreaLight3D]. Equivalent to [member AreaLight3D.area_shape].
+			</description>
+		</method>
 		<method name="light_area_set_size">
 			<return type="void" />
 			<param index="0" name="light" type="RID" />
@@ -5284,6 +5292,12 @@
 		</constant>
 		<constant name="LIGHT_AREA_SHADOW_CUBE" value="1" enum="LightAreaShadowMode">
 			Draw the shadow map of an area light as five faces of a cubemap. Slower but better quality than the paraboloid.
+		</constant>
+		<constant name="LIGHT_AREA_SHAPE_RECTANGLE" value="0" enum="LightAreaShape">
+			The area light is a rectangle.
+		</constant>
+		<constant name="LIGHT_AREA_SHAPE_ELLIPSE" value="1" enum="LightAreaShape">
+			The area light is an ellipse, whose axes are the size of the light.
 		</constant>
 		<constant name="LIGHT_DIRECTIONAL_SHADOW_ORTHOGONAL" value="0" enum="LightDirectionalShadowMode">
 			Use orthogonal shadow projection for directional light.
