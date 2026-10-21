@@ -99,20 +99,8 @@ void EditorRunBar::_notification(int p_what) {
 			pause_button->set_button_icon(get_editor_theme_icon(SNAME("Pause")));
 			stop_button->set_button_icon(get_editor_theme_icon(SNAME("Stop")));
 
-			if (is_movie_maker_enabled()) {
-				main_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("LaunchPadMovieMode"), EditorStringName(EditorStyles)));
-				write_movie_button->set_theme_type_variation("RunBarButtonMovieMakerEnabled");
-
-				write_movie_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("MovieWriterButtonPressed"), EditorStringName(EditorStyles)));
-			} else {
-				main_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("LaunchPadNormal"), EditorStringName(EditorStyles)));
-				write_movie_button->set_theme_type_variation("RunBarButtonMovieMakerDisabled");
-
-				write_movie_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("MovieWriterButtonNormal"), EditorStringName(EditorStyles)));
-			}
-
 			write_movie_button->set_button_icon(get_editor_theme_icon(SNAME("MainMovieWrite")));
-
+			_update_movie_maker_style();
 		} break;
 	}
 }
@@ -170,7 +158,6 @@ void EditorRunBar::_movie_maker_item_pressed(int p_id) {
 			set_movie_maker_enabled(new_enabled);
 			write_movie_button->get_popup()->set_item_checked(0, new_enabled);
 			write_movie_button->set_pressed(new_enabled);
-			_write_movie_toggled(new_enabled);
 			break;
 		}
 		case MOVIE_MAKER_OPEN_SETTINGS:
@@ -180,13 +167,16 @@ void EditorRunBar::_movie_maker_item_pressed(int p_id) {
 	}
 }
 
-void EditorRunBar::_write_movie_toggled(bool p_enabled) {
-	if (p_enabled) {
-		add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("LaunchPadMovieMode"), EditorStringName(EditorStyles)));
+void EditorRunBar::_update_movie_maker_style() {
+	// While on, the whole run bar is outlined and the button filled with the accent color.
+	if (is_movie_maker_enabled()) {
+		main_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("LaunchPadMovieMode"), EditorStringName(EditorStyles)));
 		write_movie_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("MovieWriterButtonPressed"), EditorStringName(EditorStyles)));
+		write_movie_button->set_theme_type_variation("RunBarButtonMovieMakerEnabled");
 	} else {
-		add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("LaunchPadNormal"), EditorStringName(EditorStyles)));
+		main_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("LaunchPadNormal"), EditorStringName(EditorStyles)));
 		write_movie_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("MovieWriterButtonNormal"), EditorStringName(EditorStyles)));
+		write_movie_button->set_theme_type_variation("RunBarButtonMovieMakerDisabled");
 	}
 }
 
@@ -517,6 +507,9 @@ ProcessID EditorRunBar::get_current_process() const {
 void EditorRunBar::set_movie_maker_enabled(bool p_enabled) {
 	movie_maker_enabled = p_enabled;
 	write_movie_button->get_popup()->set_item_checked(0, p_enabled);
+	if (is_inside_tree()) {
+		_update_movie_maker_style();
+	}
 }
 
 bool EditorRunBar::is_movie_maker_enabled() const {
@@ -575,6 +568,7 @@ EditorRunBar::EditorRunBar() {
 	outer_hbox->add_child(main_panel);
 
 	main_hbox = memnew(HBoxContainer);
+	main_hbox->set_theme_type_variation("RunBarContainer");
 	main_panel->add_child(main_hbox);
 
 	if (Engine::get_singleton()->is_recovery_mode_hint()) {
@@ -613,8 +607,23 @@ EditorRunBar::EditorRunBar() {
 		return;
 	}
 
+	// Play, play scene and play custom scene in one group; pause and stop in another.
+	PanelContainer *play_group = memnew(PanelContainer);
+	play_group->set_theme_type_variation("RunBarGroup");
+	main_hbox->add_child(play_group);
+	HBoxContainer *play_hbox = memnew(HBoxContainer);
+	play_hbox->set_theme_type_variation("RunBarGroupContainer");
+	play_group->add_child(play_hbox);
+
+	PanelContainer *control_group = memnew(PanelContainer);
+	control_group->set_theme_type_variation("RunBarGroup");
+	main_hbox->add_child(control_group);
+	HBoxContainer *control_hbox = memnew(HBoxContainer);
+	control_hbox->set_theme_type_variation("RunBarGroupContainer");
+	control_group->add_child(control_hbox);
+
 	play_button = memnew(Button);
-	main_hbox->add_child(play_button);
+	play_hbox->add_child(play_button);
 	play_button->set_theme_type_variation("RunBarButton");
 	play_button->set_toggle_mode(true);
 	play_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
@@ -625,8 +634,8 @@ EditorRunBar::EditorRunBar() {
 	play_button->connect(SceneStringName(pressed), callable_mp(this, &EditorRunBar::play_main_scene).bind(false, Vector<String>()));
 
 	pause_button = memnew(Button);
-	main_hbox->add_child(pause_button);
-	pause_button->set_theme_type_variation("RunBarButton");
+	control_hbox->add_child(pause_button);
+	pause_button->set_theme_type_variation("RunBarPauseButton");
 	pause_button->set_toggle_mode(true);
 	pause_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
 	pause_button->set_tooltip_text(TTRC("Pause the running project's execution for debugging."));
@@ -637,8 +646,8 @@ EditorRunBar::EditorRunBar() {
 	pause_button->set_shortcut(ED_GET_SHORTCUT("editor/pause_running_project"));
 
 	stop_button = memnew(Button);
-	main_hbox->add_child(stop_button);
-	stop_button->set_theme_type_variation("RunBarButton");
+	control_hbox->add_child(stop_button);
+	stop_button->set_theme_type_variation("RunBarStopButton");
 	stop_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
 	stop_button->set_tooltip_text(TTRC("Stop the currently running project."));
 	stop_button->set_disabled(true);
@@ -680,7 +689,7 @@ EditorRunBar::EditorRunBar() {
 		play_scene_button->connect(SceneStringName(pressed), callable_mp(this, &EditorRunBar::_play_current_pressed).bind(RunXRModeMenuItem::INVALID));
 		play_scene_button->set_shortcut(ED_GET_SHORTCUT("editor/run_current_scene"));
 	}
-	main_hbox->add_child(play_scene_button);
+	play_hbox->add_child(play_scene_button);
 
 	play_scene_button->set_tooltip_text(TTRC("Play the currently edited scene."));
 	play_scene_button->set_theme_type_variation("RunBarButton");
@@ -703,7 +712,7 @@ EditorRunBar::EditorRunBar() {
 		play_custom_scene_button->connect(SceneStringName(pressed), callable_mp(this, &EditorRunBar::_play_custom_pressed).bind(RunXRModeMenuItem::INVALID));
 		play_custom_scene_button->set_shortcut(ED_GET_SHORTCUT("editor/run_specific_scene"));
 	}
-	main_hbox->add_child(play_custom_scene_button);
+	play_hbox->add_child(play_custom_scene_button);
 
 	play_custom_scene_button->set_tooltip_text(TTRC("Play a custom scene."));
 	play_custom_scene_button->set_theme_type_variation("RunBarButton");

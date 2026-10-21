@@ -1718,9 +1718,76 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		p_theme->set_stylebox("hover_pressed", "MainMenuBar", main_screen_button_hover);
 
 		// Run bar.
+		// The buttons sit in rounded groups (play, play scene and play custom in
+		// one; pause and stop in another). A button that is on - the scene being
+		// run, pause while paused - is tinted, and stop is red while it can be used.
+		const int run_bar_button_radius = p_config.corner_radius;
+
+		p_theme->set_type_variation("RunBarContainer", "HBoxContainer");
+		p_theme->set_constant("separation", "RunBarContainer", p_config.base_margin * 1.5 * EDSCALE);
+		p_theme->set_type_variation("RunBarGroupContainer", "HBoxContainer");
+		p_theme->set_constant("separation", "RunBarGroupContainer", Math::round(EDSCALE));
+
+		Ref<StyleBoxFlat> run_bar_group = EditorThemeManager::make_flat_stylebox(p_config.dark_color_1, 2, 2, 2, 2, p_config.corner_radius > 0 ? p_config.corner_radius + 2 : 0);
+		p_theme->set_type_variation("RunBarGroup", "PanelContainer");
+		p_theme->set_stylebox(SceneStringName(panel), "RunBarGroup", run_bar_group);
+
+		Ref<StyleBoxFlat> run_bar_button = EditorThemeManager::make_flat_stylebox(Color(0, 0, 0, 0), p_config.base_margin * 1.5, p_config.base_margin, p_config.base_margin * 1.5, p_config.base_margin, run_bar_button_radius);
+		Ref<StyleBoxFlat> run_bar_hover = run_bar_button->duplicate();
+		run_bar_hover->set_bg_color(p_config.mono_color * Color(1, 1, 1, 0.1));
+		Ref<StyleBoxFlat> run_bar_pressed = run_bar_button->duplicate();
+		run_bar_pressed->set_bg_color(p_config.accent_color * Color(1, 1, 1, 0.25));
+		Ref<StyleBoxFlat> run_bar_hover_pressed = run_bar_button->duplicate();
+		run_bar_hover_pressed->set_bg_color(p_config.accent_color * Color(1, 1, 1, 0.35));
+
 		p_theme->set_type_variation("RunBarButton", "FlatMenuButton");
-		p_theme->set_stylebox("disabled", "RunBarButton", menu_transparent_style);
-		p_theme->set_stylebox(SceneStringName(pressed), "RunBarButton", menu_transparent_style);
+		p_theme->set_stylebox(CoreStringName(normal), "RunBarButton", run_bar_button);
+		p_theme->set_stylebox("normal_mirrored", "RunBarButton", run_bar_button);
+		p_theme->set_stylebox(SceneStringName(hover), "RunBarButton", run_bar_hover);
+		p_theme->set_stylebox("hover_mirrored", "RunBarButton", run_bar_hover);
+		p_theme->set_stylebox(SceneStringName(pressed), "RunBarButton", run_bar_pressed);
+		p_theme->set_stylebox("pressed_mirrored", "RunBarButton", run_bar_pressed);
+		p_theme->set_stylebox("hover_pressed", "RunBarButton", run_bar_hover_pressed);
+		p_theme->set_stylebox("hover_pressed_mirrored", "RunBarButton", run_bar_hover_pressed);
+		p_theme->set_stylebox("disabled", "RunBarButton", run_bar_button);
+		p_theme->set_stylebox("disabled_mirrored", "RunBarButton", run_bar_button);
+		// Only the light icons of dark themes are tinted: dark ones would only get darker.
+		const bool run_bar_tint_icons = p_config.dark_icon_and_font;
+		if (run_bar_tint_icons) {
+			p_theme->set_color("icon_pressed_color", "RunBarButton", p_config.accent_color);
+			p_theme->set_color("icon_hover_pressed_color", "RunBarButton", p_config.accent_color);
+		}
+
+		Ref<StyleBoxFlat> run_bar_paused = run_bar_button->duplicate();
+		run_bar_paused->set_bg_color(p_config.warning_color * Color(1, 1, 1, 0.3));
+		Ref<StyleBoxFlat> run_bar_hover_paused = run_bar_button->duplicate();
+		run_bar_hover_paused->set_bg_color(p_config.warning_color * Color(1, 1, 1, 0.4));
+
+		p_theme->set_type_variation("RunBarPauseButton", "RunBarButton");
+		p_theme->set_stylebox(SceneStringName(pressed), "RunBarPauseButton", run_bar_paused);
+		p_theme->set_stylebox("pressed_mirrored", "RunBarPauseButton", run_bar_paused);
+		p_theme->set_stylebox("hover_pressed", "RunBarPauseButton", run_bar_hover_paused);
+		p_theme->set_stylebox("hover_pressed_mirrored", "RunBarPauseButton", run_bar_hover_paused);
+		const Color run_bar_paused_icon = run_bar_tint_icons ? p_config.warning_color : p_config.icon_normal_color;
+		p_theme->set_color("icon_pressed_color", "RunBarPauseButton", run_bar_paused_icon);
+		p_theme->set_color("icon_hover_pressed_color", "RunBarPauseButton", run_bar_paused_icon);
+
+		// Stop is only enabled while something runs.
+		Ref<StyleBoxFlat> run_bar_stop = run_bar_button->duplicate();
+		run_bar_stop->set_bg_color(p_config.error_color * Color(1, 1, 1, 0.15));
+		Ref<StyleBoxFlat> run_bar_hover_stop = run_bar_button->duplicate();
+		run_bar_hover_stop->set_bg_color(p_config.error_color * Color(1, 1, 1, 0.3));
+
+		p_theme->set_type_variation("RunBarStopButton", "RunBarButton");
+		p_theme->set_stylebox(CoreStringName(normal), "RunBarStopButton", run_bar_stop);
+		p_theme->set_stylebox("normal_mirrored", "RunBarStopButton", run_bar_stop);
+		p_theme->set_stylebox(SceneStringName(hover), "RunBarStopButton", run_bar_hover_stop);
+		p_theme->set_stylebox("hover_mirrored", "RunBarStopButton", run_bar_hover_stop);
+		if (run_bar_tint_icons) {
+			p_theme->set_color("icon_normal_color", "RunBarStopButton", p_config.error_color);
+			p_theme->set_color("icon_hover_color", "RunBarStopButton", p_config.error_color);
+			p_theme->set_color("icon_pressed_color", "RunBarStopButton", p_config.error_color);
+		}
 
 		p_theme->set_type_variation("RunBarButtonMovieMakerDisabled", "RunBarButton");
 		p_theme->set_color("icon_normal_color", "RunBarButtonMovieMakerDisabled", Color(1, 1, 1, 0.7));
@@ -1728,10 +1795,12 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		p_theme->set_color("icon_hover_color", "RunBarButtonMovieMakerDisabled", Color(1, 1, 1, 0.9));
 		p_theme->set_color("icon_hover_pressed_color", "RunBarButtonMovieMakerDisabled", Color(1, 1, 1, 0.84));
 
-		Ref<StyleBoxFlat> movie_maker_button_enabled_hover = menu_transparent_style->duplicate();
+		Ref<StyleBoxFlat> movie_maker_button_enabled_hover = run_bar_button->duplicate();
 		movie_maker_button_enabled_hover->set_bg_color(p_config.accent_color.lightened(0.2));
 
 		p_theme->set_type_variation("RunBarButtonMovieMakerEnabled", "RunBarButton");
+		p_theme->set_stylebox(SceneStringName(hover), "RunBarButtonMovieMakerEnabled", movie_maker_button_enabled_hover);
+		p_theme->set_stylebox(SceneStringName(pressed), "RunBarButtonMovieMakerEnabled", run_bar_button);
 		p_theme->set_stylebox("hover_pressed", "RunBarButtonMovieMakerEnabled", movie_maker_button_enabled_hover);
 		p_theme->set_color("icon_normal_color", "RunBarButtonMovieMakerEnabled", Color(0, 0, 0, 0.7));
 		p_theme->set_color("icon_pressed_color", "RunBarButtonMovieMakerEnabled", Color(0, 0, 0, 0.84));
@@ -1812,14 +1881,16 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		p_theme->set_constant("line_edit_margin_empty", "EditorSpinSlider", 16 * EDSCALE);
 
 		// Launch Pad and Play buttons.
+		// The run bar groups have their own background (see "RunBarGroup"), so the pad only has one in movie mode.
 		Ref<StyleBoxFlat> style_launch_pad = EditorThemeManager::make_flat_stylebox(p_config.dark_color_1, 2 * EDSCALE, 0, 2 * EDSCALE, 0, p_config.corner_radius);
 		style_launch_pad->set_corner_radius_all(p_config.corner_radius * EDSCALE);
-		p_theme->set_stylebox("LaunchPadNormal", EditorStringName(EditorStyles), style_launch_pad);
-		Ref<StyleBoxFlat> style_launch_pad_movie = style_launch_pad->duplicate();
-		style_launch_pad_movie->set_bg_color(p_config.accent_color * Color(1, 1, 1, 0.1));
+		const int launch_pad_radius = p_config.corner_radius > 0 ? p_config.corner_radius + 6 : 0;
+		Ref<StyleBoxFlat> style_launch_pad_movie = EditorThemeManager::make_flat_stylebox(p_config.accent_color * Color(1, 1, 1, 0.1), 4, 4, 4, 4, launch_pad_radius);
 		style_launch_pad_movie->set_border_color(p_config.accent_color);
 		style_launch_pad_movie->set_border_width_all(Math::round(2 * EDSCALE));
 		p_theme->set_stylebox("LaunchPadMovieMode", EditorStringName(EditorStyles), style_launch_pad_movie);
+		// The same room as in movie mode, so nothing moves when it is turned on.
+		p_theme->set_stylebox("LaunchPadNormal", EditorStringName(EditorStyles), EditorThemeManager::make_empty_stylebox(4, 4, 4, 4));
 		Ref<StyleBoxFlat> style_launch_pad_recovery_mode = style_launch_pad->duplicate();
 		style_launch_pad_recovery_mode->set_bg_color(p_config.accent_color * Color(1, 1, 1, 0.1));
 		style_launch_pad_recovery_mode->set_border_color(p_config.warning_color);
@@ -1827,14 +1898,7 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		p_theme->set_stylebox("LaunchPadRecoveryMode", EditorStringName(EditorStyles), style_launch_pad_recovery_mode);
 
 		p_theme->set_stylebox("MovieWriterButtonNormal", EditorStringName(EditorStyles), EditorThemeManager::make_empty_stylebox(0, 0, 0, 0));
-		Ref<StyleBoxFlat> style_write_movie_button = p_config.button_style_pressed->duplicate();
-		style_write_movie_button->set_bg_color(p_config.accent_color);
-		style_write_movie_button->set_corner_radius_all(p_config.corner_radius * EDSCALE);
-		style_write_movie_button->set_content_margin(SIDE_TOP, 0);
-		style_write_movie_button->set_content_margin(SIDE_BOTTOM, 0);
-		style_write_movie_button->set_content_margin(SIDE_LEFT, 0);
-		style_write_movie_button->set_content_margin(SIDE_RIGHT, 0);
-		style_write_movie_button->set_expand_margin(SIDE_RIGHT, 2 * EDSCALE);
+		Ref<StyleBoxFlat> style_write_movie_button = EditorThemeManager::make_flat_stylebox(p_config.accent_color, 0, 0, 0, 0, p_config.corner_radius);
 		p_theme->set_stylebox("MovieWriterButtonPressed", EditorStringName(EditorStyles), style_write_movie_button);
 
 		// Profiler autostart indicator panel.
