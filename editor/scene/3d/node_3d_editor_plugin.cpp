@@ -7617,7 +7617,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("Lumen Lite Probes"), VIEW_DISPLAY_DEBUG_LUMEN_LITE_PROBES, SupportedRenderingMethods::FORWARD_PLUS,
 			TTRC("Displays each screen probe's radiance over its tile, with the probe's pixel marked.\nRequires Dynamic GI in Lumen Lite mode to be enabled in Environment to have a visible effect."));
 	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("Lumen Lite Trace Hits"), VIEW_DISPLAY_DEBUG_LUMEN_LITE_TRACE_HITS, SupportedRenderingMethods::FORWARD_PLUS,
-			TTRC("Displays how each screen probe ray ended: green = on screen, blue = in Dynamic GI's voxels, red = in the radiance cache (missed or too far), black = not traced.\nRequires Dynamic GI in Lumen Lite mode to be enabled in Environment to have a visible effect."));
+			TTRC("Displays how each screen probe ray ended: green = on screen, blue = in Dynamic GI's voxels, red = in the radiance cache (missed or too far), gray = only under the surface so far, black = below the surface.\nRequires Dynamic GI in Lumen Lite mode to be enabled in Environment to have a visible effect."));
 	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("Lumen Lite Radiance Cache"), VIEW_DISPLAY_DEBUG_LUMEN_LITE_RADIANCE_CACHE, SupportedRenderingMethods::FORWARD_PLUS,
 			TTRC("Displays the world-space radiance cache that Lumen Lite rays fall back to, seen in the direction of each pixel's normal.\nRequires Dynamic GI in Lumen Lite mode to be enabled in Environment to have a visible effect."));
 	display_submenu->add_separator();

@@ -76,7 +76,12 @@ away. That is exactly the part Lumen replaces with screen probes.
    Tiles that only see sky get no probe.
 2. **Trace.** Each probe owns an 8×8 octahedral radiance map over the full
    sphere (64 directions). One thread per texel traces one ray per frame,
-   jittered inside the texel. Directions below the probe's surface are skipped.
+   jittered inside the texel. A texel counts as below the probe's surface
+   only if its centre is more than half a texel below the horizon. Those aren't
+   traced for themselves; their threads trace extra rays (see *Importance
+   sampling* below). A ray of a texel across the horizon that lands below the
+   surface is a sample without light (none comes from there); deciding by the
+   jittered ray instead randomly zeroed such texels and wiped their history.
    * **Screen-space trace first**: march the depth buffer from the probe
      (quadratic step distribution, 12–24 steps, thickness proportional to
      depth). On a hit, read the *previous frame's lit colour* at the hit,
@@ -85,23 +90,35 @@ away. That is exactly the part Lumen replaces with screen probes.
    * **World-space fallback**: if the ray leaves the screen, goes behind an
      object for longer than the thickness, or the reprojection fails, trace
      the same ray through HDDAGI's voxel occupancy with the existing
-     `trace_ray_hdda()` (all cascades) and read `voxel_light_tex` at the hit,
-     with HDDAGI's neighbour filtering. Read-only: Lumen Lite adds no voxel
-     data of its own.
+     `trace_ray_hdda()` (all cascades) and read `voxel_light_tex` at the hit.
+     The trace first starts where the screen trace last saw free space, pushed
+     off the surface by less the higher the ray already is above it (rays from
+     a corner then don't start inside the next wall). If that start is inside
+     solid voxels (a ray grazing its own surface is free on screen but inside
+     the surface's voxels), it starts again from the probe like HDDAGI's
+     reflections, then once more a cell and a half further along. Read-only:
+     Lumen Lite adds no voxel data of its own.
    * **Radiance cache for distant hits / misses**: when the world trace
-     leaves the last cascade (or starts outside all of them, or hits the
-     cell it started in), the ray reads
+     leaves the last cascade (or starts outside all of them, or every start
+     above was inside solid voxels), the ray reads
      HDDAGI's probe radiance (`lightprobe_specular`, interpolated with the
      occlusion weights) at its origin in its direction. These probes already
      include the sky, so this is also the sky term.
 3. **Temporal + spatial filtering.** Each probe's new radiance is blended
    with the history radiance of the same tile from the previous frame, after
    checking that last frame's probe of that tile was on the same surface
-   (world-space distance relative to depth, normal agreement). On a mismatch
+   (world-space distance relative to depth, normal agreement). If it wasn't
+   (a tile across an edge has its probe on one surface one frame and on the
+   other the next), the closest matching probe among the 3×3 tiles around is
+   taken. On a mismatch
    (disocclusion, camera cut) the history is dropped and the new trace stands
-   alone. The blend is `1 - 1/frames` with a project setting for the frame
-   count. Then a spatial pass averages each texel with the same direction of the
-   four neighbouring probes, weighted by plane distance and normal similarity, which
+   alone. The tolerance grows on surfaces seen at a grazing angle, where a tile
+   covers that much more of the surface. The new sample weighs `1/frames`, with
+   a project setting for the frame count. Then a spatial pass averages each
+   texel with the same direction of the neighbouring probes (3×3 with 16 px
+   tiles, 5×5 with 8 px ones, so about the same screen area; the weight halves
+   every tile in each axis, every two tiles on 5×5), weighted by plane distance
+   and normal similarity, which
    removes most of the per-ray noise before history is stored. The filtered map
    becomes next frame's history (ping-pong).
 4. **Irradiance and gather.** The filter pass also projects each filtered
@@ -112,17 +129,36 @@ away. That is exactly the part Lumen replaces with screen probes.
    irradiance / π into the existing `ambient` GI buffer with blend 1. Pixels
    with no valid probe around keep HDDAGI's own value.
 
-Importance sampling (planned, **not in the first version**): Lumen distributes a
-probe's rays with the product of the BRDF (cosine around the pixel normals in
-the tile) and the previous frame's radiance in the probe (directions that were
-bright get more rays). The first version traces the octahedron uniformly with
-per-frame jitter, which is noisier for small bright sources (an emissive lamp
-covering a few texels). The plan:
-reproject last frame's filtered probe radiance, build a 64-entry CDF per probe
-in shared memory, and generate the 64 rays from it (structured importance
-sampling, so each texel still gets at most one ray and the estimator weights
-are `pdf_uniform / pdf`). Rays freed from directions below all pixel normals
-of the tile go to the bright directions.
+Importance sampling, as implemented: Lumen distributes a probe's rays with
+the product of the BRDF and the previous frame's radiance. Lumen Lite does the
+part that matters most for small bright sources with the threads it has anyway.
+A probe's 64 threads run in one or two GPU waves that wait for their slowest
+thread. So a thread with no ray of its own costs about as much as one that
+traces, and about half of them have none: their direction is below the
+surface. Those threads, and those of directions that are dim next to the
+probe's mean (a quarter of it) once they have history, every other frame,
+become donors. Each donor traces a ray into a texel drawn from a CDF of
+the history brightness (with a floor of a tenth of the mean, so that every
+direction above the surface keeps a share), stratified over the donors and
+jittered inside the texel. A texel then stores the mean of all its rays of the
+frame, its own and the donated ones. Every ray lands uniformly inside its
+texel, so that mean stays an unbiased estimate of the texel; a texel that
+rested keeps its history. The temporal weight stays `1/frames` however many
+rays came, since weighting by the count would favour bright moments (bright
+directions draw more rays). The ray count per probe and frame stays at 64 at
+most. In the test room, this halved the noise of a single frame and cut the
+frame-to-frame flicker of the accumulated result by about a third, at the
+same brightness.
+
+Test-room numbers with everything above (960×540, lavapipe; flicker is the mean
+absolute difference of two consecutive frames, 0–255): flicker 0.44 / 0.48
+(Medium, two cameras), 0.43 (Low), 0.19 (High); a camera slide ends 1.41 away
+from the converged still image of the same view (HDDAGI: 1.42); with a still
+camera, 3 of 1980 probes lose their history per frame (Medium).
+
+Not done yet: the cosine of the tile's pixel normals in the PDF, and
+subdividing a bright texel into finer directions (structured importance
+sampling).
 
 ### Why build on HDDAGI's data
 
@@ -215,9 +251,10 @@ menu):
 
 * **Lumen Lite Probes**: each tile shows its probe's filtered octahedral
   radiance map stretched over the tile, with the probe pixel marked.
-* **Lumen Lite Trace Hits**: same layout, each texel coloured by how its last
-  ray ended: green = screen-space hit, blue = voxel hit, red = radiance cache
-  (miss / sky), black = not traced (below the surface).
+* **Lumen Lite Trace Hits**: same layout, each texel coloured by how its
+  last ray of the frame ended (a donated one if it got any): green =
+  screen-space hit, blue = voxel hit, red = radiance cache (miss / sky),
+  gray = only samples under the surface so far, black = below the surface.
 * **Lumen Lite Radiance Cache**: per pixel, what the world radiance cache
   (HDDAGI probes) returns in the pixel's normal direction: the value a
   ray reaching that point would fall back to.
@@ -226,14 +263,8 @@ menu):
 
 Known limitations of the first version:
 
-* Uniform ray directions (no importance sampling): small bright emitters give
-  blotchy noise that the 4-neighbour filter and 12-frame history don't fully
-  hide.
-* The world trace starts where the screen trace last saw free space, with a
-  smaller normal push, and steps out of a solid start cell once. That cleared
-  the cache fallbacks clustered in corners, but scattered single fallbacks
-  across the screen went up (about 2× in the test room); they don't show after
-  filtering, cause not pinned down yet.
+* Importance sampling only reallocates idle and dim rays toward bright
+  history (see section 2); no BRDF term, no texel subdivision.
 * Screen trace is a linear march of the full depth buffer, no HZB; rays that
   go behind thin objects or off screen fall back to voxels.
 * History is matched per probe (tile reprojection + plane test), not per
@@ -248,10 +279,10 @@ Known limitations of the first version:
 
 Roadmap:
 
-
 1. (this PR) Screen probes, screen → voxel → cache tracing, temporal +
-   spatial filter, SH gather, settings, debug views; Forward+ only.
-2. Importance sampling from last frame's probe radiance and the tile's normals.
+   spatial filter, SH gather, ray reallocation toward bright history, settings,
+   debug views; Forward+ only.
+2. The BRDF term and texel subdivision in importance sampling.
 3. Hierarchical-Z screen trace (cheaper, longer rays, fewer misses).
 4. Rough reflections from probe radiance; glossy reflections with the
    same tracer, denoised.

@@ -5797,7 +5797,7 @@
 			[b]Note:[/b] Only supported when using the Forward+ rendering method.
 		</constant>
 		<constant name="VIEWPORT_DEBUG_DRAW_LUMEN_LITE_TRACE_HITS" value="30" enum="ViewportDebugDraw">
-			Draws how each Lumen Lite ray ended, in the layout of [constant VIEWPORT_DEBUG_DRAW_LUMEN_LITE_PROBES]: green on screen, blue in DynamicGI's voxels, red in the radiance cache, black not traced.
+			Draws how each Lumen Lite ray ended, in the layout of [constant VIEWPORT_DEBUG_DRAW_LUMEN_LITE_PROBES]: green on screen, blue in DynamicGI's voxels, red in the radiance cache, gray only under the surface so far, black below the surface.
 			[b]Note:[/b] Only supported when using the Forward+ rendering method.
 		</constant>
 		<constant name="VIEWPORT_DEBUG_DRAW_LUMEN_LITE_RADIANCE_CACHE" value="31" enum="ViewportDebugDraw">
