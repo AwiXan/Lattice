@@ -481,6 +481,16 @@ bool Environment::is_dynamic_gi_enabled() const {
 	return dynamic_gi_enabled;
 }
 
+void Environment::set_dynamic_gi_mode(DynamicGIMode p_mode) {
+	ERR_FAIL_INDEX(p_mode, DYNAMIC_GI_MODE_LUMEN_LITE + 1);
+	dynamic_gi_mode = p_mode;
+	RS::get_singleton()->environment_set_dynamic_gi_mode(environment, RSE::EnvironmentDynamicGIMode(dynamic_gi_mode));
+}
+
+Environment::DynamicGIMode Environment::get_dynamic_gi_mode() const {
+	return dynamic_gi_mode;
+}
+
 void Environment::set_dynamic_gi_cascades(int p_cascades) {
 	ERR_FAIL_COND_MSG(p_cascades < 1 || p_cascades > 8, "Invalid number of DynamicGI cascades (must be between 1 and 8).");
 	dynamic_gi_cascades = p_cascades;
@@ -1436,6 +1446,8 @@ void Environment::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_dynamic_gi_enabled", "enabled"), &Environment::set_dynamic_gi_enabled);
 	ClassDB::bind_method(D_METHOD("is_dynamic_gi_enabled"), &Environment::is_dynamic_gi_enabled);
+	ClassDB::bind_method(D_METHOD("set_dynamic_gi_mode", "mode"), &Environment::set_dynamic_gi_mode);
+	ClassDB::bind_method(D_METHOD("get_dynamic_gi_mode"), &Environment::get_dynamic_gi_mode);
 	ClassDB::bind_method(D_METHOD("set_dynamic_gi_cascades", "amount"), &Environment::set_dynamic_gi_cascades);
 	ClassDB::bind_method(D_METHOD("get_dynamic_gi_cascades"), &Environment::get_dynamic_gi_cascades);
 	ClassDB::bind_method(D_METHOD("set_dynamic_gi_min_cell_size", "size"), &Environment::set_dynamic_gi_min_cell_size);
@@ -1469,6 +1481,7 @@ void Environment::_bind_methods() {
 
 	ADD_GROUP("DynamicGI", "dynamic_gi_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "dynamic_gi_enabled", PROPERTY_HINT_GROUP_ENABLE), "set_dynamic_gi_enabled", "is_dynamic_gi_enabled");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "dynamic_gi_mode", PROPERTY_HINT_ENUM, "HDDAGI,Lumen Lite"), "set_dynamic_gi_mode", "get_dynamic_gi_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "dynamic_gi_cascades", PROPERTY_HINT_RANGE, "1,8,1"), "set_dynamic_gi_cascades", "get_dynamic_gi_cascades");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "dynamic_gi_cascade_format", PROPERTY_HINT_ENUM, "16x8x16,16x16x16,16x16x16 75% Height,16x16x16 50% Height"), "set_dynamic_gi_cascade_format", "get_dynamic_gi_cascade_format");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "dynamic_gi_min_cell_size", PROPERTY_HINT_RANGE, "0.01,64,0.01"), "set_dynamic_gi_min_cell_size", "get_dynamic_gi_min_cell_size");
@@ -1691,6 +1704,9 @@ void Environment::_bind_methods() {
 
 	BIND_ENUM_CONSTANT(FOG_MODE_EXPONENTIAL);
 	BIND_ENUM_CONSTANT(FOG_MODE_DEPTH);
+
+	BIND_ENUM_CONSTANT(DYNAMIC_GI_MODE_HDDAGI);
+	BIND_ENUM_CONSTANT(DYNAMIC_GI_MODE_LUMEN_LITE);
 
 	BIND_ENUM_CONSTANT(DYNAMIC_GI_CASCADE_FORMAT_16x8x16);
 	BIND_ENUM_CONSTANT(DYNAMIC_GI_CASCADE_FORMAT_16x16x16);

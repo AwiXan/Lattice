@@ -5017,6 +5017,9 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 		case VIEW_DISPLAY_DEBUG_AREA_LIGHT_ATLAS:
 		case VIEW_DISPLAY_DEBUG_HDDAGI:
 		case VIEW_DISPLAY_DEBUG_HDDAGI_PROBES:
+		case VIEW_DISPLAY_DEBUG_LUMEN_LITE_PROBES:
+		case VIEW_DISPLAY_DEBUG_LUMEN_LITE_TRACE_HITS:
+		case VIEW_DISPLAY_DEBUG_LUMEN_LITE_RADIANCE_CACHE:
 		case VIEW_DISPLAY_DEBUG_GI_BUFFER:
 		case VIEW_DISPLAY_DEBUG_DISABLE_LOD:
 		case VIEW_DISPLAY_DEBUG_CLUSTER_OMNI_LIGHTS:
@@ -5049,6 +5052,9 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 				VIEW_DISPLAY_DEBUG_AREA_LIGHT_ATLAS,
 				VIEW_DISPLAY_DEBUG_HDDAGI,
 				VIEW_DISPLAY_DEBUG_HDDAGI_PROBES,
+				VIEW_DISPLAY_DEBUG_LUMEN_LITE_PROBES,
+				VIEW_DISPLAY_DEBUG_LUMEN_LITE_TRACE_HITS,
+				VIEW_DISPLAY_DEBUG_LUMEN_LITE_RADIANCE_CACHE,
 				VIEW_DISPLAY_DEBUG_CLUSTER_OMNI_LIGHTS,
 				VIEW_DISPLAY_DEBUG_CLUSTER_SPOT_LIGHTS,
 				VIEW_DISPLAY_DEBUG_CLUSTER_AREA_LIGHTS,
@@ -5081,6 +5087,9 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 				Viewport::DEBUG_DRAW_AREA_LIGHT_ATLAS,
 				Viewport::DEBUG_DRAW_HDDAGI,
 				Viewport::DEBUG_DRAW_HDDAGI_PROBES,
+				Viewport::DEBUG_DRAW_LUMEN_LITE_PROBES,
+				Viewport::DEBUG_DRAW_LUMEN_LITE_TRACE_HITS,
+				Viewport::DEBUG_DRAW_LUMEN_LITE_RADIANCE_CACHE,
 				Viewport::DEBUG_DRAW_CLUSTER_OMNI_LIGHTS,
 				Viewport::DEBUG_DRAW_CLUSTER_SPOT_LIGHTS,
 				Viewport::DEBUG_DRAW_CLUSTER_AREA_LIGHTS,
@@ -7605,6 +7614,12 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 			TTRC("Requires Dynamic GI to be enabled in Environment to have a visible effect."));
 	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("Dynamic GI Probes"), VIEW_DISPLAY_DEBUG_HDDAGI_PROBES, SupportedRenderingMethods::FORWARD_PLUS,
 			TTRC("Left-click a Dynamic GI probe to display its occlusion information (white = not occluded, red = fully occluded).\nRequires Dynamic GI to be enabled in Environment to have a visible effect."));
+	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("Lumen Lite Probes"), VIEW_DISPLAY_DEBUG_LUMEN_LITE_PROBES, SupportedRenderingMethods::FORWARD_PLUS,
+			TTRC("Displays each screen probe's radiance over its tile, with the probe's pixel marked.\nRequires Dynamic GI in Lumen Lite mode to be enabled in Environment to have a visible effect."));
+	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("Lumen Lite Trace Hits"), VIEW_DISPLAY_DEBUG_LUMEN_LITE_TRACE_HITS, SupportedRenderingMethods::FORWARD_PLUS,
+			TTRC("Displays how each screen probe ray ended: green = on screen, blue = in Dynamic GI's voxels, red = in the radiance cache (missed or too far), gray = only under the surface so far, black = below the surface.\nRequires Dynamic GI in Lumen Lite mode to be enabled in Environment to have a visible effect."));
+	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("Lumen Lite Radiance Cache"), VIEW_DISPLAY_DEBUG_LUMEN_LITE_RADIANCE_CACHE, SupportedRenderingMethods::FORWARD_PLUS,
+			TTRC("Displays the world-space radiance cache that Lumen Lite rays fall back to, seen in the direction of each pixel's normal.\nRequires Dynamic GI in Lumen Lite mode to be enabled in Environment to have a visible effect."));
 	display_submenu->add_separator();
 	_add_advanced_debug_draw_mode_item(display_submenu, TTRC("Scene Luminance"), VIEW_DISPLAY_DEBUG_SCENE_LUMINANCE, SupportedRenderingMethods::FORWARD_PLUS_MOBILE,
 			TTRC("Displays the scene luminance computed from the 3D buffer. This is used for Auto Exposure calculation.\nRequires Auto Exposure to be enabled in CameraAttributes to have a visible effect."));

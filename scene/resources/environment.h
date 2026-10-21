@@ -70,6 +70,11 @@ public:
 		TONE_MAPPER_AGX,
 	};
 
+	enum DynamicGIMode {
+		DYNAMIC_GI_MODE_HDDAGI,
+		DYNAMIC_GI_MODE_LUMEN_LITE,
+	};
+
 	enum DynamicGICascadeFormat {
 		DYNAMIC_GI_CASCADE_FORMAT_16x8x16,
 		DYNAMIC_GI_CASCADE_FORMAT_16x16x16,
@@ -153,6 +158,7 @@ private:
 
 	// DynamicGI
 	bool dynamic_gi_enabled = false;
+	DynamicGIMode dynamic_gi_mode = DYNAMIC_GI_MODE_HDDAGI;
 	int dynamic_gi_cascades = 4;
 	float dynamic_gi_min_cell_size = 0.2;
 	DynamicGICascadeFormat dynamic_gi_cascade_format = DYNAMIC_GI_CASCADE_FORMAT_16x8x16;
@@ -332,6 +338,8 @@ public:
 	// DynamicGI
 	void set_dynamic_gi_enabled(bool p_enabled);
 	bool is_dynamic_gi_enabled() const;
+	void set_dynamic_gi_mode(DynamicGIMode p_mode);
+	DynamicGIMode get_dynamic_gi_mode() const;
 	void set_dynamic_gi_cascades(int p_cascades);
 	int get_dynamic_gi_cascades() const;
 	void set_dynamic_gi_min_cell_size(float p_size);
@@ -471,6 +479,7 @@ VARIANT_ENUM_CAST(Environment::BGMode)
 VARIANT_ENUM_CAST(Environment::AmbientSource)
 VARIANT_ENUM_CAST(Environment::ReflectionSource)
 VARIANT_ENUM_CAST(Environment::ToneMapper)
+VARIANT_ENUM_CAST(Environment::DynamicGIMode)
 VARIANT_ENUM_CAST(Environment::DynamicGICascadeFormat)
 VARIANT_ENUM_CAST(Environment::GlowBlendMode)
 VARIANT_ENUM_CAST(Environment::FogMode)

@@ -699,6 +699,8 @@ public:
 
 	virtual void environment_set_hddagi(RID p_env, bool p_enable, int p_cascades, RSE::EnvironmentHDDAGICascadeFormat p_cascade_format, float p_min_cell_size, bool p_filter_probes, float p_bounce_feedback, bool p_read_sky, float p_energy, float p_normal_bias, float p_reflection_bias, float p_probe_bias, float p_occlusion_bias, bool p_filter_reflection, bool p_filter_ambient) = 0;
 
+	virtual void environment_set_dynamic_gi_mode(RID p_env, RSE::EnvironmentDynamicGIMode p_mode) = 0;
+
 	enum EnvironmentHDDAGIFramesToConverge {
 		ENV_HDDAGI_CONVERGE_IN_6_FRAMES,
 		ENV_HDDAGI_CONVERGE_IN_12_FRAMES,
@@ -1218,6 +1220,7 @@ VARIANT_ENUM_CAST_EXT(RSE::EnvironmentToneMapper, RenderingServer::EnvironmentTo
 VARIANT_ENUM_CAST_EXT(RSE::EnvironmentSSRRoughnessQuality, RenderingServer::EnvironmentSSRRoughnessQuality);
 VARIANT_ENUM_CAST_EXT(RSE::EnvironmentSSAOQuality, RenderingServer::EnvironmentSSAOQuality);
 VARIANT_ENUM_CAST_EXT(RSE::EnvironmentSSILQuality, RenderingServer::EnvironmentSSILQuality);
+VARIANT_ENUM_CAST_EXT(RSE::EnvironmentDynamicGIMode, RenderingServer::EnvironmentDynamicGIMode);
 VARIANT_ENUM_CAST_EXT(RSE::EnvironmentHDDAGIFramesToConverge, RenderingServer::EnvironmentHDDAGIFramesToConverge);
 VARIANT_ENUM_CAST_EXT(RSE::EnvironmentHDDAGICascadeFormat, RenderingServer::EnvironmentHDDAGICascadeFormat);
 VARIANT_ENUM_CAST_EXT(RSE::EnvironmentHDDAGIFramesToUpdateLight, RenderingServer::EnvironmentHDDAGIFramesToUpdateLight);

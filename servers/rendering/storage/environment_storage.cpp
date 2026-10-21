@@ -922,6 +922,19 @@ RSE::EnvironmentHDDAGICascadeFormat RendererEnvironmentStorage::environment_get_
 	return env->hddagi_cascade_format;
 }
 
+void RendererEnvironmentStorage::environment_set_dynamic_gi_mode(RID p_env, RSE::EnvironmentDynamicGIMode p_mode) {
+	Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL(env);
+	ERR_FAIL_INDEX(p_mode, RSE::ENV_DYNAMIC_GI_MODE_MAX);
+	env->dynamic_gi_mode = p_mode;
+}
+
+RSE::EnvironmentDynamicGIMode RendererEnvironmentStorage::environment_get_dynamic_gi_mode(RID p_env) const {
+	Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL_V(env, RSE::ENV_DYNAMIC_GI_MODE_HDDAGI);
+	return env->dynamic_gi_mode;
+}
+
 // Adjustments
 
 void RendererEnvironmentStorage::environment_set_adjustment(RID p_env, bool p_enable, float p_brightness, float p_contrast, float p_saturation, bool p_use_1d_color_correction, RID p_color_correction) {

@@ -262,6 +262,9 @@ public:
 	bool environment_get_hddagi_filter_ambient(RID p_env) const;
 	bool environment_get_hddagi_filter_reflection(RID p_env) const;
 
+	void environment_set_dynamic_gi_mode(RID p_env, RSE::EnvironmentDynamicGIMode p_mode);
+	RSE::EnvironmentDynamicGIMode environment_get_dynamic_gi_mode(RID p_env) const;
+
 	virtual void environment_set_hddagi_frames_to_converge(RSE::EnvironmentHDDAGIFramesToConverge p_frames) = 0;
 	virtual void environment_set_hddagi_frames_to_update_light(RSE::EnvironmentHDDAGIFramesToUpdateLight p_update) = 0;
 	virtual void environment_set_hddagi_inactive_probe_frames(RSE::EnvironmentHDDAGIInactiveProbeFrames p_frames) = 0;

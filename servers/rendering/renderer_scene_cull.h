@@ -1424,6 +1424,9 @@ public:
 	PASS1RC(float, environment_get_hddagi_filter_ambient, RID)
 	PASS1RC(float, environment_get_hddagi_filter_reflection, RID)
 
+	PASS2(environment_set_dynamic_gi_mode, RID, RSE::EnvironmentDynamicGIMode)
+	PASS1RC(RSE::EnvironmentDynamicGIMode, environment_get_dynamic_gi_mode, RID)
+
 	PASS1(environment_set_hddagi_frames_to_converge, RSE::EnvironmentHDDAGIFramesToConverge)
 	PASS1(environment_set_hddagi_frames_to_update_light, RSE::EnvironmentHDDAGIFramesToUpdateLight)
 	PASS1(environment_set_hddagi_inactive_probe_frames, RSE::EnvironmentHDDAGIInactiveProbeFrames)

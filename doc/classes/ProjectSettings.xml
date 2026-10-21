@@ -3096,6 +3096,21 @@
 		<member name="rendering/global_illumination/hddagi/last_cascade_fade" type="float" setter="" getter="" default="0.25">
 			How far in from its edge the last DynamicGI ([member Environment.dynamic_gi_enabled]) cascade fades out, as a fraction of its half size. Past the last cascade there is only the sky's ambient light, so a short fade shows where GI ends. Open worlds look better with [code]0.5[/code] or more, together with more [member Environment.dynamic_gi_cascades] for a longer reach. Never shorter than the two probes cascades blend over each other. Can be changed at run-time.
 		</member>
+		<member name="rendering/global_illumination/lumen_lite/history_frames" type="int" setter="" getter="" default="12">
+			How many frames of rays Lumen Lite averages for each screen probe. Higher values are less noisy, but the light follows changes more slowly.
+		</member>
+		<member name="rendering/global_illumination/lumen_lite/quality" type="int" setter="" getter="" default="1">
+			Quality of Lumen Lite ([member Environment.dynamic_gi_mode]): [b]Low[/b] places a screen probe every 16×16 pixels and traces half of its 64 rays per frame with 12 screen-space steps; [b]Medium[/b] traces all 64 rays with 16 steps; [b]High[/b] places a probe every 8×8 pixels, 64 rays, 24 steps (about 4 times the cost of Medium).
+		</member>
+		<member name="rendering/global_illumination/lumen_lite/screen_trace_distance" type="float" setter="" getter="" default="4.0">
+			How far, in 3D units, Lumen Lite rays march along the depth buffer before continuing through Dynamic GI's voxels.
+		</member>
+		<member name="rendering/global_illumination/lumen_lite/screen_traces" type="bool" setter="" getter="" default="true">
+			If [code]true[/code], Lumen Lite rays are traced against the depth buffer first. If [code]false[/code], they only go through Dynamic GI's voxels: cheaper and steadier, but without contact detail.
+		</member>
+		<member name="rendering/global_illumination/lumen_lite/spatial_filter" type="bool" setter="" getter="" default="true">
+			If [code]true[/code], each Lumen Lite screen probe averages its rays with those of its neighbors on the same surface, which reduces noise.
+		</member>
 		<member name="rendering/global_illumination/voxel_gi/quality" type="int" setter="" getter="" default="0">
 			The VoxelGI quality to use. High quality leads to more precise lighting and better reflections, but is slower to render. This setting does not affect the baked data and doesn't require baking the [VoxelGI] again to apply.
 			[b]Note:[/b] This property is only read when the project starts. To control VoxelGI quality at runtime, call [method RenderingServer.voxel_gi_set_quality] instead.

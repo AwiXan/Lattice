@@ -44,6 +44,7 @@
 #include "servers/rendering/renderer_rd/shaders/environment/hddagi_filter.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/environment/hddagi_integrate.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/environment/hddagi_preprocess.glsl.gen.h"
+#include "servers/rendering/renderer_rd/shaders/environment/lumen_lite.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/environment/voxel_gi.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/environment/voxel_gi_debug.glsl.gen.h"
 #include "servers/rendering/renderer_rd/storage_rd/render_buffer_custom_data_rd.h"
@@ -52,6 +53,7 @@
 
 #define RB_SCOPE_GI SNAME("rbgi")
 #define RB_SCOPE_HDDAGI SNAME("hddagi")
+#define RB_SCOPE_LUMEN_LITE SNAME("lumen_lite")
 
 #define RB_TEX_AMBIENT SNAME("ambient")
 #define RB_TEX_REFLECTION SNAME("reflection")
@@ -480,6 +482,57 @@ private:
 
 	} hddagi_shader;
 
+	/* LUMEN LITE */
+
+	struct LumenLiteShader {
+		enum Mode {
+			MODE_TRACE,
+			MODE_FILTER,
+			MODE_GATHER,
+			MODE_DEBUG,
+			MODE_MAX
+		};
+
+		enum {
+			FLAG_SCREEN_TRACES = 1,
+			FLAG_SPATIAL_FILTER = 2,
+			FLAG_HALF_RAYS = 4,
+			FLAG_HISTORY_VALID = 8,
+		};
+
+		struct UBO {
+			float projection[16];
+			float inv_projection[16];
+			float cam_basis[16];
+			float inv_cam_basis[16];
+			float prev_reprojection[16];
+			float cam_origin[4];
+
+			int32_t screen_size[2];
+			int32_t probe_count[2];
+
+			uint32_t tile_size;
+			uint32_t frame;
+			uint32_t screen_steps;
+			uint32_t flags;
+
+			float screen_trace_distance;
+			float history_alpha;
+			float pixel_angle;
+			uint32_t pad;
+		};
+
+		struct PushConstant {
+			int32_t gi_size[2];
+			uint32_t res_shift;
+			uint32_t debug_mode;
+		};
+
+		LumenLiteShaderRD shader;
+		RID shader_version;
+		PipelineDeferredRD pipelines[MODE_MAX];
+	} lumen_lite_shader;
+
 public:
 	static GI *get_singleton() { return singleton; }
 
@@ -772,6 +825,48 @@ public:
 	RSE::EnvironmentHDDAGIFramesToUpdateLight hddagi_frames_to_update_light = RSE::ENV_HDDAGI_UPDATE_LIGHT_IN_4_FRAMES;
 	RSE::EnvironmentHDDAGIInactiveProbeFrames inactive_probe_frames = RSE::ENV_HDDAGI_INACTIVE_PROBE_4_FRAMES;
 
+	/* LUMEN LITE */
+
+	// Screen probes that gather HDDAGI's world in place of its own per-pixel gather.
+	class LumenLite : public RenderBufferCustomDataRD {
+		GDCLASS(LumenLite, RenderBufferCustomDataRD)
+
+	public:
+		enum {
+			PROBE_OCT_SIZE = 8,
+		};
+
+		Size2i screen_size;
+		uint32_t tile_size = 0;
+		Size2i probe_count;
+
+		// [frame & 1] is this frame's, the other one last frame's.
+		RID probe_position[2];
+		RID probe_normal[2];
+		RID radiance_filtered[2];
+		RID radiance_trace;
+		RID probe_sh;
+
+		RID last_lit; // The lit opaque scene of last frame, half size.
+		Size2i last_lit_size;
+		RID debug_texture;
+
+		RID ubo;
+
+		uint32_t frame = 0;
+		bool history_valid = false;
+		uint32_t debug_mode = UINT32_MAX; // Which debug view the debug pass draws, if any.
+		Projection prev_projection; // Depth corrected.
+		Transform3D prev_cam_transform;
+
+		bool is_allocated() const { return ubo.is_valid(); }
+		void allocate(const Size2i &p_screen_size, uint32_t p_tile_size);
+
+		virtual void configure(RenderSceneBuffersRD *p_render_buffers) override {}
+		virtual void free_data() override;
+		~LumenLite();
+	};
+
 	float hddagi_solid_cell_ratio = 0.5;
 	Vector3 hddagi_debug_probe_pos;
 	Vector3 hddagi_debug_probe_dir;
@@ -948,6 +1043,10 @@ public:
 
 	void setup_voxel_gi_instances(RenderDataRD *p_render_data, Ref<RenderSceneBuffersRD> p_render_buffers, const Transform3D &p_transform, const PagedArray<RID> &p_voxel_gi_instances, uint32_t &r_voxel_gi_instances_used);
 	void process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_normal_roughness_slices, RID p_voxel_gi_buffer, RID p_environment, uint32_t p_view_count, const Projection *p_projections, const Vector3 *p_eye_offsets, const Transform3D &p_cam_transform, const PagedArray<RID> &p_voxel_gi_instances);
+	// Lumen Lite's buffers and settings for this frame, before process_gi()'s compute list.
+	void prepare_lumen_lite(Ref<RenderSceneBuffersRD> p_render_buffers, const Projection &p_projection, const Transform3D &p_cam_transform);
+	// Lumen Lite's passes, in process_gi()'s compute list, after HDDAGI's gather.
+	void process_lumen_lite(RD::ComputeListID p_compute_list, Ref<RenderSceneBuffersRD> p_render_buffers, const RID &p_normal_roughness, const Projection &p_projection, const Transform3D &p_cam_transform, const Size2i &p_gi_size, uint32_t p_shift);
 
 	RID voxel_gi_instance_create(RID p_base);
 	void voxel_gi_instance_set_transform_to_data(RID p_probe, const Transform3D &p_xform);
