@@ -32,6 +32,8 @@
 
 #include "scene/gui/flow_container.h"
 
+class PopupMenu;
+
 // The row across the top: the menus, the project's name, the run controls.
 //
 // It wraps onto a second line when the window is too narrow for all of it,
@@ -44,6 +46,10 @@ class EditorTitleBar : public HFlowContainer {
 	Point2i click_pos;
 	bool moving = false;
 	bool can_move = false;
+	bool menu_icons_queued = false;
+
+	void _queue_update_menu_icons();
+	void _update_menu_icons(PopupMenu *p_menu, bool p_global_menu, bool p_dark_mode, int p_depth);
 
 protected:
 	void _notification(int p_what);
@@ -54,4 +60,7 @@ protected:
 public:
 	void set_can_move_window(bool p_enabled);
 	bool get_can_move_window() const;
+
+	// Gives the items of the main menus their icons, whether the menus are a menu bar or folded into one button.
+	void update_menu_icons();
 };
