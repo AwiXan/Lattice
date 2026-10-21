@@ -175,6 +175,8 @@ private:
 		float hddagi_probe_bias = 2.0;
 		float hddagi_occlusion_bias = 0.1;
 		RSE::EnvironmentHDDAGICascadeFormat hddagi_cascade_format = RSE::ENV_HDDAGI_CASCADE_FORMAT_16x8x16;
+		// What gathers the GI on screen from HDDAGI's cascades.
+		RSE::EnvironmentDynamicGIMode dynamic_gi_mode = RSE::ENV_DYNAMIC_GI_MODE_HDDAGI;
 
 		// Adjustments
 		bool adjustments_enabled = false;
@@ -331,6 +333,8 @@ public:
 	bool environment_get_hddagi_filter_ambient(RID p_env) const;
 	bool environment_get_hddagi_filter_reflection(RID p_env) const;
 	RSE::EnvironmentHDDAGICascadeFormat environment_get_hddagi_cascade_format(RID p_env) const;
+	void environment_set_dynamic_gi_mode(RID p_env, RSE::EnvironmentDynamicGIMode p_mode);
+	RSE::EnvironmentDynamicGIMode environment_get_dynamic_gi_mode(RID p_env) const;
 
 	// Adjustment
 	void environment_set_adjustment(RID p_env, bool p_enable, float p_brightness, float p_contrast, float p_saturation, bool p_use_1d_color_correction, RID p_color_correction);

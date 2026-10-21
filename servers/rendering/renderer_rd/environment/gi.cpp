@@ -3135,6 +3135,12 @@ GI::~GI() {
 	if (hddagi_shader.preprocess_shader.is_valid()) {
 		hddagi_shader.preprocess.version_free(hddagi_shader.preprocess_shader);
 	}
+	if (lumen_lite_shader.shader_version.is_valid()) {
+		for (int i = 0; i < LumenLiteShader::MODE_MAX; i++) {
+			lumen_lite_shader.pipelines[i].free();
+		}
+		lumen_lite_shader.shader.version_free(lumen_lite_shader.shader_version);
+	}
 
 	singleton = nullptr;
 }
@@ -3415,6 +3421,19 @@ void GI::init(SkyRD *p_sky) {
 				hddagi_shader.debug_probes_shader_version[i] = hddagi_shader.debug_probes.version_get_shader(hddagi_shader.debug_probes_shader, i);
 				hddagi_shader.debug_probes_pipeline[i].setup(hddagi_shader.debug_probes_shader_version[i], rp, rs, RD::PipelineMultisampleState(), ds, cb, 0);
 			}
+		}
+	}
+	{
+		String defines = "\n#define LIGHTPROBE_OCT_SIZE " + itos(HDDAGI::LIGHTPROBE_OCT_SIZE) + "\n";
+		Vector<String> modes;
+		modes.push_back("\n#define MODE_TRACE\n"); // LumenLiteShader::MODE_TRACE
+		modes.push_back("\n#define MODE_FILTER\n"); // LumenLiteShader::MODE_FILTER
+		modes.push_back("\n#define MODE_GATHER\n"); // LumenLiteShader::MODE_GATHER
+		modes.push_back("\n#define MODE_DEBUG\n"); // LumenLiteShader::MODE_DEBUG
+		lumen_lite_shader.shader.initialize(modes, defines);
+		lumen_lite_shader.shader_version = lumen_lite_shader.shader.version_create();
+		for (int i = 0; i < LumenLiteShader::MODE_MAX; i++) {
+			lumen_lite_shader.pipelines[i].create_compute_pipeline(lumen_lite_shader.shader.version_get_shader(lumen_lite_shader.shader_version, i));
 		}
 	}
 	default_voxel_gi_buffer = RD::get_singleton()->uniform_buffer_create(sizeof(VoxelGIData) * MAX_VOXEL_GI_INSTANCES);
@@ -3807,6 +3826,15 @@ void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_nor
 		RD::get_singleton()->compute_list_dispatch_threads(compute_list, size.x, size.y, 1);
 	}
 
+	// Lumen Lite replaces the ambient HDDAGI's gather just wrote; one view only for now.
+	const bool use_lumen_lite = use_hddagi && p_view_count == 1 && p_environment.is_valid() && RendererSceneRenderRD::get_singleton()->environment_get_dynamic_gi_mode(p_environment) == RSE::ENV_DYNAMIC_GI_MODE_LUMEN_LITE;
+	if (use_lumen_lite) {
+		RD::get_singleton()->compute_list_add_barrier(compute_list);
+		process_lumen_lite(compute_list, p_render_buffers, p_normal_roughness_slices[0], projections[0], p_cam_transform, size, shift);
+	} else if (p_render_buffers->has_custom_data(RB_SCOPE_LUMEN_LITE)) {
+		p_render_buffers->set_custom_data(RB_SCOPE_LUMEN_LITE, Ref<RenderBufferCustomDataRD>());
+	}
+
 	if (use_hddagi && hddagi->using_reflection_filter) {
 		uint32_t filter_pipeline_specialization = 0;
 		if (shift > 0) {
@@ -3897,6 +3925,246 @@ void GI::process_gi(Ref<RenderSceneBuffersRD> p_render_buffers, const RID *p_nor
 	}
 	RD::get_singleton()->compute_list_end();
 	RD::get_singleton()->draw_command_end_label();
+}
+
+/* LUMEN LITE */
+
+void GI::LumenLite::allocate(const Size2i &p_screen_size, uint32_t p_tile_size) {
+	free_data();
+
+	screen_size = p_screen_size;
+	tile_size = p_tile_size;
+	probe_count = Size2i((screen_size.x + tile_size - 1) / tile_size, (screen_size.y + tile_size - 1) / tile_size);
+
+	RD::TextureFormat tf;
+	tf.width = probe_count.x;
+	tf.height = probe_count.y;
+	tf.usage_bits = RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT;
+
+	for (int i = 0; i < 2; i++) {
+		tf.format = RD::DATA_FORMAT_R32G32B32A32_SFLOAT;
+		probe_position[i] = RD::get_singleton()->texture_create(tf, RD::TextureView());
+		RD::get_singleton()->texture_clear(probe_position[i], Color(0, 0, 0, 0), 0, 1, 0, 1);
+		tf.format = RD::DATA_FORMAT_R16G16B16A16_SFLOAT;
+		probe_normal[i] = RD::get_singleton()->texture_create(tf, RD::TextureView());
+		RD::get_singleton()->texture_clear(probe_normal[i], Color(0, 0, 0, 0), 0, 1, 0, 1);
+	}
+
+	tf.format = RD::DATA_FORMAT_R16G16B16A16_SFLOAT;
+	tf.width = probe_count.x * 3;
+	probe_sh = RD::get_singleton()->texture_create(tf, RD::TextureView());
+	RD::get_singleton()->texture_clear(probe_sh, Color(0, 0, 0, 0), 0, 1, 0, 1);
+
+	tf.width = probe_count.x * PROBE_OCT_SIZE;
+	tf.height = probe_count.y * PROBE_OCT_SIZE;
+	radiance_trace = RD::get_singleton()->texture_create(tf, RD::TextureView());
+	RD::get_singleton()->texture_clear(radiance_trace, Color(0, 0, 0, 0), 0, 1, 0, 1);
+	for (int i = 0; i < 2; i++) {
+		radiance_filtered[i] = RD::get_singleton()->texture_create(tf, RD::TextureView());
+		RD::get_singleton()->texture_clear(radiance_filtered[i], Color(0, 0, 0, 0), 0, 1, 0, 1);
+	}
+
+	last_lit_size = Size2i(MAX(1, screen_size.x / 2), MAX(1, screen_size.y / 2));
+	tf.width = last_lit_size.x;
+	tf.height = last_lit_size.y;
+	tf.usage_bits = RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT;
+	last_lit = RD::get_singleton()->texture_create(tf, RD::TextureView());
+	RD::get_singleton()->texture_clear(last_lit, Color(0, 0, 0, 0), 0, 1, 0, 1);
+
+	ubo = RD::get_singleton()->uniform_buffer_create(sizeof(LumenLiteShader::UBO));
+
+	frame = 0;
+	history_valid = false;
+}
+
+void GI::LumenLite::free_data() {
+	RID *rids[] = { &probe_position[0], &probe_position[1], &probe_normal[0], &probe_normal[1], &radiance_filtered[0], &radiance_filtered[1], &radiance_trace, &probe_sh, &last_lit, &debug_texture, &ubo };
+	for (RID *rid : rids) {
+		if (rid->is_valid()) {
+			RD::get_singleton()->free_rid(*rid);
+			*rid = RID();
+		}
+	}
+	history_valid = false;
+}
+
+GI::LumenLite::~LumenLite() {
+	free_data();
+}
+
+void GI::process_lumen_lite(RD::ComputeListID p_compute_list, Ref<RenderSceneBuffersRD> p_render_buffers, const RID &p_normal_roughness, const Projection &p_projection, const Transform3D &p_cam_transform, const Size2i &p_gi_size, uint32_t p_shift) {
+	Ref<HDDAGI> hddagi = p_render_buffers->get_custom_data(RB_SCOPE_HDDAGI);
+	ERR_FAIL_COND(hddagi.is_null());
+
+	Ref<LumenLite> lumen_lite;
+	if (p_render_buffers->has_custom_data(RB_SCOPE_LUMEN_LITE)) {
+		lumen_lite = p_render_buffers->get_custom_data(RB_SCOPE_LUMEN_LITE);
+	} else {
+		lumen_lite.instantiate();
+		p_render_buffers->set_custom_data(RB_SCOPE_LUMEN_LITE, lumen_lite);
+	}
+
+	// Quality tiers: Low and Medium place a probe every 16 pixels, High every 8; Low
+	// traces half of each probe's rays per frame.
+	const int quality = CLAMP(int(GLOBAL_GET_CACHED(int, "rendering/global_illumination/lumen_lite/quality")), 0, 2);
+	const uint32_t tile_size = quality == 2 ? 8 : 16;
+	const uint32_t screen_steps = quality == 0 ? 12 : (quality == 1 ? 16 : 24);
+	const int history_frames = MAX(1, int(GLOBAL_GET_CACHED(int, "rendering/global_illumination/lumen_lite/history_frames")));
+	const bool screen_traces = GLOBAL_GET_CACHED(bool, "rendering/global_illumination/lumen_lite/screen_traces");
+	const float screen_trace_distance = MAX(0.01f, float(GLOBAL_GET_CACHED(float, "rendering/global_illumination/lumen_lite/screen_trace_distance")));
+	const bool spatial_filter = GLOBAL_GET_CACHED(bool, "rendering/global_illumination/lumen_lite/spatial_filter");
+
+	const Size2i screen_size = p_render_buffers->get_internal_size();
+	if (!lumen_lite->is_allocated() || lumen_lite->screen_size != screen_size || lumen_lite->tile_size != tile_size) {
+		lumen_lite->allocate(screen_size, tile_size);
+	}
+
+	uint32_t debug_mode = UINT32_MAX;
+	switch (RendererSceneRenderRD::get_singleton()->get_debug_draw_mode()) {
+		case RSE::VIEWPORT_DEBUG_DRAW_LUMEN_LITE_PROBES:
+			debug_mode = 0;
+			break;
+		case RSE::VIEWPORT_DEBUG_DRAW_LUMEN_LITE_TRACE_HITS:
+			debug_mode = 1;
+			break;
+		case RSE::VIEWPORT_DEBUG_DRAW_LUMEN_LITE_RADIANCE_CACHE:
+			debug_mode = 2;
+			break;
+		default:
+			break;
+	}
+
+	// Full size only while a debug view shows it.
+	const Size2i debug_size = debug_mode != UINT32_MAX ? screen_size : Size2i(1, 1);
+	if (lumen_lite->debug_texture.is_null() || RD::get_singleton()->texture_size(lumen_lite->debug_texture) != Vector2i(debug_size)) {
+		if (lumen_lite->debug_texture.is_valid()) {
+			RD::get_singleton()->free_rid(lumen_lite->debug_texture);
+		}
+		RD::TextureFormat tf;
+		tf.format = RD::DATA_FORMAT_R16G16B16A16_SFLOAT;
+		tf.width = debug_size.x;
+		tf.height = debug_size.y;
+		tf.usage_bits = RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_STORAGE_BIT;
+		lumen_lite->debug_texture = RD::get_singleton()->texture_create(tf, RD::TextureView());
+	}
+
+	Projection correction;
+	correction.set_depth_correction(true);
+	const Projection projection = correction * p_projection;
+	const Transform3D cam_basis = Transform3D(p_cam_transform.basis, Vector3());
+
+	LumenLiteShader::UBO ubo = {};
+	RendererRD::MaterialStorage::store_camera(projection, ubo.projection);
+	RendererRD::MaterialStorage::store_camera(projection.inverse(), ubo.inv_projection);
+	RendererRD::MaterialStorage::store_transform(cam_basis, ubo.cam_basis);
+	RendererRD::MaterialStorage::store_transform(cam_basis.affine_inverse(), ubo.inv_cam_basis);
+	if (lumen_lite->history_valid) {
+		// From this frame's camera-relative world to last frame's clip space.
+		const Projection reprojection = lumen_lite->prev_projection * Projection(lumen_lite->prev_cam_transform.affine_inverse() * Transform3D(Basis(), p_cam_transform.origin));
+		RendererRD::MaterialStorage::store_camera(reprojection, ubo.prev_reprojection);
+	} else {
+		RendererRD::MaterialStorage::store_camera(Projection(), ubo.prev_reprojection);
+	}
+	ubo.cam_origin[0] = p_cam_transform.origin.x;
+	ubo.cam_origin[1] = p_cam_transform.origin.y;
+	ubo.cam_origin[2] = p_cam_transform.origin.z;
+	ubo.cam_origin[3] = 0.0;
+	ubo.screen_size[0] = screen_size.x;
+	ubo.screen_size[1] = screen_size.y;
+	ubo.probe_count[0] = lumen_lite->probe_count.x;
+	ubo.probe_count[1] = lumen_lite->probe_count.y;
+	ubo.tile_size = tile_size;
+	ubo.frame = lumen_lite->frame;
+	ubo.screen_steps = screen_steps;
+	ubo.flags = 0;
+	if (screen_traces) {
+		ubo.flags |= LumenLiteShader::FLAG_SCREEN_TRACES;
+	}
+	if (spatial_filter) {
+		ubo.flags |= LumenLiteShader::FLAG_SPATIAL_FILTER;
+	}
+	if (quality == 0) {
+		ubo.flags |= LumenLiteShader::FLAG_HALF_RAYS;
+	}
+	if (lumen_lite->history_valid) {
+		ubo.flags |= LumenLiteShader::FLAG_HISTORY_VALID;
+	}
+	ubo.screen_trace_distance = screen_trace_distance;
+	ubo.history_alpha = 1.0f / float(history_frames);
+	ubo.pixel_angle = 2.0f / (Math::abs(p_projection.columns[1][1]) * float(screen_size.y));
+	RD::get_singleton()->buffer_update(lumen_lite->ubo, 0, sizeof(LumenLiteShader::UBO), &ubo);
+
+	const uint32_t current = lumen_lite->frame & 1;
+	const uint32_t previous = current ^ 1;
+
+	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
+	LocalVector<RD::Uniform> uniforms = {
+		RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 0, lumen_lite->ubo),
+		RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 1, hddagi->voxel_bits_tex),
+		RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 2, hddagi->voxel_region_tex),
+		RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 3, hddagi->voxel_light_tex),
+		RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 4, hddagi->lightprobe_specular_tex),
+		RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 5, hddagi->get_lightprobe_occlusion_textures()),
+		RD::Uniform(RD::UNIFORM_TYPE_SAMPLER, 6, RendererRD::MaterialStorage::get_singleton()->sampler_rd_get_default(RSE::CANVAS_ITEM_TEXTURE_FILTER_LINEAR, RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED)),
+		RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 7, hddagi_ubo),
+		RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 8, p_render_buffers->get_depth_texture(0)),
+		RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 9, p_normal_roughness),
+		RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 10, lumen_lite->last_lit.is_valid() ? lumen_lite->last_lit : texture_storage->texture_rd_get_default(RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_BLACK)),
+		RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 11, lumen_lite->probe_position[current]),
+		RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 12, lumen_lite->probe_normal[current]),
+		RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 13, lumen_lite->probe_position[previous]),
+		RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 14, lumen_lite->probe_normal[previous]),
+		RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 15, lumen_lite->radiance_trace),
+		RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 16, lumen_lite->radiance_filtered[previous]),
+		RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 17, lumen_lite->radiance_filtered[current]),
+		RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 18, lumen_lite->probe_sh),
+		RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 19, p_render_buffers->get_texture_slice(RB_SCOPE_GI, RB_TEX_AMBIENT_U32, 0, 0)),
+		RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 20, p_render_buffers->get_texture_slice(RB_SCOPE_GI, RB_TEX_AMBIENT_REFLECTION_BLEND, 0, 0)),
+		RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 21, lumen_lite->debug_texture),
+	};
+
+	LumenLiteShader::PushConstant push_constant = {};
+	push_constant.gi_size[0] = p_gi_size.x;
+	push_constant.gi_size[1] = p_gi_size.y;
+	push_constant.res_shift = p_shift;
+	push_constant.debug_mode = debug_mode;
+
+	RD::get_singleton()->draw_command_begin_label("Lumen Lite");
+
+	for (int mode = 0; mode < LumenLiteShader::MODE_MAX; mode++) {
+		if (mode == LumenLiteShader::MODE_DEBUG && debug_mode == UINT32_MAX) {
+			break;
+		}
+		if (mode > 0) {
+			RD::get_singleton()->compute_list_add_barrier(p_compute_list);
+		}
+
+		RID uniform_set = UniformSetCacheRD::get_singleton()->get_cache_vec(lumen_lite_shader.shader.version_get_shader(lumen_lite_shader.shader_version, mode), 0, uniforms);
+		RD::get_singleton()->compute_list_bind_compute_pipeline(p_compute_list, lumen_lite_shader.pipelines[mode].get_rid());
+		RD::get_singleton()->compute_list_bind_uniform_set(p_compute_list, uniform_set, 0);
+		RD::get_singleton()->compute_list_set_push_constant(p_compute_list, &push_constant, sizeof(LumenLiteShader::PushConstant));
+
+		switch (mode) {
+			case LumenLiteShader::MODE_TRACE:
+			case LumenLiteShader::MODE_FILTER:
+				// One work group per probe.
+				RD::get_singleton()->compute_list_dispatch(p_compute_list, lumen_lite->probe_count.x, lumen_lite->probe_count.y, 1);
+				break;
+			case LumenLiteShader::MODE_GATHER:
+				RD::get_singleton()->compute_list_dispatch_threads(p_compute_list, p_gi_size.x, p_gi_size.y, 1);
+				break;
+			case LumenLiteShader::MODE_DEBUG:
+				RD::get_singleton()->compute_list_dispatch_threads(p_compute_list, screen_size.x, screen_size.y, 1);
+				break;
+		}
+	}
+
+	RD::get_singleton()->draw_command_end_label();
+
+	lumen_lite->prev_projection = projection;
+	lumen_lite->prev_cam_transform = p_cam_transform;
+	lumen_lite->history_valid = true;
+	lumen_lite->frame++;
 }
 
 RID GI::voxel_gi_instance_create(RID p_base) {

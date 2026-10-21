@@ -316,6 +316,9 @@ public:
 	virtual float environment_get_hddagi_filter_reflection(RID p_env) const = 0;
 	virtual RSE::EnvironmentHDDAGICascadeFormat environment_get_hddagi_cascade_format(RID p_env) const = 0;
 
+	virtual void environment_set_dynamic_gi_mode(RID p_env, RSE::EnvironmentDynamicGIMode p_mode) = 0;
+	virtual RSE::EnvironmentDynamicGIMode environment_get_dynamic_gi_mode(RID p_env) const = 0;
+
 	virtual void environment_set_hddagi_frames_to_converge(RSE::EnvironmentHDDAGIFramesToConverge p_frames) = 0;
 	virtual void environment_set_hddagi_frames_to_update_light(RSE::EnvironmentHDDAGIFramesToUpdateLight p_update) = 0;
 	virtual void environment_set_hddagi_inactive_probe_frames(RSE::EnvironmentHDDAGIInactiveProbeFrames p_frames) = 0;

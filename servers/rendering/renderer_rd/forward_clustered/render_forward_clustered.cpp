@@ -2586,6 +2586,15 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		_process_compositor_effects(RSE::COMPOSITOR_EFFECT_CALLBACK_TYPE_PRE_TRANSPARENT, p_render_data);
 	}
 
+	if (rb.is_valid() && rb->has_custom_data(RB_SCOPE_LUMEN_LITE)) {
+		// The lit opaque scene, for next frame's Lumen Lite rays that hit on screen.
+		RENDER_TIMESTAMP("Copy Opaque Scene for Lumen Lite");
+		Ref<RendererRD::GI::LumenLite> lumen_lite = rb->get_custom_data(RB_SCOPE_LUMEN_LITE);
+		if (lumen_lite->last_lit.is_valid()) {
+			copy_effects->make_mipmap(rb->get_internal_texture(0), lumen_lite->last_lit, lumen_lite->last_lit_size);
+		}
+	}
+
 	RENDER_TIMESTAMP("Render 3D Transparent Pass");
 
 	RD::get_singleton()->draw_command_begin_label("Render 3D Transparent Pass");
@@ -2877,6 +2886,15 @@ void RenderForwardClustered::_render_buffers_debug_draw(const RenderDataRD *p_re
 		RID final = rb->get_texture_slice(RB_SCOPE_SSIL, RB_FINAL, 0, 0);
 		Size2i rtsize = texture_storage->render_target_get_size(render_target);
 		copy_effects->copy_to_fb_rect(final, texture_storage->render_target_get_rd_framebuffer(render_target), Rect2(Vector2(), rtsize), false, false);
+	}
+
+	const bool debug_lumen_lite = get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_LUMEN_LITE_PROBES || get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_LUMEN_LITE_TRACE_HITS || get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_LUMEN_LITE_RADIANCE_CACHE;
+	if (debug_lumen_lite && rb->has_custom_data(RB_SCOPE_LUMEN_LITE)) {
+		Ref<RendererRD::GI::LumenLite> lumen_lite = rb->get_custom_data(RB_SCOPE_LUMEN_LITE);
+		if (lumen_lite->debug_texture.is_valid()) {
+			Size2i rtsize = texture_storage->render_target_get_size(render_target);
+			copy_effects->copy_to_fb_rect(lumen_lite->debug_texture, texture_storage->render_target_get_rd_framebuffer(render_target), Rect2(Vector2(), rtsize), false, false);
+		}
 	}
 
 	if (get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_GI_BUFFER && rb->has_texture(RB_SCOPE_GI, RB_TEX_AMBIENT)) {
@@ -4609,6 +4627,8 @@ void RenderForwardClustered::hddagi_update(const Ref<RenderSceneBuffers> &p_rend
 			hddagi.unref();
 			rb->set_custom_data(RB_SCOPE_HDDAGI, hddagi);
 		}
+		// Lumen Lite gathers HDDAGI's world: it goes with it.
+		rb->set_custom_data(RB_SCOPE_LUMEN_LITE, Ref<RenderBufferCustomDataRD>());
 
 		if (!needs_hddagi) {
 			return;
