@@ -73,11 +73,9 @@ void EditorRunNative::_notification(int p_what) {
 						}
 					}
 				}
-				if (popup->get_item_count() == 0) {
-					remote_debug->hide();
-				} else {
-					remote_debug->show();
-				}
+				// Hide this too, so the run bar does not keep a gap for it.
+				remote_debug->set_visible(popup->get_item_count() > 0);
+				set_visible(remote_debug->is_visible());
 
 				first = false;
 			}

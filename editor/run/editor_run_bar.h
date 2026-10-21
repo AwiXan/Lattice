@@ -96,7 +96,7 @@ class EditorRunBar : public MarginContainer {
 	void _update_play_buttons();
 
 	void _movie_maker_item_pressed(int p_id);
-	void _write_movie_toggled(bool p_enabled);
+	void _update_movie_maker_style();
 	void _quick_run_selected(const String &p_file_path, int p_menu_item = RunXRModeMenuItem::INVALID);
 
 	void _play_current_pressed(int p_menu_item = RunXRModeMenuItem::INVALID);
