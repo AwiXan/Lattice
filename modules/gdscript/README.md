@@ -81,6 +81,16 @@ GDScript supports cyclic dependencies due to a few features of the analyzer:
 A fundamental cyclic dependency problem occurs when the types of two different member variables are mutually dependent. This is commonly checked by a pattern that declares a temporary datatype with `GDScriptParser::DataType resolving_datatype;`, followed by `resolving_datatype.kind = GDScriptParser::DataType::RESOLVING;`. If the analyzer attempts to resolve a member on-demand that is already tagged as resolving, then a cyclic dependency problem has been found and can be reported.
 
 
+#### Traits
+
+A trait (`trait Name:` as a class member, or a file starting with `trait_name Name`) is parsed like a class, into a `TraitNode`, which is a `ClassNode` whose type is `Node::TRAIT`. A class lists the traits it uses with `uses`, kept in `ClassNode::traits`.
+
+Traits are resolved in their own step, between inheritance and interface: `resolve_class_uses()`, and the `GDScriptParserRef::USES_SOLVED` status of a parser. It finds each trait, fully analyzes it in its own context, checks that its `extends` agrees with the inheritance of the using class and that it does not clash with the members of the class or of the traits used before it, then adds the members of the trait to the using class (`extend_class()`). The members are not copied: the using class holds the same AST nodes as the trait. The nodes record the traits they came from in `Node::trait_origin`, so that a member brought in by two traits from a common trait is not a conflict. A method of the trait without a body (or marked `@abstract`) is not added: the class must implement it, unless the class is abstract, in which case the classes extending it must. A method of the class with the name of a trait method overrides it, and must have a compatible signature (`override_member_function()`).
+
+The fully-qualified names of the traits a class uses, its own and those of its base classes, are kept in `ClassNode::traits_fqtn` and, at runtime, in `GDScript::traits_fqtn`. That is all `is`, `as` and values typed with a trait check (`OPCODE_TYPE_TEST_TRAIT`, `OPCODE_CAST_TO_TRAIT`, `OPCODE_ASSIGN_TYPED_TRAIT`, `OPCODE_RETURN_TYPED_TRAIT`, and `GDScriptDataType::GDTRAIT`).
+
+Traits themselves are never compiled: the members they bring are compiled as members of each class using them. When a script declaring traits is reloaded in the editor, the scripts using them are recompiled as well.
+
 ### Compiling (see [`GDScriptCompiler`](gdscript_compiler.h))
 
 Compiling is the final step in making a GDScript executable in the [virtual machine](gdscript_vm.h) (VM). The compiler takes a `GDScript` object and an AST, and uses another class, [`GDScriptByteCodeGenerator`](gdscript_byte_codegen.h), to generate bytecode corresponding to the class. In doing this, it creates the objects that the VM understands how to run, like [`GDScriptFunction`](gdscript_function.h), and completes a few extra tasks needed for compilation, such as populating runtime class member information.
