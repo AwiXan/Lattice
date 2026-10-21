@@ -288,50 +288,66 @@ vec3 radiance_cache_sample(vec3 p_pos, vec3 p_dir) {
 	return weight_accum > 0.0 ? accum / weight_accum : vec3(0.0);
 }
 
+// One HDDA trace through HDDAGI's voxels from a start cell. Returns 0 with the
+// light of the hit, 1 on a miss, 2 when the start cell itself is solid.
+int trace_voxels(vec3 p_start_cell, int p_cascade, vec3 p_dir, out vec3 r_radiance, out vec3 r_ray_pos) {
+	r_ray_pos = p_start_cell / hddagi.cascades[p_cascade].to_cell + hddagi.cascades[p_cascade].position;
+	ivec3 hit_cell;
+	ivec3 hit_face;
+	int hit_cascade;
+	if (!trace_ray_hdda(r_ray_pos, p_dir, p_cascade, hit_cell, hit_face, hit_cascade)) {
+		return 1;
+	}
+	if (hit_cascade == p_cascade && ivec3(p_start_cell) == hit_cell) {
+		return 2;
+	}
+	hit_cell += hit_face;
+	ivec3 read_cell = (hit_cell + (hddagi.cascades[hit_cascade].region_world_offset * REGION_SIZE)) & (ivec3(hddagi.grid_size) - 1);
+	r_radiance = texelFetch(sampler3D(light_cascades, linear_sampler), read_cell + ivec3(0, (hddagi.grid_size.y * hit_cascade), 0), 0).rgb;
+	return 0;
+}
+
 // A ray through HDDAGI's voxels; returns HIT_WORLD with the light of the hit, or
 // HIT_CACHE with the radiance cache's.
 // p_skip: how far along the ray is already known to be free (the screen trace saw
 // nothing there); starting past it keeps rays from corners out of the next wall.
 float world_trace(vec3 p_pos, vec3 p_normal, vec3 p_dir, float p_skip, out vec3 r_radiance) {
-	vec3 pos = to_hddagi_space(p_pos + p_dir * p_skip);
+	vec3 origin = to_hddagi_space(p_pos);
 	vec3 normal = normalize(to_hddagi_space(p_normal));
 	vec3 dir = normalize(to_hddagi_space(p_dir));
-
-	int cascade = find_cascade(pos);
-	if (cascade < 0) {
-		r_radiance = radiance_cache_sample(pos, dir);
-		return HIT_CACHE;
-	}
-
-	// Out of the cell of the surface the probe is on, as HDDAGI's reflections do; less
-	// so once the ray is already away from it, so that in a corner it doesn't start in
-	// the other wall.
-	vec3 start_cell = (pos - hddagi.cascades[cascade].position) * hddagi.cascades[cascade].to_cell;
 	vec3 abs_normal = abs(normal);
-	float skip_cells = p_skip * hddagi.cascades[cascade].to_cell;
-	float bias = mix(hddagi.reflection_bias, 0.5, clamp(skip_cells - 1.0, 0.0, 1.0));
-	start_cell += normal / max(abs_normal.x, max(abs_normal.y, abs_normal.z)) * bias;
-	vec3 ray_pos = start_cell / hddagi.cascades[cascade].to_cell + hddagi.cascades[cascade].position;
+	vec3 normal_push = normal / max(abs_normal.x, max(abs_normal.y, abs_normal.z));
 
-	ivec3 hit_cell;
-	ivec3 hit_face;
-	int hit_cascade;
-	if (trace_ray_hdda(ray_pos, dir, cascade, hit_cell, hit_face, hit_cascade)) {
-		if (hit_cascade == cascade && ivec3(start_cell) == hit_cell) {
-			// Started inside a solid cell (a corner): step out along the ray and try again.
-			vec3 retry_pos = ray_pos + dir * (1.5 / hddagi.cascades[cascade].to_cell);
-			start_cell = (retry_pos - hddagi.cascades[cascade].position) * hddagi.cascades[cascade].to_cell;
-			if (!trace_ray_hdda(retry_pos, dir, cascade, hit_cell, hit_face, hit_cascade)) {
-				r_radiance = radiance_cache_sample(retry_pos, dir);
-				return HIT_CACHE;
-			}
-			ray_pos = retry_pos;
+	vec3 ray_pos = origin;
+	for (int attempt = 0; attempt < 3; attempt++) {
+		// 0: past what the screen trace saw free. 1: from the probe, as HDDAGI's
+		// reflections start (a ray grazing its own surface can be free on screen yet
+		// inside the surface's voxels). 2: from the probe, a cell and a half further.
+		float skip = attempt == 0 ? p_skip : 0.0;
+		if (attempt == 0 && skip <= 0.0) {
+			continue;
 		}
-		if (hit_cascade != cascade || ivec3(start_cell) != hit_cell) {
-			hit_cell += hit_face;
-			ivec3 read_cell = (hit_cell + (hddagi.cascades[hit_cascade].region_world_offset * REGION_SIZE)) & (ivec3(hddagi.grid_size) - 1);
-			r_radiance = texelFetch(sampler3D(light_cascades, linear_sampler), read_cell + ivec3(0, (hddagi.grid_size.y * hit_cascade), 0), 0).rgb;
+		vec3 pos = origin + dir * skip;
+		int cascade = find_cascade(pos);
+		if (cascade < 0) {
+			r_radiance = radiance_cache_sample(pos, dir);
+			return HIT_CACHE;
+		}
+		float to_cell = hddagi.cascades[cascade].to_cell;
+		// Out of the cell of the surface, as HDDAGI's reflections do; only less so where
+		// the ray has already risen that far above it.
+		float height_cells = skip * max(dot(dir, normal), 0.0) * to_cell;
+		float bias = clamp(hddagi.reflection_bias - height_cells, 0.5, hddagi.reflection_bias);
+		vec3 start_cell = (pos - hddagi.cascades[cascade].position) * to_cell + normal_push * bias;
+		if (attempt == 2) {
+			start_cell += dir * 1.5;
+		}
+		int result = trace_voxels(start_cell, cascade, dir, r_radiance, ray_pos);
+		if (result == 0) {
 			return HIT_WORLD;
+		}
+		if (result == 1) {
+			break;
 		}
 	}
 
