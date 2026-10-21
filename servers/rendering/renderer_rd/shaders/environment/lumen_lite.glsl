@@ -375,6 +375,13 @@ shared bool probe_valid;
 shared ivec2 history_probe;
 shared bool history_valid;
 
+// Importance sampling: threads with no ray of their own (below the surface, or a dim
+// direction resting this frame) trace one more ray into a bright direction instead.
+shared float importance_cdf[64]; // Inclusive prefix sum of the recipients' weights.
+shared uint donor_rank[64]; // Exclusive prefix count of the donors.
+shared vec4 extra_ray[64]; // rgb: radiance, a: hit type of a donated ray.
+shared int extra_target[64]; // The texel a donated ray went to, -1 if none.
+
 // Marches the depth buffer; on a hit, reads last frame's lit scene there.
 // r_free: how far the ray went without passing behind anything.
 bool screen_trace(vec3 p_origin, vec3 p_dir, float p_jitter, out vec3 r_radiance, out float r_free) {
@@ -509,44 +516,138 @@ void main() {
 		history = imageLoad(radiance_history, history_probe * PROBE_OCT_SIZE + texel);
 	}
 
-	if (dot(dir, world_normal) <= 0.0) {
-		// Below the surface: nothing to trace, and no light to keep.
+	const vec3 luminance_weights = vec3(0.2126, 0.7152, 0.0722);
+	uint index = gl_LocalInvocationIndex;
+	bool above = dot(dir, world_normal) > 0.0;
+	float history_luminance = history.a > 0.0 ? dot(history.rgb, luminance_weights) : 0.0;
+
+	// Low quality: half of the texels keep their history this frame, and give no ray away.
+	bool resting = bool(params.flags & FLAG_HALF_RAYS) && ((texel.x + texel.y + int(params.frame)) & 1) == 1 && history.a > 0.0;
+
+	// The probe's mean history brightness, through the CDF scan below (its last entry).
+	importance_cdf[index] = above ? history_luminance : 0.0;
+	donor_rank[index] = above ? 1u : 0u;
+	memoryBarrierShared();
+	barrier();
+	for (uint s = 1; s < 64; s <<= 1) {
+		float v = index >= s ? importance_cdf[index - s] : 0.0;
+		uint c = index >= s ? donor_rank[index - s] : 0u;
+		barrier();
+		importance_cdf[index] += v;
+		donor_rank[index] += c;
+		memoryBarrierShared();
+		barrier();
+	}
+	float mean_luminance = importance_cdf[63] / max(float(donor_rank[63]), 1.0);
+	barrier();
+
+	// Directions dim next to the rest (a quarter of the mean) trace every other frame
+	// once they have history; their ray goes where the light is.
+	bool dim = above && !resting && history.a > 0.0 && history_luminance < 0.25 * mean_luminance && ((texel.x + texel.y + int(params.frame >> 1u)) & 1) == 0;
+	bool donor = !resting && (!above || dim);
+	bool traces_own = above && !resting && !dim;
+
+	// Recipients are drawn in proportion to their history brightness, with a floor so
+	// that every direction above the surface gets a share (and all do before history).
+	importance_cdf[index] = above ? history_luminance + 0.1 * mean_luminance + 0.0001 : 0.0;
+	donor_rank[index] = donor ? 1u : 0u;
+	memoryBarrierShared();
+	barrier();
+	for (uint s = 1; s < 64; s <<= 1) {
+		float v = index >= s ? importance_cdf[index - s] : 0.0;
+		uint c = index >= s ? donor_rank[index - s] : 0u;
+		barrier();
+		importance_cdf[index] += v;
+		donor_rank[index] += c;
+		memoryBarrierShared();
+		barrier();
+	}
+	uint donor_count = donor_rank[63];
+	float weight_total = importance_cdf[63];
+
+	vec3 ray_dir = dir;
+	int ray_target = int(index);
+	if (donor) {
+		// Stratified over the donors: the k-th one takes the k-th slice of the CDF.
+		float u = (float(donor_rank[index] - 1u) + hash_float(ray_seed + 3u)) / float(donor_count) * weight_total;
+		int lo = 0;
+		int hi = 63;
+		while (lo < hi) {
+			int mid = (lo + hi) >> 1;
+			if (importance_cdf[mid] < u) {
+				lo = mid + 1;
+			} else {
+				hi = mid;
+			}
+		}
+		ray_target = lo;
+		ivec2 target_texel = ivec2(lo % PROBE_OCT_SIZE, lo / PROBE_OCT_SIZE);
+		vec2 target_jitter = vec2(hash_float(ray_seed + 4u), hash_float(ray_seed + 5u));
+		ray_dir = octahedron_decode((vec2(target_texel) + target_jitter) / float(PROBE_OCT_SIZE));
+	}
+
+	bool tracing = (traces_own || donor) && weight_total > 0.0 && dot(ray_dir, world_normal) > 0.0;
+	vec3 radiance = vec3(0.0);
+	float hit = HIT_NONE;
+	if (tracing) {
+		float free_distance = 0.0;
+		if (bool(params.flags & FLAG_SCREEN_TRACES)) {
+			float depth = -probe_view_pos.z;
+			vec3 origin = probe_view_pos + probe_view_normal * (0.01 + depth * 0.005);
+			vec3 view_dir = mat3(params.inv_cam_basis) * ray_dir;
+			if (screen_trace(origin, view_dir, hash_float(ray_seed + 2u), radiance, free_distance)) {
+				hit = HIT_SCREEN;
+			}
+		}
+		if (hit == HIT_NONE) {
+			hit = world_trace(world_pos, world_normal, ray_dir, free_distance, radiance);
+		}
+		// Keep a single bright ray from flashing the whole probe.
+		float luminance = dot(radiance, luminance_weights);
+		radiance *= min(1.0, 16.0 / max(luminance, 0.0001));
+	}
+
+	extra_ray[index] = vec4(radiance, hit);
+	extra_target[index] = (donor && tracing) ? ray_target : -1;
+	memoryBarrierShared();
+	barrier();
+
+	if (!above) {
+		// Below the surface: no light to keep.
 		imageStore(radiance_trace, radiance_pos, vec4(0.0));
 		return;
 	}
 
-	if (bool(params.flags & FLAG_HALF_RAYS) && ((texel.x + texel.y + int(params.frame)) & 1) == 1 && history.a > 0.0) {
-		// Checkerboard: half of the texels keep their history this frame.
-		imageStore(radiance_trace, radiance_pos, history);
-		return;
+	// This texel's rays this frame: its own and the ones donated to it. Each lands
+	// uniformly inside the texel, so their mean stays an unbiased estimate of it.
+	vec3 sum = vec3(0.0);
+	float count = 0.0;
+	float last_hit = history.a;
+	if (traces_own && tracing) {
+		sum = radiance;
+		count = 1.0;
+		last_hit = hit;
 	}
-
-	vec3 radiance = vec3(0.0);
-	float hit = HIT_NONE;
-	float free_distance = 0.0;
-
-	if (bool(params.flags & FLAG_SCREEN_TRACES)) {
-		float depth = -probe_view_pos.z;
-		vec3 origin = probe_view_pos + probe_view_normal * (0.01 + depth * 0.005);
-		vec3 view_dir = mat3(params.inv_cam_basis) * dir;
-		if (screen_trace(origin, view_dir, hash_float(ray_seed + 2u), radiance, free_distance)) {
-			hit = HIT_SCREEN;
+	for (int k = 0; k < 64; k++) {
+		if (extra_target[k] == int(index)) {
+			sum += extra_ray[k].rgb;
+			count += 1.0;
+			last_hit = extra_ray[k].a;
 		}
 	}
 
-	if (hit == HIT_NONE) {
-		hit = world_trace(world_pos, world_normal, dir, free_distance, radiance);
+	vec4 result;
+	if (count == 0.0) {
+		result = history; // Resting or dim this frame: the history stands.
+	} else if (history.a > 0.0) {
+		// The same weight however many rays came: the extra rays only make the sample
+		// less noisy. (Weighting by the count would favour bright moments, since bright
+		// directions draw more rays.)
+		result = vec4(mix(history.rgb, sum / count, params.history_alpha), last_hit);
+	} else {
+		result = vec4(sum / count, last_hit);
 	}
-
-	// Keep a single bright texel from flashing the whole probe.
-	float luminance = dot(radiance, vec3(0.2126, 0.7152, 0.0722));
-	radiance *= min(1.0, 16.0 / max(luminance, 0.0001));
-
-	if (history.a > 0.0) {
-		radiance = mix(history.rgb, radiance, params.history_alpha);
-	}
-
-	imageStore(radiance_trace, radiance_pos, vec4(radiance, hit));
+	imageStore(radiance_trace, radiance_pos, result);
 }
 
 #endif // MODE_TRACE
