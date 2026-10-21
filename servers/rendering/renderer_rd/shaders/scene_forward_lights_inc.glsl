@@ -975,6 +975,31 @@ void light_process_spot(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 			diffuse_light, specular_light);
 }
 
+// A point of the emitter of an area light for a point of the unit disk, on [-1, 1]^2.
+// Rectangles stretch the disk to the square, ellipses keep it.
+// Keep in sync with "modules/lightmapper_rd/lm_area_lights_inc.glsl".
+vec2 area_light_emitter_point(vec2 p_disk, bool p_ellipse) {
+	if (p_ellipse) {
+		return p_disk;
+	}
+	vec2 a = abs(p_disk);
+	return p_disk * (length(p_disk) / max(max(a.x, a.y), 1e-6));
+}
+
+// Where a direction from the center of an area light falls in its shadow map, the front half of a paraboloid.
+vec2 area_light_shadow_uv(vec3 p_dir, vec4 p_uv_rect) {
+	vec2 pos = p_dir.xy / (1.0 + abs(p_dir.z));
+	return p_uv_rect.xy + (pos * 0.5 + 0.5) * p_uv_rect.zw;
+}
+
+// How far from the center of an area light a direction meets the plane of the shaded surface,
+// or the distance of the point looked up when it doesn't. Never past the end of the shadow map,
+// where nothing was drawn.
+float area_light_shadow_receiver_distance(vec3 p_dir, vec3 p_normal, float p_plane, float p_fallback, float p_far) {
+	float d = p_plane / dot(p_dir, p_normal);
+	return min(d > 0.0 ? d : p_fallback, p_far);
+}
+
 // implementation of area lights with Linearly Transformed Cosines (LTC): https://eheitzresearch.wordpress.com/415-2/
 void light_process_area(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3 vertex_ddx, vec3 vertex_ddy, hvec3 f0, half roughness, half metallic, float taa_frame_count, hvec3 albedo, inout half alpha, vec2 screen_uv, hvec3 energy_compensation,
 #ifdef LIGHT_BACKLIGHT_USED
@@ -1029,104 +1054,87 @@ void light_process_area(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 #ifndef SHADOWS_DISABLED
 	// Area light shadow.
 	if (light_attenuation_raw > HALF_FLT_MIN && area_lights.data[idx].shadow_opacity > 0.001) {
-		// there is a shadowmap
+		// The shadow map is drawn from the center of the emitter, as the front half of a paraboloid.
 		vec2 texel_size = scene_data_block.data.shadow_atlas_pixel_size;
 		vec4 base_uv_rect = area_lights.data[idx].atlas_rect;
 		base_uv_rect.xy += texel_size;
 		base_uv_rect.zw -= texel_size * 2.0;
 
+		// In the space of the light, the emitter lies on the XY plane and lights towards -Z.
 		vec3 local_vert = (area_lights.data[idx].shadow_matrix * vec4(vertex, 1.0)).xyz;
-
-		float shadow_len = length(local_vert); //need to remember shadow len from here
-		vec3 shadow_dir = normalize(local_vert);
-
 		vec3 local_normal = normalize(mat3(area_lights.data[idx].shadow_matrix) * vec3(normal));
-		vec3 normal_bias = local_normal * area_lights.data[idx].shadow_normal_bias * (1.0 - abs(dot(local_normal, shadow_dir)));
-
+		float shadow_len = length(local_vert);
 		float inv_center_range = area_lights.data[idx].cone_attenuation;
 
+		// Away from the surface, more so where the center of the emitter sees it at a grazing angle.
+		local_vert += local_normal * shadow_len * area_lights.data[idx].shadow_normal_bias * (1.0 - abs(dot(local_normal, local_vert / shadow_len)));
+		shadow_len = length(local_vert);
+
 		if (sc_use_light_soft_shadows() && area_lights.data[idx].soft_shadow_size > 0.0) {
-			//soft shadow
-
-			//find blocker
-
-			float blocker_count = 0.0;
-			float blocker_average = 0.0;
-
+			// Soft shadow, after the extents and the shape of the emitter: each sample of the kernel is a point
+			// of the emitter, and is looked up where the ray from the surface to that point crosses the blockers.
+			// Depths are compared against the plane of the surface along the same ray from the center of the
+			// emitter, so that the surface doesn't shadow itself however wide the emitter is.
+			vec2 emitter_half_size = vec2(float(a_half_len), float(b_half_len)) * area_lights.data[idx].soft_shadow_scale;
+			float receiver_plane = dot(local_vert, local_normal);
+			float shadow_far = 1.0 / inv_center_range;
+			float bias = area_lights.data[idx].shadow_bias;
 			mat2 disk_rotation = shadow_disk_rotation(taa_frame_count);
 
-			vec3 basis_normal = shadow_dir;
-			vec3 v0 = abs(basis_normal.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
-			vec3 tangent = normalize(cross(v0, basis_normal));
-			vec3 bitangent = normalize(cross(tangent, basis_normal));
-			float z_norm = 1.0 - shadow_len * inv_center_range;
-
-			tangent *= area_lights.data[idx].soft_shadow_size * area_lights.data[idx].soft_shadow_scale;
-			bitangent *= area_lights.data[idx].soft_shadow_size * area_lights.data[idx].soft_shadow_scale;
+			// Look for blockers halfway to the points of the emitter above the horizon of the surface.
+			float blocker_count = 0.0;
+			float blocker_average = 0.0;
 
 			SPEC_CONSTANT_LOOP_ANNOTATION
 			for (uint i = 0; i < sc_penumbra_shadow_samples(); i++) {
 				vec2 disk = disk_rotation * scene_data_block.data.penumbra_shadow_kernel[i].xy;
-
-				vec3 pos = local_vert + tangent * disk.x + bitangent * disk.y;
-
-				pos = normalize(pos);
-
-				vec4 uv_rect = base_uv_rect;
-
-				pos.z = 1.0 + abs(pos.z);
-				pos.xy /= pos.z;
-
-				pos.xy = pos.xy * 0.5 + 0.5;
-				pos.xy = uv_rect.xy + pos.xy * uv_rect.zw;
-
-				float d = textureLod(sampler2D(shadow_atlas, SAMPLER_LINEAR_CLAMP), pos.xy, 0.0).r;
-				if (d > z_norm) {
+				vec3 to_emitter = vec3(area_light_emitter_point(disk, false) * emitter_half_size, 0.0) - local_vert;
+				if (dot(to_emitter, local_normal) <= 0.0) {
+					continue;
+				}
+				vec3 pos = local_vert + to_emitter * 0.5;
+				float pos_len = length(pos);
+				vec3 dir = pos / pos_len;
+				float d = (1.0 - textureLod(sampler2D(shadow_atlas, SAMPLER_LINEAR_CLAMP), area_light_shadow_uv(dir, base_uv_rect), 0.0).r) / inv_center_range;
+				if (d < area_light_shadow_receiver_distance(dir, local_normal, receiver_plane, pos_len, shadow_far) - bias) {
 					blocker_average += d;
 					blocker_count += 1.0;
 				}
 			}
 
 			if (blocker_count > 0.0) {
-				//blockers found, do soft shadow
+				// Blockers found: how far they are on the way from the surface to the emitter.
 				blocker_average /= blocker_count;
-				float penumbra = (-z_norm + blocker_average) / (1.0 - blocker_average);
-				tangent *= penumbra;
-				bitangent *= penumbra;
+				float t = clamp(1.0 - blocker_average / shadow_len, 0.0, 1.0);
 
-				z_norm += inv_center_range * area_lights.data[idx].shadow_bias;
-
-				shadow = half(0.0);
+				// Each point of the emitter counts as much light as it sends to the surface.
+				float lit = 0.0;
+				float total = 0.0;
 
 				SPEC_CONSTANT_LOOP_ANNOTATION
 				for (uint i = 0; i < sc_penumbra_shadow_samples(); i++) {
 					vec2 disk = disk_rotation * scene_data_block.data.penumbra_shadow_kernel[i].xy;
-					vec3 pos = local_vert + tangent * disk.x + bitangent * disk.y;
-
-					pos = normalize(pos);
-					pos = normalize(pos + normal_bias);
-
-					vec4 uv_rect = base_uv_rect;
-
-					pos.z = 1.0 + abs(pos.z);
-					pos.xy /= pos.z;
-
-					pos.xy = pos.xy * 0.5 + 0.5;
-					pos.xy = uv_rect.xy + pos.xy * uv_rect.zw;
-					shadow += half(textureProj(sampler2DShadow(shadow_atlas, shadow_sampler), vec4(pos.xy, z_norm, 1.0)));
+					vec3 to_emitter = vec3(area_light_emitter_point(disk, false) * emitter_half_size, 0.0) - local_vert;
+					float to_emitter_len2 = dot(to_emitter, to_emitter);
+					float weight = max(dot(to_emitter, local_normal), 0.0) * abs(to_emitter.z) / (to_emitter_len2 * to_emitter_len2);
+					vec3 pos = local_vert + to_emitter * t;
+					float pos_len = length(pos);
+					vec3 dir = pos / pos_len;
+					float depth = 1.0 - (area_light_shadow_receiver_distance(dir, local_normal, receiver_plane, pos_len, shadow_far) - bias) * inv_center_range;
+					lit += weight * textureProj(sampler2DShadow(shadow_atlas, shadow_sampler), vec4(area_light_shadow_uv(dir, base_uv_rect), depth, 1.0));
+					total += weight;
 				}
 
-				shadow /= half(sc_penumbra_shadow_samples());
+				shadow = total > 0.0 ? half(lit / total) : half(1.0);
 				shadow = mix(half(1.0), shadow, half(area_lights.data[idx].shadow_opacity));
-
 			} else {
-				//no blockers found, so no shadow
+				// No blockers found, so no shadow.
 				shadow = half(1.0);
 			}
 		} else {
 			vec4 uv_rect = base_uv_rect;
 
-			vec3 shadow_sample = normalize(shadow_dir + normal_bias);
+			vec3 shadow_sample = local_vert / shadow_len;
 
 			shadow_sample.z = 1.0 + abs(shadow_sample.z);
 			vec2 pos = shadow_sample.xy / shadow_sample.z;

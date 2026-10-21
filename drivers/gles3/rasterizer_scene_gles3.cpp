@@ -2162,6 +2162,9 @@ void RasterizerSceneGLES3::_render_shadows(const RenderDataGLES3 *p_render_data,
 				directional_shadows.push_back(i);
 			} else if (light_storage->light_get_type(base) == RSE::LIGHT_OMNI && light_storage->light_omni_get_shadow_mode(base) == RSE::LIGHT_OMNI_SHADOW_CUBE) {
 				cube_shadows.push_back(i);
+			} else if (light_storage->light_get_type(base) == RSE::LIGHT_AREA) {
+				// Area light shadows aren't sampled in this renderer, so they aren't drawn.
+				continue;
 			} else {
 				shadows.push_back(i);
 			}

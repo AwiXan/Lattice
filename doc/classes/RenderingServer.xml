@@ -2188,6 +2188,14 @@
 				Defines whether the energy of an [AreaLight3D] is normalized (divided) by its area. If set to [code]true[/code], changing the size does not affect the total energy output. Equivalent to [member AreaLight3D.area_normalize_energy].
 			</description>
 		</method>
+		<method name="light_area_set_shadow_mode">
+			<return type="void" />
+			<param index="0" name="light" type="RID" />
+			<param index="1" name="mode" type="int" enum="RenderingServer.LightAreaShadowMode" />
+			<description>
+				Sets how the shadow map of an [AreaLight3D] is drawn. Equivalent to [member AreaLight3D.area_shadow_mode].
+			</description>
+		</method>
 		<method name="light_area_set_size">
 			<return type="void" />
 			<param index="0" name="light" type="RID" />
@@ -5270,6 +5278,12 @@
 		</constant>
 		<constant name="LIGHT_OMNI_SHADOW_CUBE" value="1" enum="LightOmniShadowMode">
 			Use a cubemap shadow map for omni lights. Slower but better quality than dual paraboloid.
+		</constant>
+		<constant name="LIGHT_AREA_SHADOW_PARABOLOID" value="0" enum="LightAreaShadowMode">
+			Draw the shadow map of an area light onto a paraboloid in one pass. Faster, but bends straight edges close to the light.
+		</constant>
+		<constant name="LIGHT_AREA_SHADOW_CUBE" value="1" enum="LightAreaShadowMode">
+			Draw the shadow map of an area light as five faces of a cubemap. Slower but better quality than the paraboloid.
 		</constant>
 		<constant name="LIGHT_DIRECTIONAL_SHADOW_ORTHOGONAL" value="0" enum="LightDirectionalShadowMode">
 			Use orthogonal shadow projection for directional light.

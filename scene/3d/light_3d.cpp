@@ -351,7 +351,8 @@ void Light3D::_validate_property(PropertyInfo &p_property) const {
 		p_property.usage = PROPERTY_USAGE_NONE;
 	} else if (!GLOBAL_GET_CACHED(bool, "rendering/lights_and_shadows/use_physical_light_units") && (p_property.name == "light_intensity_lumens" || p_property.name == "light_intensity_lux" || p_property.name == "light_temperature")) {
 		p_property.usage = PROPERTY_USAGE_NONE;
-	} else if (get_light_type() == RSE::LIGHT_AREA && p_property.name == "light_projector") {
+	} else if (get_light_type() == RSE::LIGHT_AREA && (p_property.name == "light_projector" || p_property.name == "light_size")) {
+		// Area lights soften their shadows by their own size and shape.
 		p_property.usage = PROPERTY_USAGE_NONE;
 	}
 }
@@ -793,14 +794,23 @@ bool AreaLight3D::is_area_normalizing_energy() const {
 	return area_normalize_energy;
 }
 
+void AreaLight3D::set_shadow_mode(ShadowMode p_mode) {
+	shadow_mode = p_mode;
+	RS::get_singleton()->light_area_set_shadow_mode(light, RSE::LightAreaShadowMode(p_mode));
+}
+
+AreaLight3D::ShadowMode AreaLight3D::get_shadow_mode() const {
+	return shadow_mode;
+}
+
 AreaLight3D::AreaLight3D() :
 		Light3D(RSE::LIGHT_AREA) {
 	// Decrease the default shadow bias to better suit most scenes.
 	set_param(PARAM_SHADOW_BIAS, 0.1);
-	set_param(PARAM_SIZE, 0.5);
 	set_param(PARAM_SPECULAR, 1.0);
 	set_area_size(Vector2(1, 1));
 	set_area_normalize_energy(true);
+	set_shadow_mode(SHADOW_CUBE);
 }
 
 void AreaLight3D::_bind_methods() {
@@ -813,12 +823,19 @@ void AreaLight3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_area_normalize_energy", "enable"), &AreaLight3D::set_area_normalize_energy);
 	ClassDB::bind_method(D_METHOD("is_area_normalizing_energy"), &AreaLight3D::is_area_normalizing_energy);
 
+	ClassDB::bind_method(D_METHOD("set_shadow_mode", "mode"), &AreaLight3D::set_shadow_mode);
+	ClassDB::bind_method(D_METHOD("get_shadow_mode"), &AreaLight3D::get_shadow_mode);
+
 	ADD_GROUP("Area", "area_");
 	ADD_PROPERTYI(PropertyInfo(Variant::FLOAT, "area_range", PROPERTY_HINT_RANGE, "0,4096,0.001,or_greater,exp,suffix:m"), "set_param", "get_param", PARAM_RANGE);
 	ADD_PROPERTYI(PropertyInfo(Variant::FLOAT, "area_attenuation", PROPERTY_HINT_RANGE, "-10,10,0.001,or_greater,or_less"), "set_param", "get_param", PARAM_ATTENUATION);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "area_normalize_energy"), "set_area_normalize_energy", "is_area_normalizing_energy");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "area_size", PROPERTY_HINT_LINK, "suffix:m"), "set_area_size", "get_area_size");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "area_texture", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D,-AnimatedTexture,-AtlasTexture,-CameraTexture,-CanvasTexture,-MeshTexture,-Texture2DRD,-ViewportTexture"), "set_area_texture", "get_area_texture");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "area_shadow_mode", PROPERTY_HINT_ENUM, "Paraboloid,Cube"), "set_shadow_mode", "get_shadow_mode");
+
+	BIND_ENUM_CONSTANT(SHADOW_PARABOLOID);
+	BIND_ENUM_CONSTANT(SHADOW_CUBE);
 }
 
 PackedStringArray AreaLight3D::get_configuration_warnings() const {

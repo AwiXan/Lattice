@@ -396,3 +396,14 @@ void ltc_evaluate_diff(vec3 normal, vec3 points[4], vec4 texture_rect, float max
 	float I = ltc_integrate_clipped_quad(L, L_proj, n);
 	integral = I; // no division by (2.0 * M_PI) for GI calculations
 }
+
+// A point of the emitter of an area light for a point of the unit disk, on [-1, 1]^2.
+// Rectangles stretch the disk to the square, ellipses keep it.
+// Keep in sync with "servers/rendering/renderer_rd/shaders/scene_forward_lights_inc.glsl".
+vec2 area_light_emitter_point(vec2 p_disk, bool p_ellipse) {
+	if (p_ellipse) {
+		return p_disk;
+	}
+	vec2 a = abs(p_disk);
+	return p_disk * (length(p_disk) / max(max(a.x, a.y), 1e-6));
+}

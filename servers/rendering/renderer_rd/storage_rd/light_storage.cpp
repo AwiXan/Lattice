@@ -532,6 +532,29 @@ RID LightStorage::light_area_get_texture(RID p_light) const {
 	return light->area_texture;
 }
 
+void LightStorage::light_area_set_shadow_mode(RID p_light, RSE::LightAreaShadowMode p_mode) {
+	Light *light = light_owner.get_or_null(p_light);
+	ERR_FAIL_NULL(light);
+
+	light->area_shadow_mode = p_mode;
+
+	light->version++;
+	light->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_LIGHT);
+
+	if (p_mode == RSE::LIGHT_AREA_SHADOW_PARABOLOID) {
+		shadow_dual_paraboloid_used = true;
+	} else if (p_mode == RSE::LIGHT_AREA_SHADOW_CUBE) {
+		shadow_cubemaps_used = true;
+	}
+}
+
+RSE::LightAreaShadowMode LightStorage::light_area_get_shadow_mode(RID p_light) const {
+	const Light *light = light_owner.get_or_null(p_light);
+	ERR_FAIL_NULL_V(light, RSE::LIGHT_AREA_SHADOW_CUBE);
+
+	return light->area_shadow_mode;
+}
+
 uint32_t LightStorage::light_get_max_hddagi_cascade(RID p_light) {
 	const Light *light = light_owner.get_or_null(p_light);
 	ERR_FAIL_NULL_V(light, 0);
@@ -1303,10 +1326,9 @@ void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const Paged
 				light_data.direction[0] = omni_offset.x * float(rect.size.width);
 				light_data.direction[1] = omni_offset.y * float(rect.size.height);
 			} else if (type == RSE::LIGHT_AREA) {
-				if (light_data.size > 0.0 && light_data.soft_shadow_scale > 0.0) {
-					// Only enable PCSS-like soft shadows if blurring is enabled.
-					// Otherwise, performance would decrease with no visual difference.
-					light_data.soft_shadow_size = light_data.size;
+				if (area_size.x > 0.0 && area_size.y > 0.0 && light_data.soft_shadow_scale > 0.0) {
+					// The penumbra follows the extents and the shape of the emitter, scaled by the blur.
+					light_data.soft_shadow_size = 1.0;
 				} else {
 					light_data.soft_shadow_size = 0.0;
 					light_data.soft_shadow_scale *= RendererSceneRenderRD::get_singleton()->shadows_quality_radius_get(); // Only use quality radius for PCF

@@ -511,6 +511,7 @@ public:
 	FUNC2(light_area_set_size, RID, const Vector2 &)
 	FUNC2(light_area_set_normalize_energy, RID, bool)
 	FUNC2(light_area_set_texture, RID, RID)
+	FUNC2(light_area_set_shadow_mode, RID, RSE::LightAreaShadowMode)
 
 	/* PROBE API */
 

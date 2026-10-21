@@ -92,6 +92,8 @@ public:
 	virtual bool light_area_get_normalize_energy(RID p_light) const = 0;
 	virtual void light_area_set_texture(RID p_light, RID p_texture) = 0;
 	virtual RID light_area_get_texture(RID p_light) const = 0;
+	virtual void light_area_set_shadow_mode(RID p_light, RSE::LightAreaShadowMode p_mode) = 0;
+	virtual RSE::LightAreaShadowMode light_area_get_shadow_mode(RID p_light) const = 0;
 
 	virtual bool light_has_shadow(RID p_light) const = 0;
 

@@ -529,7 +529,8 @@ void trace_direct_light(vec3 p_position, vec3 p_normal, uint p_light_index, bool
 	float penumbra = 0.0;
 	vec3 penumbra_color = vec3(0.0);
 	if (p_soft_shadowing) {
-		const bool use_soft_shadows = (light_data.size > 0.0);
+		// Area lights are as soft as their emitter, scaled by the blur.
+		const bool use_soft_shadows = light_data.type == LIGHT_TYPE_AREA ? (light_data.shadow_blur > 0.0) : (light_data.size > 0.0);
 		const uint ray_count = AA_SAMPLES;
 		const uint total_ray_count = use_soft_shadows ? params.ray_count : ray_count;
 		const uint shadowing_rays_check_penumbra_denom = 2;
@@ -581,8 +582,18 @@ void trace_direct_light(vec3 p_position, vec3 p_normal, uint p_light_index, bool
 
 					float a = randomize(r_noise) * 2.0 * PI;
 					float vogel_index = float(total_ray_count - 1 - (i * shadowing_ray_count + j)); // Start from (total_ray_count - 1) so we check the outer points first.
-					vec2 light_disk_sample = get_vogel_disk(vogel_index, a, shadowing_ray_count_sqrt) * soft_shadowing_disk_size * light_data.shadow_blur;
-					vec3 light_disk_to_point = normalize(light_to_point + light_disk_sample.x * light_to_point_tan + light_disk_sample.y * light_to_point_bitan);
+					vec3 light_disk_to_point;
+					float sample_dist = dist;
+					if (light_data.type == LIGHT_TYPE_AREA) {
+						// Towards a point of the emitter.
+						vec2 emitter = area_light_emitter_point(get_vogel_disk(vogel_index, a, shadowing_ray_count_sqrt), false) * light_data.shadow_blur;
+						vec3 to_emitter = light_data.position + (emitter.x * light_data.area_width.xyz + emitter.y * light_data.area_height.xyz) * 0.5 - p_position;
+						sample_dist = length(to_emitter);
+						light_disk_to_point = -to_emitter / sample_dist;
+					} else {
+						vec2 light_disk_sample = get_vogel_disk(vogel_index, a, shadowing_ray_count_sqrt) * soft_shadowing_disk_size * light_data.shadow_blur;
+						light_disk_to_point = normalize(light_to_point + light_disk_sample.x * light_to_point_tan + light_disk_sample.y * light_to_point_bitan);
+					}
 					float sample_penumbra = 0.0;
 					vec3 sample_penumbra_color = light_data.color.rgb * light_texture_color;
 					bool sample_did_hit = false;
@@ -591,7 +602,7 @@ void trace_direct_light(vec3 p_position, vec3 p_normal, uint p_light_index, bool
 						vec4 hit_albedo = vec4(1.0);
 						vec3 hit_position;
 						// Offset the ray origin for AA, offset the light position for soft shadows.
-						uint ret = trace_ray_closest_hit_triangle_albedo_alpha(origin - light_disk_to_point * (bake_params.bias + length(disk_sample)), p_position - light_disk_to_point * dist, hit_albedo, hit_position);
+						uint ret = trace_ray_closest_hit_triangle_albedo_alpha(origin - light_disk_to_point * (bake_params.bias + length(disk_sample)), p_position - light_disk_to_point * sample_dist, hit_albedo, hit_position);
 						if (ret == RAY_MISS) {
 							if (!sample_did_hit) {
 								sample_penumbra = 1.0;

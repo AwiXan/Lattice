@@ -111,6 +111,7 @@ private:
 		Vector2 area_size = Vector2(1, 1);
 		bool area_normalize_energy = true;
 		RID area_texture;
+		RSE::LightAreaShadowMode area_shadow_mode = RSE::LIGHT_AREA_SHADOW_CUBE;
 		uint64_t version = 0;
 		bool allow_contact_shadows = true;
 
@@ -574,6 +575,8 @@ public:
 	virtual bool light_area_get_normalize_energy(RID p_light) const override;
 	virtual void light_area_set_texture(RID p_light, RID p_texture) override;
 	virtual RID light_area_get_texture(RID p_light) const override;
+	virtual void light_area_set_shadow_mode(RID p_light, RSE::LightAreaShadowMode p_mode) override;
+	virtual RSE::LightAreaShadowMode light_area_get_shadow_mode(RID p_light) const override;
 
 	virtual RSE::LightType light_get_type(RID p_light) const override {
 		const Light *light = light_owner.get_or_null(p_light);
