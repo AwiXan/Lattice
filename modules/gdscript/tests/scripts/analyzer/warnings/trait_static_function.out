@@ -1,0 +1,2 @@
+GDTEST_OK
+~~ WARNING at line 8: (UNUSED_STATIC_OVERRIDING_TRAIT) The function "func_one()" overrides a static function of trait "TraitA" but is not declared "static". It is static anyway.

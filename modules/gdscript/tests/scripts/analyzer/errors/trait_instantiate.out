@@ -1,0 +1,3 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 6: Cannot instantiate trait "Walker". Use it in a class with "uses" instead.
+>> ERROR at line 7: Cannot call a trait's functions directly; call through a class that uses it instead.

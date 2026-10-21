@@ -172,7 +172,8 @@ String GDScriptWarning::get_message() const {
 		case ONREADY_WITH_EXPORT:
 			return R"("@onready" will set the default value after "@export" takes effect and will override it.)";
 		case UNUSED_STATIC_OVERRIDING_TRAIT:
-			return R"(Overridden static without using "static" keyword.)";
+			CHECK_SYMBOLS(2);
+			return vformat(R"*(The function "%s()" overrides a static function of trait "%s" but is not declared "static". It is static anyway.)*", symbols[0], symbols[1]);
 #ifndef DISABLE_DEPRECATED
 		// Never produced. These warnings migrated from 3.x by mistake.
 		case PROPERTY_USED_AS_FUNCTION: // There is already an error.

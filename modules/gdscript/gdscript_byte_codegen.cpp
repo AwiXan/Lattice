@@ -1016,6 +1016,12 @@ void GDScriptByteCodeGenerator::write_assign_with_conversion(const Address &p_ta
 			append(p_source);
 			append(idx);
 		} break;
+		case GDScriptDataType::GDTRAIT: {
+			append_opcode(GDScriptFunction::OPCODE_ASSIGN_TYPED_TRAIT);
+			append(p_target);
+			append(p_source);
+			append(p_target.type.trait_type);
+		} break;
 		default: {
 			ERR_PRINT("Compiler bug: unresolved assign.");
 
@@ -1118,7 +1124,7 @@ void GDScriptByteCodeGenerator::write_cast(const Address &p_target, const Addres
 			append_opcode(GDScriptFunction::OPCODE_CAST_TO_TRAIT);
 			append(p_source);
 			append(p_target);
-			append(p_target.type.trait_type);
+			append(p_type.trait_type);
 			return;
 		} break;
 		case GDScriptDataType::SCRIPT:
@@ -1957,8 +1963,12 @@ void GDScriptByteCodeGenerator::write_return(const Address &p_return_value, bool
 			class_idx = get_constant_pos(nc) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS);
 			append(class_idx);
 		} break;
+		case GDScriptDataType::GDTRAIT: {
+			append_opcode(GDScriptFunction::OPCODE_RETURN_TYPED_TRAIT);
+			append(p_return_value);
+			append(function->return_type.trait_type);
+		} break;
 		case GDScriptDataType::SCRIPT:
-		case GDScriptDataType::GDTRAIT:
 		case GDScriptDataType::GDSCRIPT: {
 			Variant script = function->return_type.script_type;
 			int script_idx = get_constant_pos(script) | (GDScriptFunction::ADDR_TYPE_CONSTANT << GDScriptFunction::ADDR_BITS);

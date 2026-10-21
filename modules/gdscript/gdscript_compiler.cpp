@@ -140,7 +140,15 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 			result.native_type = p_datatype.native_type;
 		} break;
 		case GDScriptParser::DataType::TRAIT: {
+			if (p_handle_metatype && p_datatype.is_meta_type) {
+				result.kind = GDScriptDataType::NATIVE;
+				result.builtin_type = Variant::OBJECT;
+				result.native_type = GDScript::get_class_static();
+				break;
+			}
+
 			result.kind = GDScriptDataType::GDTRAIT;
+			result.builtin_type = Variant::OBJECT;
 			result.trait_type = p_datatype.class_type->fqcn;
 		} break;
 		case GDScriptParser::DataType::CLASS: {
@@ -218,7 +226,8 @@ static bool _is_exact_type(const PropertyInfo &p_par_type, const GDScriptDataTyp
 		return false;
 	}
 	if (p_par_type.type == Variant::OBJECT) {
-		if (p_arg_type.kind == GDScriptDataType::BUILTIN) {
+		if (p_arg_type.kind == GDScriptDataType::BUILTIN || p_arg_type.kind == GDScriptDataType::GDTRAIT) {
+			// The class of an object typed with a trait is not known.
 			return false;
 		}
 		StringName class_name;
@@ -697,7 +706,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 								}
 								if (is_awaited) {
 									gen->write_call_async(result, base, call->function_name, arguments);
-								} else if (base.type.kind != GDScriptDataType::VARIANT && base.type.kind != GDScriptDataType::BUILTIN) {
+								} else if (base.type.kind != GDScriptDataType::VARIANT && base.type.kind != GDScriptDataType::BUILTIN && base.type.kind != GDScriptDataType::GDTRAIT) {
 									// Native method, use faster path.
 									StringName class_name;
 									if (base.type.kind == GDScriptDataType::NATIVE) {
@@ -2869,7 +2878,8 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 	p_script->clearing = false;
 
 	p_script->tool = parser->is_tool();
-	p_script->_is_abstract = p_class->is_abstract;
+	// Traits are never instantiated on their own.
+	p_script->_is_abstract = p_class->is_abstract || p_class->type == GDScriptParser::Node::TRAIT;
 
 	if (p_script->local_name != StringName()) {
 		if (GDScriptAnalyzer::class_exists(p_script->local_name)) {
@@ -3423,7 +3433,8 @@ Error GDScriptCompiler::compile(const GDScriptParser *p_parser, GDScript *p_scri
 	make_scripts(p_script, root, p_keep_state);
 
 	if (parser->is_file_trait()) {
-		// No need to compile traits.
+		// No need to compile traits: the classes using them compile their members.
+		main_script->valid = true;
 		return GDScriptCache::finish_compiling(main_script->path);
 	}
 

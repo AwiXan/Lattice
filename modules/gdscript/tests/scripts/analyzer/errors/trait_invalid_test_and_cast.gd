@@ -17,6 +17,9 @@ class Hen:
 
 func test():
 	print(Hen is Shearable)
-	print(Hen.new() is Milkable)
 	print(FluffySheep as Shearable)
-	print(FluffyRam.new() as Milkable)
+	print(FluffyRam is Milkable)
+	var number := 1
+	print(number is Milkable)
+	var text := "text"
+	print(text as Milkable)

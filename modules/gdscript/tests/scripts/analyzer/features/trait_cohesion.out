@@ -9,5 +9,6 @@ function one
 function two
 overridden function three
 function four implemented in class
+function from global trait
 Interactable
 ok

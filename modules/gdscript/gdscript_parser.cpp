@@ -778,7 +778,7 @@ void GDScriptParser::parse_program() {
 				PUSH_PENDING_ANNOTATIONS_TO_HEAD;
 				advance();
 				if (head->identifier != nullptr) {
-					push_error(R"("class_name"/ "trait_name" can only be used once.)");
+					push_error(R"("class_name" or "trait_name" can only be used once.)");
 				} else {
 					parse_class_name();
 				}
@@ -787,7 +787,7 @@ void GDScriptParser::parse_program() {
 				PUSH_PENDING_ANNOTATIONS_TO_HEAD;
 				advance();
 				if (head->identifier != nullptr) {
-					push_error(R"("trait_name"/ "class_name"  can only be used once.)");
+					push_error(R"("class_name" or "trait_name" can only be used once.)");
 				} else {
 					_is_trait_file = true;
 					_is_trait = true;
@@ -1209,7 +1209,7 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 				break;
 			case GDScriptTokenizer::Token::CLASS:
 				if (_is_trait) {
-					push_error(R"(class can not be a member of a trait.)");
+					push_error(R"(A trait cannot contain inner classes.)");
 				}
 				parse_class_member(&GDScriptParser::parse_class, AnnotationInfo::CLASS, "class");
 				break;
@@ -1219,6 +1219,12 @@ void GDScriptParser::parse_class_body(bool p_is_multiline) {
 				parse_class_member(&GDScriptParser::parse_class, AnnotationInfo::TRAIT, "trait");
 				_is_trait = previous_parsing_trait; // covers the case of a trait inside a trait.
 			} break;
+			case GDScriptTokenizer::Token::USES:
+				push_error(R"("uses" must come before the members of the class.)");
+				advance();
+				parse_uses();
+				end_statement("superclass");
+				break;
 			case GDScriptTokenizer::Token::ENUM:
 				parse_class_member(&GDScriptParser::parse_enum, AnnotationInfo::NONE, "enum");
 				break;

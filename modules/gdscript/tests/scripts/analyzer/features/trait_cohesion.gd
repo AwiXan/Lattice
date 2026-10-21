@@ -57,6 +57,7 @@ func test():
 	func_two()
 	func_three()
 	func_four()
+	func_from_global_trait()
 	var act = Actor.new()
 	act.interact()
 	act.free()

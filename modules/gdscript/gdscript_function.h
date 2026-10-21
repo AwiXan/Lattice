@@ -129,6 +129,7 @@ public:
 		return kind == p_other.kind &&
 				builtin_type == p_other.builtin_type &&
 				native_type == p_other.native_type &&
+				trait_type == p_other.trait_type &&
 				(script_type == p_other.script_type || script_type_ref == p_other.script_type_ref) &&
 				container_element_types == p_other.container_element_types;
 	}
@@ -188,6 +189,7 @@ public:
 		OPCODE_ASSIGN_TYPED_DICTIONARY,
 		OPCODE_ASSIGN_TYPED_NATIVE,
 		OPCODE_ASSIGN_TYPED_SCRIPT,
+		OPCODE_ASSIGN_TYPED_TRAIT,
 		OPCODE_CAST_TO_BUILTIN,
 		OPCODE_CAST_TO_NATIVE,
 		OPCODE_CAST_TO_TRAIT,
@@ -229,6 +231,7 @@ public:
 		OPCODE_RETURN_TYPED_DICTIONARY,
 		OPCODE_RETURN_TYPED_NATIVE,
 		OPCODE_RETURN_TYPED_SCRIPT,
+		OPCODE_RETURN_TYPED_TRAIT,
 		OPCODE_ITERATE_BEGIN,
 		OPCODE_ITERATE_BEGIN_INT,
 		OPCODE_ITERATE_BEGIN_FLOAT,

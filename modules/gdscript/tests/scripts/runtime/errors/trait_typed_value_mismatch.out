@@ -1,0 +1,10 @@
+GDTEST_RUNTIME_ERROR
+~~ WARNING at line 29: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "take()" requires the subtype "Shearable" but the supertype "Variant" was provided.
+~~ WARNING at line 33: (RETURN_VALUE_DISCARDED) The function "get_shearable()" returns a value that will be discarded if not used.
+>> SCRIPT ERROR at runtime/errors/trait_typed_value_mismatch.gd:19 on subtest_assign(): Trying to assign value of type 'RefCounted (Rock)' to a variable of trait 'Shearable', which its class does not use.
+>> SCRIPT ERROR at runtime/errors/trait_typed_value_mismatch.gd:24 on subtest_assign_builtin(): Trying to assign a non-object value to a variable of trait 'Shearable'.
+>> SCRIPT ERROR at runtime/errors/trait_typed_value_mismatch.gd:29 on subtest_pass(): Invalid type in function 'take' in base 'RefCounted (trait_typed_value_mismatch.gd)'. The Object-derived class of argument 1 (RefCounted (Rock)) is not a subclass of the expected argument class.
+>> SCRIPT ERROR at runtime/errors/trait_typed_value_mismatch.gd:15 on get_shearable(): Trying to return a value of type "RefCounted (Rock)" from a function whose return type is the trait "Shearable", which its class does not use.
+end subtest_return
+true
+end subtest_valid

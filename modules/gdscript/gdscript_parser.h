@@ -765,6 +765,7 @@ public:
 				annotation = p_annotation;
 			}
 		};
+
 		IdentifierNode *identifier = nullptr;
 		String icon_path;
 		String simplified_icon_path;

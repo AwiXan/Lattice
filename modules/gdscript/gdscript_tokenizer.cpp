@@ -113,7 +113,7 @@ static const char *token_names[] = {
 	"func", // FUNC,
 	"in", // TK_IN,
 	"is", // IS,
-	"namespace", // NAMESPACE,
+	"namespace", // NAMESPACE
 	"preload", // PRELOAD,
 	"self", // SELF,
 	"signal", // SIGNAL,
