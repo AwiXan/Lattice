@@ -326,6 +326,10 @@ public:
 			RID process_uniform_set2;
 		} gi_dependent_sets;
 
+		// The shadow textures the copy and process uniform sets were made with.
+		RID shadow_atlas_depth;
+		RID directional_shadow_depth;
+
 		RID hddagi_uniform_set;
 		RID sky_uniform_set;
 

@@ -796,6 +796,21 @@ void Fog::volumetric_fog_update(const VolumetricFogSettings &p_settings, const F
 		RD::get_singleton()->compute_list_end();
 	}
 
+	// A shadow atlas that did not exist when the sets were made is bound as a black
+	// stand-in, which is never freed, so the sets would stay valid and never pick up
+	// the atlas once it exists. The fog then lights up everywhere, as if nothing cast
+	// a shadow: made in a scene without a directional light that casts shadows, and
+	// kept into one that has it, it stayed that way until its size changed.
+	if (fog->shadow_atlas_depth != p_settings.shadow_atlas_depth || fog->directional_shadow_depth != p_settings.directional_shadow_depth) {
+		fog->sync_gi_dependent_sets_validity(true);
+		if (fog->copy_uniform_set.is_valid() && RD::get_singleton()->uniform_set_is_valid(fog->copy_uniform_set)) {
+			RD::get_singleton()->free_rid(fog->copy_uniform_set);
+		}
+		fog->copy_uniform_set = RID();
+		fog->shadow_atlas_depth = p_settings.shadow_atlas_depth;
+		fog->directional_shadow_depth = p_settings.directional_shadow_depth;
+	}
+
 	bool gi_dependent_sets_valid = fog->sync_gi_dependent_sets_validity();
 	if (!fog->copy_uniform_set.is_null() && !RD::get_singleton()->uniform_set_is_valid(fog->copy_uniform_set)) {
 		fog->copy_uniform_set = RID();
