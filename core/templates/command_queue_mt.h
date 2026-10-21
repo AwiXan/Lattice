@@ -168,9 +168,15 @@ class CommandQueueMT {
 		MutexLock lock(mutex);
 
 		if (unlikely(flush_read_ptr)) {
-			// Another thread is flushing.
-			lock.temp_unlock(); // Not really temp.
-			sync();
+			// Another thread is flushing: wait until it has run everything up to here.
+			// The command that marks "here" goes in before the lock is let go. Pushed
+			// after, it could come too late for that thread, which may have read the
+			// last command in the meantime and left - and if it does not flush again
+			// nothing runs it. The physics server's thread does not while the main
+			// thread runs physics, so the main thread waited for it for ever.
+			create_command<Command<CommandQueueMT, void (CommandQueueMT::*)(), true>>(this, &CommandQueueMT::_no_op);
+			sync_tail++;
+			_wait_for_sync(lock);
 			flushing = false;
 			return;
 		}
