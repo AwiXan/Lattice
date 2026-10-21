@@ -169,6 +169,23 @@ bool GDScriptDataType::is_type(const Variant &p_variant, bool p_allow_implicit_c
 			}
 			return valid;
 		} break;
+		case GDTRAIT: {
+			if (p_variant.get_type() == Variant::NIL) {
+				return true;
+			}
+			if (p_variant.get_type() != Variant::OBJECT) {
+				return false;
+			}
+
+			bool was_freed = false;
+			Object *obj = p_variant.get_validated_object_with_check(was_freed);
+			if (!obj) {
+				return !was_freed;
+			}
+
+			const GDScript *scr = obj->get_script_instance() ? Object::cast_to<GDScript>(obj->get_script_instance()->get_script().ptr()) : nullptr;
+			return scr && scr->uses_trait(trait_type);
+		} break;
 	}
 	return false;
 }

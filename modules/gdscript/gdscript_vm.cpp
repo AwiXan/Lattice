@@ -209,6 +209,11 @@ String GDScriptFunction::_get_callable_call_error(const String &p_where, const C
 	}
 }
 
+bool GDScriptFunction::_is_class_using_trait(Script *p_class_script, const StringName &trait_type) {
+	const GDScript *gdscript = Object::cast_to<GDScript>(p_class_script);
+	return gdscript && gdscript->uses_trait(trait_type);
+}
+
 void (*type_init_function_table[])(Variant *) = {
 	nullptr, // NIL (shouldn't be called).
 	&VariantInitializer<bool>::init, // BOOL.
@@ -260,6 +265,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_TYPE_TEST_ARRAY, \
 		&&OPCODE_TYPE_TEST_DICTIONARY, \
 		&&OPCODE_TYPE_TEST_NATIVE, \
+		&&OPCODE_TYPE_TEST_TRAIT, \
 		&&OPCODE_TYPE_TEST_SCRIPT, \
 		&&OPCODE_SET_KEYED, \
 		&&OPCODE_SET_KEYED_VALIDATED, \
@@ -284,8 +290,10 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_ASSIGN_TYPED_DICTIONARY, \
 		&&OPCODE_ASSIGN_TYPED_NATIVE, \
 		&&OPCODE_ASSIGN_TYPED_SCRIPT, \
+		&&OPCODE_ASSIGN_TYPED_TRAIT, \
 		&&OPCODE_CAST_TO_BUILTIN, \
 		&&OPCODE_CAST_TO_NATIVE, \
+		&&OPCODE_CAST_TO_TRAIT, \
 		&&OPCODE_CAST_TO_SCRIPT, \
 		&&OPCODE_CONSTRUCT, \
 		&&OPCODE_CONSTRUCT_VALIDATED, \
@@ -324,6 +332,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_RETURN_TYPED_DICTIONARY, \
 		&&OPCODE_RETURN_TYPED_NATIVE, \
 		&&OPCODE_RETURN_TYPED_SCRIPT, \
+		&&OPCODE_RETURN_TYPED_TRAIT, \
 		&&OPCODE_ITERATE_BEGIN, \
 		&&OPCODE_ITERATE_BEGIN_INT, \
 		&&OPCODE_ITERATE_BEGIN_FLOAT, \
@@ -954,6 +963,34 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 				}
 
 				*dst = object && ClassDB::is_parent_class(object->get_class_name(), native_type);
+				ip += 4;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_TYPE_TEST_TRAIT) {
+				CHECK_SPACE(4);
+
+				GET_VARIANT_PTR(dst, 0);
+				GET_VARIANT_PTR(value, 1);
+
+				int trait_type_idx = _code_ptr[ip + 3];
+				GD_ERR_BREAK(trait_type_idx < 0 || trait_type_idx >= _global_names_count);
+				const StringName trait_type = _global_names_ptr[trait_type_idx];
+
+				bool was_freed = false;
+				Object *object = value->get_validated_object_with_check(was_freed);
+				if (was_freed) {
+					err_text = "Left operand of 'is' is a previously freed instance.";
+					OPCODE_BREAK;
+				}
+
+				bool result = false;
+				if (object && object->get_script_instance()) {
+					Script *script_ptr = object->get_script_instance()->get_script().ptr();
+					result = _is_class_using_trait(script_ptr, trait_type);
+				}
+
+				*dst = result;
 				ip += 4;
 			}
 			DISPATCH_OPCODE;
@@ -1638,6 +1675,42 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 			}
 			DISPATCH_OPCODE;
 
+			OPCODE(OPCODE_ASSIGN_TYPED_TRAIT) {
+				CHECK_SPACE(4);
+				GET_VARIANT_PTR(dst, 0);
+				GET_VARIANT_PTR(src, 1);
+
+#ifdef DEBUG_ENABLED
+				int trait_type_idx = _code_ptr[ip + 3];
+				GD_ERR_BREAK(trait_type_idx < 0 || trait_type_idx >= _global_names_count);
+				const StringName trait_type = _global_names_ptr[trait_type_idx];
+
+				if (src->get_type() != Variant::OBJECT && src->get_type() != Variant::NIL) {
+					err_text = "Trying to assign a non-object value to a variable of trait '" + GDScript::get_trait_display_name(trait_type) + "'.";
+					OPCODE_BREAK;
+				}
+
+				if (src->get_type() == Variant::OBJECT) {
+					bool was_freed = false;
+					Object *val_obj = src->get_validated_object_with_check(was_freed);
+					if (!val_obj && was_freed) {
+						err_text = "Trying to assign invalid previously freed instance.";
+						OPCODE_BREAK;
+					}
+
+					if (val_obj && !(val_obj->get_script_instance() && _is_class_using_trait(val_obj->get_script_instance()->get_script().ptr(), trait_type))) {
+						err_text = "Trying to assign value of type '" + _get_var_type(src) + "' to a variable of trait '" + GDScript::get_trait_display_name(trait_type) + "', which its class does not use.";
+						OPCODE_BREAK;
+					}
+				}
+#endif // DEBUG_ENABLED
+
+				*dst = *src;
+
+				ip += 4;
+			}
+			DISPATCH_OPCODE;
+
 			OPCODE(OPCODE_CAST_TO_BUILTIN) {
 				CHECK_SPACE(4);
 				GET_VARIANT_PTR(src, 0);
@@ -1692,6 +1765,46 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 					*dst = Variant(); // invalid cast, assign NULL
 				} else {
 					*dst = *src;
+				}
+
+				ip += 4;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_CAST_TO_TRAIT) {
+				CHECK_SPACE(4);
+				GET_VARIANT_PTR(src, 0);
+				GET_VARIANT_PTR(dst, 1);
+
+				int trait_type_idx = _code_ptr[ip + 3];
+				GD_ERR_BREAK(trait_type_idx < 0 || trait_type_idx >= _global_names_count);
+				const StringName trait_type = _global_names_ptr[trait_type_idx];
+
+#ifdef DEBUG_ENABLED
+				if (src->operator Object *() && !src->get_validated_object()) {
+					err_text = "Trying to cast a freed object.";
+					OPCODE_BREAK;
+				}
+				if (src->get_type() != Variant::OBJECT && src->get_type() != Variant::NIL) {
+					err_text = "Trying to assign a non-object value to a variable of trait '" + String(trait_type).replace("::", ".") + "'.";
+					OPCODE_BREAK;
+				}
+#endif
+				bool valid = false;
+
+				if (src->get_type() != Variant::NIL && src->operator Object *() != nullptr) {
+					ScriptInstance *scr_inst = src->operator Object *()->get_script_instance();
+
+					if (scr_inst) {
+						Script *src_type = src->operator Object *()->get_script_instance()->get_script().ptr();
+						valid = _is_class_using_trait(src_type, trait_type);
+					}
+				}
+
+				if (valid) {
+					*dst = *src; // Valid cast, copy the source object
+				} else {
+					*dst = Variant(); // invalid cast, assign NULL
 				}
 
 				ip += 4;
@@ -3062,6 +3175,43 @@ Variant GDScriptFunction::call(GDScriptInstance *p_instance, const Variant **p_a
 						OPCODE_BREAK;
 					}
 				}
+				retvalue = *r;
+
+#ifdef DEBUG_ENABLED
+				exit_ok = true;
+#endif // DEBUG_ENABLED
+				OPCODE_BREAK;
+			}
+
+			OPCODE(OPCODE_RETURN_TYPED_TRAIT) {
+				CHECK_SPACE(3);
+				GET_VARIANT_PTR(r, 0);
+
+#ifdef DEBUG_ENABLED
+				int trait_type_idx = _code_ptr[ip + 2];
+				GD_ERR_BREAK(trait_type_idx < 0 || trait_type_idx >= _global_names_count);
+				const StringName trait_type = _global_names_ptr[trait_type_idx];
+
+				if (r->get_type() != Variant::OBJECT && r->get_type() != Variant::NIL) {
+					err_text = vformat(R"(Trying to return a value of type "%s" from a function whose return type is the trait "%s".)",
+							_get_var_type(r), GDScript::get_trait_display_name(trait_type));
+					OPCODE_BREAK;
+				}
+
+				bool freed = false;
+				Object *ret_obj = r->get_validated_object_with_check(freed);
+				if (freed) {
+					err_text = "Trying to return a previously freed instance.";
+					OPCODE_BREAK;
+				}
+
+				if (ret_obj && !(ret_obj->get_script_instance() && _is_class_using_trait(ret_obj->get_script_instance()->get_script().ptr(), trait_type))) {
+					err_text = vformat(R"(Trying to return a value of type "%s" from a function whose return type is the trait "%s", which its class does not use.)",
+							_get_var_type(r), GDScript::get_trait_display_name(trait_type));
+					OPCODE_BREAK;
+				}
+#endif // DEBUG_ENABLED
+
 				retvalue = *r;
 
 #ifdef DEBUG_ENABLED

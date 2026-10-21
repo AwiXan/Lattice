@@ -1,0 +1,6 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 19: Expression is of type "Hen" so it can't be of type "Shearable".
+>> ERROR at line 20: Invalid cast. Cannot convert from "FluffySheep" to "Shearable".
+>> ERROR at line 21: Expression is of type "FluffyRam" so it can't be of type "Milkable".
+>> ERROR at line 23: Expression is of type "int" so it can't be of type "Milkable".
+>> ERROR at line 25: Invalid cast. Cannot convert from "String" to "Milkable".

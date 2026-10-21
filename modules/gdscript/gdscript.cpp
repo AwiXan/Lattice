@@ -806,6 +806,7 @@ Error GDScript::reload(bool p_keep_state) {
 	if (p_keep_state && can_run && is_valid()) {
 		_save_old_static_data();
 	}
+	const bool was_valid = is_valid();
 #endif
 
 	valid = false;
@@ -933,12 +934,42 @@ Error GDScript::reload(bool p_keep_state) {
 			GDScriptLanguage::get_singleton()->_reload_inheriters(moved, get_root_script());
 		}
 	}
+
+	if (was_valid && is_root_script()) {
+		// The classes using a trait of this file compiled copies of its members.
+		GDScriptLanguage::get_singleton()->_reload_trait_users(this);
+	}
 #endif
 
 	return OK;
 }
 
+String GDScript::get_trait_display_name(const StringName &p_trait_fqtn) {
+	const String fqtn = p_trait_fqtn;
+	const int separator = fqtn.rfind("::");
+	return separator == -1 ? fqtn : fqtn.substr(separator + 2);
+}
+
 #ifdef TOOLS_ENABLED
+bool GDScript::_uses_trait_from(const String &p_path) const {
+	for (const StringName &trait_fqtn : traits_fqtn) {
+		// Global classes are named by their name, the others by their path.
+		String trait_file = String(trait_fqtn).get_slice("::", 0);
+		if (!trait_file.is_absolute_path() && ScriptServer::is_global_class(trait_file)) {
+			trait_file = ScriptServer::get_global_class_path(trait_file);
+		}
+		if (trait_file == p_path) {
+			return true;
+		}
+	}
+	for (const KeyValue<StringName, Ref<GDScript>> &E : subclasses) {
+		if (E.value->_uses_trait_from(p_path)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void GDScript::_get_member_places(HashMap<GDScript *, HashMap<StringName, int>> &r_places) {
 	HashMap<StringName, int> &places = r_places[this];
 	for (const KeyValue<StringName, MemberInfo> &E : member_indices) {
@@ -2679,6 +2710,30 @@ void GDScriptLanguage::_reload_inheriters(const HashSet<GDScript *> &p_bases, GD
 		scr->reload(true);
 	}
 }
+
+void GDScriptLanguage::_reload_trait_users(GDScript *p_reloaded) {
+	const String path = p_reloaded->get_path();
+	// Files using traits of each other would reload each other forever.
+	if (path.is_empty() || reloading_trait_users.has(path)) {
+		return;
+	}
+	List<Ref<GDScript>> users;
+	{
+		MutexLock lock(mutex);
+		for (SelfList<GDScript> *elem = script_list.first(); elem; elem = elem->next()) {
+			GDScript *scr = elem->self();
+			if (scr != p_reloaded && scr->is_root_script() && scr->_uses_trait_from(path)) {
+				users.push_back(Ref<GDScript>(scr));
+			}
+		}
+	}
+	reloading_trait_users.insert(path);
+	for (Ref<GDScript> &scr : users) {
+		print_verbose("GDScript: Reloading " + scr->get_path() + ", as it uses a trait from " + path + ".");
+		scr->reload(true);
+	}
+	reloading_trait_users.erase(path);
+}
 #endif
 
 void GDScriptLanguage::frame() {
@@ -2729,7 +2784,9 @@ Vector<String> GDScriptLanguage::get_reserved_words() const {
 		"namespace", // Reserved for potential future use.
 		"signal",
 		"static",
-		"trait", // Reserved for potential future use.
+		"trait",
+		"trait_name",
+		"uses",
 		"var",
 		// Other keywords.
 		"await",
@@ -2896,7 +2953,7 @@ String GDScriptLanguage::_get_global_class_name(const String &p_path, String *r_
 		*r_icon_path = c->simplified_icon_path;
 	}
 	if (r_is_abstract) {
-		*r_is_abstract = c->is_abstract;
+		*r_is_abstract = c->is_abstract || c->type == GDScriptParser::Node::TRAIT;
 	}
 	if (r_is_tool) {
 		*r_is_tool = parser.is_tool();

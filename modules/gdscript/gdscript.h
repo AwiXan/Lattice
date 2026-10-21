@@ -146,6 +146,8 @@ private:
 	void _save_old_static_data();
 	void _restore_old_static_data();
 
+	// Whether this class or one of its inner classes uses a trait declared in the given file.
+	bool _uses_trait_from(const String &p_path) const;
 	// Where the members of this class and of its inner classes are kept in an instance.
 	void _get_member_places(HashMap<GDScript *, HashMap<StringName, int>> &r_places);
 
@@ -187,6 +189,7 @@ private:
 	StringName global_name; // `class_name`.
 	String fully_qualified_name;
 	String simplified_icon_path;
+	Vector<StringName> traits_fqtn; // Fully-qualified trait names used by script.
 	SelfList<GDScript> script_list;
 
 	SelfList<GDScriptFunctionState>::List pending_func_states;
@@ -272,6 +275,9 @@ public:
 
 	bool is_tool() const override { return tool; }
 	bool is_abstract() const override { return _is_abstract; }
+	// Whether this class uses the trait, itself or through its base classes.
+	bool uses_trait(const StringName &p_trait_fqtn) const { return traits_fqtn.has(p_trait_fqtn); }
+	static String get_trait_display_name(const StringName &p_trait_fqtn);
 	Ref<GDScript> get_base() const;
 
 	const HashMap<StringName, MemberInfo> &debug_get_member_indices() const { return member_indices; }
@@ -635,6 +641,8 @@ public:
 	virtual void reload_tool_script(const Ref<Script> &p_script, bool p_soft_reload) override;
 #ifdef TOOLS_ENABLED
 	void _reload_inheriters(const HashSet<GDScript *> &p_bases, GDScript *p_reloaded);
+	HashSet<String> reloading_trait_users;
+	void _reload_trait_users(GDScript *p_reloaded);
 #endif
 
 	virtual void frame() override;

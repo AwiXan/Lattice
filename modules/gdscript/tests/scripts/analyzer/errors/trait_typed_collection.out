@@ -1,0 +1,3 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 4: A trait cannot be the element type of a typed collection.
+>> ERROR at line 5: A trait cannot be the element type of a typed collection.

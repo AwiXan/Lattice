@@ -1,0 +1,5 @@
+GDTEST_ANALYZER_ERROR
+>> ERROR at line 1: Constant "Library" cannot be used after "uses". Use the path of the script instead, as in: uses "res://traits.gd".TraitName
+>> ERROR at line 2: Cannot use variable "value" in uses chain.
+>> ERROR at line 3: Native class "Node" cannot be used as a trait.
+>> ERROR at line 4: Could not resolve trait's path "does_not_exist.gd".

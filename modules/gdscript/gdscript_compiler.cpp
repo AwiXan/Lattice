@@ -139,6 +139,18 @@ GDScriptDataType GDScriptCompiler::_gdtype_from_datatype(const GDScriptParser::D
 			result.script_type = result.script_type_ref.ptr();
 			result.native_type = p_datatype.native_type;
 		} break;
+		case GDScriptParser::DataType::TRAIT: {
+			if (p_handle_metatype && p_datatype.is_meta_type) {
+				result.kind = GDScriptDataType::NATIVE;
+				result.builtin_type = Variant::OBJECT;
+				result.native_type = GDScript::get_class_static();
+				break;
+			}
+
+			result.kind = GDScriptDataType::GDTRAIT;
+			result.builtin_type = Variant::OBJECT;
+			result.trait_type = p_datatype.class_type->fqcn;
+		} break;
 		case GDScriptParser::DataType::CLASS: {
 			if (p_handle_metatype && p_datatype.is_meta_type) {
 				result.kind = GDScriptDataType::NATIVE;
@@ -214,7 +226,8 @@ static bool _is_exact_type(const PropertyInfo &p_par_type, const GDScriptDataTyp
 		return false;
 	}
 	if (p_par_type.type == Variant::OBJECT) {
-		if (p_arg_type.kind == GDScriptDataType::BUILTIN) {
+		if (p_arg_type.kind == GDScriptDataType::BUILTIN || p_arg_type.kind == GDScriptDataType::GDTRAIT) {
+			// The class of an object typed with a trait is not known.
 			return false;
 		}
 		StringName class_name;
@@ -358,6 +371,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 					}
 				} break;
 				case GDScriptParser::IdentifierNode::MEMBER_CONSTANT:
+				case GDScriptParser::IdentifierNode::MEMBER_TRAIT:
 				case GDScriptParser::IdentifierNode::MEMBER_CLASS: {
 					// Try class constants.
 					GDScript *owner = codegen.script;
@@ -692,7 +706,7 @@ GDScriptCodeGenerator::Address GDScriptCompiler::_parse_expression(CodeGen &code
 								}
 								if (is_awaited) {
 									gen->write_call_async(result, base, call->function_name, arguments);
-								} else if (base.type.kind != GDScriptDataType::VARIANT && base.type.kind != GDScriptDataType::BUILTIN) {
+								} else if (base.type.kind != GDScriptDataType::VARIANT && base.type.kind != GDScriptDataType::BUILTIN && base.type.kind != GDScriptDataType::GDTRAIT) {
 									// Native method, use faster path.
 									StringName class_name;
 									if (base.type.kind == GDScriptDataType::NATIVE) {
@@ -2864,7 +2878,8 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 	p_script->clearing = false;
 
 	p_script->tool = parser->is_tool();
-	p_script->_is_abstract = p_class->is_abstract;
+	// Traits are never instantiated on their own.
+	p_script->_is_abstract = p_class->is_abstract || p_class->type == GDScriptParser::Node::TRAIT;
 
 	if (p_script->local_name != StringName()) {
 		if (GDScriptAnalyzer::class_exists(p_script->local_name)) {
@@ -3124,6 +3139,11 @@ Error GDScriptCompiler::_prepare_compilation(GDScript *p_script, const GDScriptP
 }
 
 Error GDScriptCompiler::_compile_class(GDScript *p_script, const GDScriptParser::ClassNode *p_class, bool p_keep_state) {
+	if (p_class->type == GDScriptParser::Node::TRAIT) {
+		// No need to compile traits.
+		return OK;
+	}
+
 	// Compile member functions, getters, and setters.
 	for (int i = 0; i < p_class->members.size(); i++) {
 		const GDScriptParser::ClassNode::Member &member = p_class->members[i];
@@ -3234,6 +3254,7 @@ void GDScriptCompiler::make_scripts(GDScript *p_script, const GDScriptParser::Cl
 	p_script->local_name = p_class->identifier ? p_class->identifier->name : StringName();
 	p_script->global_name = p_class->get_global_name();
 	p_script->simplified_icon_path = p_class->simplified_icon_path;
+	p_script->traits_fqtn = p_class->traits_fqtn;
 
 	HashMap<StringName, Ref<GDScript>> old_subclasses;
 
@@ -3410,6 +3431,12 @@ Error GDScriptCompiler::compile(const GDScriptParser *p_parser, GDScript *p_scri
 
 	// Create scripts for subclasses beforehand so they can be referenced
 	make_scripts(p_script, root, p_keep_state);
+
+	if (parser->is_file_trait()) {
+		// No need to compile traits: the classes using them compile their members.
+		main_script->valid = true;
+		return GDScriptCache::finish_compiling(main_script->path);
+	}
 
 	main_script->_owner = nullptr;
 	Error err = _prepare_compilation(main_script, parser->get_tree(), p_keep_state);

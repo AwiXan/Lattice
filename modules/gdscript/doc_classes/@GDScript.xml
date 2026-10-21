@@ -315,6 +315,21 @@
 					func draw():
 						print("Drawing a square.")
 				[/codeblock]
+				In a trait, an abstract method (marked with this annotation, or simply written without a body) is a method the classes using the trait must implement. A class marked as abstract may leave it to the classes inheriting from it. A trait itself cannot be marked as abstract, since it is never instantiated.
+				[codeblock]
+				trait Shape:
+					@abstract func area() -> float
+
+					func describe() -> String:
+						return "Area: %.2f" % area()
+
+				class Square:
+					uses Shape
+					var side := 1.0
+
+					func area() -> float:
+						return side * side
+				[/codeblock]
 			</description>
 		</annotation>
 		<annotation name="@export">
