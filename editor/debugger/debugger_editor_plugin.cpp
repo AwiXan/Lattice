@@ -42,6 +42,8 @@
 #include "editor/settings/editor_settings.h"
 #include "scene/gui/popup_menu.h"
 
+#include <iterator>
+
 DebuggerEditorPlugin::DebuggerEditorPlugin(PopupMenu *p_debug_menu) {
 	EditorDebuggerServer::initialize();
 

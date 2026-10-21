@@ -60,7 +60,7 @@ struct RenderingShaderStats {
 	static Counters counters[KIND_MAX];
 	// Time the renderer stood waiting for a compilation it needed there and
 	// then, in all: for the hitch log.
-	static inline SafeNumeric<uint64_t> wait_usec;
+	static inline SafeNumeric<uint64_t> wait_usec{ 0 };
 
 	static const char *get_kind_name(int p_kind) {
 		static const char *names[KIND_MAX] = { "spatial", "canvas_item", "particles", "sky", "fog", "engine" };
