@@ -433,6 +433,10 @@ layout(r32ui, set = 1, binding = 27) uniform restrict uimage3D geom_normal_bits;
 #define depth_buffer shadow_atlas
 #define color_buffer shadow_atlas
 #define normal_roughness_buffer shadow_atlas
+#define gbuffer_albedo_buffer shadow_atlas
+#define gbuffer_orm_buffer shadow_atlas
+#define gbuffer_emission_buffer shadow_atlas
+#define velocity_buffer shadow_atlas
 
 #define multiviewSampler sampler2D
 #else
@@ -446,6 +450,10 @@ layout(set = 1, binding = 27) uniform texture2DArray ao_buffer;
 layout(set = 1, binding = 28) uniform texture2DArray ambient_buffer;
 layout(set = 1, binding = 29) uniform texture2DArray reflection_buffer;
 layout(set = 1, binding = 30) uniform texture2DArray ambient_reflection_blend_buffer;
+layout(set = 1, binding = 41) uniform texture2DArray gbuffer_albedo_buffer;
+layout(set = 1, binding = 42) uniform texture2DArray gbuffer_orm_buffer;
+layout(set = 1, binding = 43) uniform texture2DArray gbuffer_emission_buffer;
+layout(set = 1, binding = 44) uniform texture2DArray velocity_buffer;
 
 #define multiviewSampler sampler2DArray
 #else // USE_MULTIVIEW
@@ -456,6 +464,10 @@ layout(set = 1, binding = 27) uniform texture2D ao_buffer;
 layout(set = 1, binding = 28) uniform texture2D ambient_buffer;
 layout(set = 1, binding = 29) uniform texture2D reflection_buffer;
 layout(set = 1, binding = 30) uniform texture2D ambient_reflection_blend_buffer;
+layout(set = 1, binding = 41) uniform texture2D gbuffer_albedo_buffer;
+layout(set = 1, binding = 42) uniform texture2D gbuffer_orm_buffer;
+layout(set = 1, binding = 43) uniform texture2D gbuffer_emission_buffer;
+layout(set = 1, binding = 44) uniform texture2D velocity_buffer;
 #define multiviewSampler sampler2D
 #endif
 

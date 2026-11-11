@@ -397,6 +397,10 @@ const ShaderLanguage::KeyWord ShaderLanguage::keyword_list[] = {
 	{ TK_HINT_SCREEN_TEXTURE, "hint_screen_texture", CF_UNSPECIFIED, {}, {} },
 	{ TK_HINT_NORMAL_ROUGHNESS_TEXTURE, "hint_normal_roughness_texture", CF_UNSPECIFIED, {}, {} },
 	{ TK_HINT_DEPTH_TEXTURE, "hint_depth_texture", CF_UNSPECIFIED, {}, {} },
+	{ TK_HINT_ALBEDO_TEXTURE, "hint_albedo_texture", CF_UNSPECIFIED, {}, {} },
+	{ TK_HINT_ORM_TEXTURE, "hint_orm_texture", CF_UNSPECIFIED, {}, {} },
+	{ TK_HINT_EMISSION_TEXTURE, "hint_emission_texture", CF_UNSPECIFIED, {}, {} },
+	{ TK_HINT_VELOCITY_TEXTURE, "hint_velocity_texture", CF_UNSPECIFIED, {}, {} },
 
 	{ TK_HINT_BLIT_SOURCE0, "hint_blit_source0", CF_UNSPECIFIED, {}, {} },
 	{ TK_HINT_BLIT_SOURCE1, "hint_blit_source1", CF_UNSPECIFIED, {}, {} },
@@ -1246,6 +1250,18 @@ String ShaderLanguage::get_uniform_hint_name(ShaderNode::Uniform::Hint p_hint) {
 		} break;
 		case ShaderNode::Uniform::HINT_DEPTH_TEXTURE: {
 			result = "hint_depth_texture";
+		} break;
+		case ShaderNode::Uniform::HINT_ALBEDO_TEXTURE: {
+			result = "hint_albedo_texture";
+		} break;
+		case ShaderNode::Uniform::HINT_ORM_TEXTURE: {
+			result = "hint_orm_texture";
+		} break;
+		case ShaderNode::Uniform::HINT_EMISSION_TEXTURE: {
+			result = "hint_emission_texture";
+		} break;
+		case ShaderNode::Uniform::HINT_VELOCITY_TEXTURE: {
+			result = "hint_velocity_texture";
 		} break;
 		case ShaderNode::Uniform::HINT_BLIT_SOURCE0: {
 			result = "hint_blit_source0";
@@ -5658,7 +5674,11 @@ bool ShaderLanguage::_validate_assign(Node *p_node, const FunctionInfo &p_functi
 ShaderLanguage::ShaderNode::Uniform::Hint ShaderLanguage::_sanitize_hint(ShaderNode::Uniform::Hint p_hint) {
 	if (p_hint == ShaderNode::Uniform::HINT_SCREEN_TEXTURE ||
 			p_hint == ShaderNode::Uniform::HINT_NORMAL_ROUGHNESS_TEXTURE ||
-			p_hint == ShaderNode::Uniform::HINT_DEPTH_TEXTURE) {
+			p_hint == ShaderNode::Uniform::HINT_DEPTH_TEXTURE ||
+			p_hint == ShaderNode::Uniform::HINT_ALBEDO_TEXTURE ||
+			p_hint == ShaderNode::Uniform::HINT_ORM_TEXTURE ||
+			p_hint == ShaderNode::Uniform::HINT_EMISSION_TEXTURE ||
+			p_hint == ShaderNode::Uniform::HINT_VELOCITY_TEXTURE) {
 		return p_hint;
 	}
 	return ShaderNode::Uniform::HINT_NONE;
@@ -6526,7 +6546,8 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 											if (RendererCompositor::get_singleton()->is_xr_enabled() && is_custom_func) {
 												ShaderNode::Uniform::Hint hint = u->hint;
 
-												if (hint == ShaderNode::Uniform::HINT_DEPTH_TEXTURE || hint == ShaderNode::Uniform::HINT_SCREEN_TEXTURE || hint == ShaderNode::Uniform::HINT_NORMAL_ROUGHNESS_TEXTURE) {
+												if (hint == ShaderNode::Uniform::HINT_DEPTH_TEXTURE || hint == ShaderNode::Uniform::HINT_SCREEN_TEXTURE || hint == ShaderNode::Uniform::HINT_NORMAL_ROUGHNESS_TEXTURE ||
+														hint == ShaderNode::Uniform::HINT_ALBEDO_TEXTURE || hint == ShaderNode::Uniform::HINT_ORM_TEXTURE || hint == ShaderNode::Uniform::HINT_EMISSION_TEXTURE || hint == ShaderNode::Uniform::HINT_VELOCITY_TEXTURE) {
 													_set_error(vformat(RTR("Unable to pass a multiview texture sampler as a parameter to a custom function. Consider sampling it in the main function and then passing the vector result to the custom function."), get_uniform_hint_name(hint)));
 													return nullptr;
 												}
@@ -10083,6 +10104,35 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 									--texture_binding;
 									if (shader_type_identifier != StringName() && String(shader_type_identifier) != "spatial") {
 										_set_error(vformat(RTR("'hint_depth_texture' is not supported in '%s' shaders."), shader_type_identifier));
+										return ERR_PARSE_ERROR;
+									}
+								} break;
+								case TK_HINT_ALBEDO_TEXTURE:
+								case TK_HINT_ORM_TEXTURE:
+								case TK_HINT_EMISSION_TEXTURE:
+								case TK_HINT_VELOCITY_TEXTURE: {
+									switch (tk.type) {
+										case TK_HINT_ALBEDO_TEXTURE:
+											new_hint = ShaderNode::Uniform::HINT_ALBEDO_TEXTURE;
+											break;
+										case TK_HINT_ORM_TEXTURE:
+											new_hint = ShaderNode::Uniform::HINT_ORM_TEXTURE;
+											break;
+										case TK_HINT_EMISSION_TEXTURE:
+											new_hint = ShaderNode::Uniform::HINT_EMISSION_TEXTURE;
+											break;
+										default:
+											new_hint = ShaderNode::Uniform::HINT_VELOCITY_TEXTURE;
+											break;
+									}
+									--texture_uniforms;
+									--texture_binding;
+									if (OS::get_singleton()->get_current_rendering_method() != "forward_plus") {
+										_set_error(RTR("G-Buffer hints are only available when using the Forward+ renderer."));
+										return ERR_PARSE_ERROR;
+									}
+									if (shader_type_identifier != StringName() && String(shader_type_identifier) != "spatial") {
+										_set_error(vformat(RTR("G-Buffer hints are not supported in '%s' shaders."), shader_type_identifier));
 										return ERR_PARSE_ERROR;
 									}
 								} break;

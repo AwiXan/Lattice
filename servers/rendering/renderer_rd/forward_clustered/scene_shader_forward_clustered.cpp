@@ -217,6 +217,10 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 		uses_depth_texture = true;
 	}
 	uses_normal_texture = gen_code.uses_normal_roughness_texture;
+	uses_albedo_texture = gen_code.uses_albedo_texture;
+	uses_orm_texture = gen_code.uses_orm_texture;
+	uses_emission_texture = gen_code.uses_emission_texture;
+	uses_velocity_texture = gen_code.uses_velocity_texture;
 	uses_vertex_time = gen_code.uses_vertex_time;
 	uses_fragment_time = gen_code.uses_fragment_time;
 	uses_normal |= uses_normal_map;
@@ -318,6 +322,10 @@ uint16_t SceneShaderForwardClustered::ShaderData::_get_shader_version(PipelineVe
 			return ShaderVersion::SHADER_VERSION_DEPTH_PASS_WITH_MATERIAL + ubershader_base;
 		case PIPELINE_VERSION_DEPTH_PASS_WITH_SDF:
 			return ShaderVersion::SHADER_VERSION_DEPTH_PASS_WITH_SDF + ubershader_base;
+		case PIPELINE_VERSION_DEPTH_PASS_WITH_GBUFFER:
+			return ShaderVersion::SHADER_VERSION_DEPTH_PASS_WITH_GBUFFER + ubershader_base;
+		case PIPELINE_VERSION_DEPTH_PASS_WITH_GBUFFER_MULTIVIEW:
+			return ShaderVersion::SHADER_VERSION_DEPTH_PASS_WITH_GBUFFER_MULTIVIEW + ubershader_base;
 		case PIPELINE_VERSION_COLOR_PASS: {
 			int shader_flags = 0;
 
@@ -507,6 +515,11 @@ void SceneShaderForwardClustered::ShaderData::_create_pipeline(PipelineKey p_pip
 			case PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI:
 			case PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI_MULTIVIEW:
 				blend_state = blend_state_depth_normal_roughness_giprobe;
+				break;
+			case PIPELINE_VERSION_DEPTH_PASS_WITH_GBUFFER:
+			case PIPELINE_VERSION_DEPTH_PASS_WITH_GBUFFER_MULTIVIEW:
+				// Depth, normal/roughness, albedo, ORM and emission attachments.
+				blend_state = RD::PipelineColorBlendState::create_disabled(4);
 				break;
 			case PIPELINE_VERSION_DEPTH_PASS_WITH_MATERIAL:
 				// Writes to normal and roughness in opaque way.
@@ -699,6 +712,8 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED_MULTIVIEW, base_define + "\n#define USE_MULTIVIEW\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n#define MODE_RENDER_VOXEL_GI\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI_MULTIVIEW
 			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_MATERIAL\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_MATERIAL
 			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_SDF\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_SDF
+			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED, base_define + "\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n#define MODE_RENDER_GBUFFER\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_GBUFFER
+			shader_versions.push_back(ShaderRD::VariantDefine(SHADER_GROUP_ADVANCED_MULTIVIEW, base_define + "\n#define USE_MULTIVIEW\n#define MODE_RENDER_DEPTH\n#define MODE_RENDER_NORMAL_ROUGHNESS\n#define MODE_RENDER_GBUFFER\n", false)); // SHADER_VERSION_DEPTH_PASS_WITH_GBUFFER_MULTIVIEW
 		}
 
 		Vector<String> color_pass_flags = {

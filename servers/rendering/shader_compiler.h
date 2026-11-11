@@ -90,6 +90,10 @@ public:
 		bool uses_screen_texture = false;
 		bool uses_depth_texture = false;
 		bool uses_normal_roughness_texture = false;
+		bool uses_albedo_texture = false;
+		bool uses_orm_texture = false;
+		bool uses_emission_texture = false;
+		bool uses_velocity_texture = false;
 	};
 
 	struct DefaultIdentifierActions {

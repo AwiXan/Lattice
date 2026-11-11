@@ -1078,6 +1078,12 @@ layout(location = 0) out vec4 normal_roughness_output_buffer;
 layout(location = 1) out uvec2 voxel_gi_buffer;
 #endif
 
+#ifdef MODE_RENDER_GBUFFER
+layout(location = 1) out vec4 gbuffer_albedo_output_buffer;
+layout(location = 2) out vec4 gbuffer_orm_output_buffer;
+layout(location = 3) out vec4 gbuffer_emission_output_buffer;
+#endif
+
 #endif //MODE_RENDER_NORMAL
 #else // RENDER DEPTH
 
@@ -3407,6 +3413,14 @@ void fragment_shader(in SceneData scene_data) {
 		normal_roughness_output_buffer.w = 1.0 - normal_roughness_output_buffer.w;
 	}
 	normal_roughness_output_buffer.w = normal_roughness_output_buffer.w;
+
+#ifdef MODE_RENDER_GBUFFER
+	// G-Buffer for post-processing shaders: raw material properties, no lighting.
+	// Specular rides in emission's alpha, the channel is free there.
+	gbuffer_albedo_output_buffer = vec4(albedo, alpha);
+	gbuffer_orm_output_buffer = vec4(direct_ao, roughness, metallic, sss_strength);
+	gbuffer_emission_output_buffer = vec4(emission, specular);
+#endif
 
 #ifdef MODE_RENDER_VOXEL_GI
 	if (bool(instances.data[instance_index].flags & INSTANCE_FLAGS_USE_VOXEL_GI)) { // process voxel_gi_instances

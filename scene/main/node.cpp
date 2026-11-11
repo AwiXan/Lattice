@@ -2892,7 +2892,10 @@ bool Node::is_part_of_edited_scene() const {
 	if (!Engine::get_singleton()->is_editor_hint() || !is_inside_tree()) {
 		return false;
 	}
-	if (data.tree->get_edited_scene_root() && data.tree->get_edited_scene_root()->get_parent()->is_ancestor_of(this)) {
+	// The root is out of the tree, with no parent, between the editor taking it
+	// out and putting another in its place.
+	const Node *edited_scene_parent = data.tree->get_edited_scene_root() ? data.tree->get_edited_scene_root()->get_parent() : nullptr;
+	if (edited_scene_parent && edited_scene_parent->is_ancestor_of(this)) {
 		return true;
 	}
 	// Any other open document counts as well. Only the current one did, which

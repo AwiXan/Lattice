@@ -62,7 +62,9 @@ public:
 		constexpr static uint16_t SHADER_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI_MULTIVIEW = 6;
 		constexpr static uint16_t SHADER_VERSION_DEPTH_PASS_WITH_MATERIAL = 7;
 		constexpr static uint16_t SHADER_VERSION_DEPTH_PASS_WITH_SDF = 8;
-		constexpr static uint16_t SHADER_VERSION_COLOR_PASS = 9;
+		constexpr static uint16_t SHADER_VERSION_DEPTH_PASS_WITH_GBUFFER = 9;
+		constexpr static uint16_t SHADER_VERSION_DEPTH_PASS_WITH_GBUFFER_MULTIVIEW = 10;
+		constexpr static uint16_t SHADER_VERSION_COLOR_PASS = 11;
 	};
 
 	enum ShaderColorPassFlags {
@@ -81,6 +83,8 @@ public:
 		PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI,
 		PIPELINE_VERSION_DEPTH_PASS_WITH_MATERIAL,
 		PIPELINE_VERSION_DEPTH_PASS_WITH_SDF,
+		PIPELINE_VERSION_DEPTH_PASS_WITH_GBUFFER,
+		PIPELINE_VERSION_DEPTH_PASS_WITH_GBUFFER_MULTIVIEW,
 		PIPELINE_VERSION_DEPTH_PASS_MULTIVIEW,
 		PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_MULTIVIEW,
 		PIPELINE_VERSION_DEPTH_PASS_WITH_NORMAL_AND_ROUGHNESS_AND_VOXEL_GI_MULTIVIEW,
@@ -274,6 +278,10 @@ public:
 		bool uses_screen_texture = false;
 		bool uses_depth_texture = false;
 		bool uses_normal_texture = false;
+		bool uses_albedo_texture = false;
+		bool uses_orm_texture = false;
+		bool uses_emission_texture = false;
+		bool uses_velocity_texture = false;
 		bool uses_time = false;
 		bool uses_vertex_time = false;
 		bool uses_fragment_time = false;
@@ -292,7 +300,7 @@ public:
 		uint32_t index = 0;
 
 		_FORCE_INLINE_ bool uses_alpha_pass() const {
-			bool has_read_screen_alpha = uses_screen_texture || uses_depth_texture || uses_normal_texture;
+			bool has_read_screen_alpha = uses_screen_texture || uses_depth_texture || uses_normal_texture || uses_albedo_texture || uses_orm_texture || uses_emission_texture || uses_velocity_texture;
 			bool has_base_alpha = (uses_alpha && (!uses_alpha_clip || uses_alpha_antialiasing)) || has_read_screen_alpha;
 			bool has_blend_alpha = uses_blend_alpha;
 			bool has_alpha = has_base_alpha || has_blend_alpha;

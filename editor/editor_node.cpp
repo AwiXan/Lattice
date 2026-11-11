@@ -4728,15 +4728,19 @@ void EditorNode::set_edited_scene_root(Node *p_scene, bool p_auto_add) {
 	if (p_auto_add && old_edited_scene_root && old_edited_scene_root->get_parent() == get_scene_root()) {
 		get_scene_root()->remove_child(old_edited_scene_root);
 	}
+	// The tree is told before the editor data, not after. Setting the root
+	// there puts it in its document's viewport at once, and everything that
+	// enters the tree with it asks the tree whether it is part of the edited
+	// scene - which would still be the root that has just been taken out.
+	if (get_tree()) {
+		get_tree()->set_edited_scene_root(p_scene);
+	}
 	get_editor_data().set_edited_scene_root(p_scene);
 
 	if (Object::cast_to<Popup>(p_scene)) {
 		Object::cast_to<Popup>(p_scene)->show();
 	}
 	SceneTreeDock::get_singleton()->set_edited_scene(p_scene);
-	if (get_tree()) {
-		get_tree()->set_edited_scene_root(p_scene);
-	}
 
 	if (p_auto_add && p_scene && p_scene->get_parent() != get_scene_root()) {
 		// Setting the root already put it in its document's viewport, so this

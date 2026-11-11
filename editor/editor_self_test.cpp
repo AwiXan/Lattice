@@ -123,6 +123,8 @@ bool EditorScreenshot::is_requested() {
 static void _os_left_click();
 static String _os_window_state(int64_t p_handle);
 
+static int _document_of(const String &p_path);
+
 void EditorScreenshot::_open_scene() {
 	const String scene = OS::get_singleton()->get_environment("LATTICE_SHOT_SCENE");
 	if (!scene.is_empty()) {
@@ -239,7 +241,53 @@ void EditorScreenshot::_notification(int p_what) {
 				Node3DEditor *view = Node3DEditor::get_singleton();
 				for (const String &action : actions) {
 					CanvasItemEditor *view_2d = CanvasItemEditor::get_singleton();
-					if (action == "script_beside_3d") {
+					if (action == "layout_full") {
+						// The editor as it is worked in: the scene tree over the files
+						// on the left, the inspector on the right, the view between.
+						EditorPaneTree *tree = EditorNode::get_editor_main_screen()->get_pane_tree();
+						EditorPane *main = tree->get_first_pane();
+						EditorPaneTree::Place place;
+						place.neighbor = main->get_instance_id();
+						place.before = true;
+						place.ratio = 0.16;
+						EditorPane *left = tree->make_pane_at(place);
+						left->add_panel("scene_tree");
+						place.neighbor = left->get_instance_id();
+						place.vertical = true;
+						place.before = false;
+						place.ratio = 0.55;
+						tree->make_pane_at(place)->add_panel("dock_FileSystem");
+						place.neighbor = main->get_instance_id();
+						place.vertical = false;
+						place.ratio = 0.8;
+						tree->make_pane_at(place)->add_panel("inspector");
+					} else if (action == "two_documents") {
+						// Two scenes side by side, each with its own tree and its own
+						// selection: the 3D one on the left, the 2D one on the right.
+						EditorNode::get_singleton()->load_scene("res://scene_2d.tscn");
+						const int a = _document_of(OS::get_singleton()->get_environment("LATTICE_SHOT_SCENE"));
+						const int b = _document_of("res://scene_2d.tscn");
+						EditorPaneTree *tree = EditorNode::get_editor_main_screen()->get_pane_tree();
+						EditorPane *main = tree->get_first_pane();
+						main->set_panel_type("view_3d", a);
+						EditorPaneTree::Place place;
+						place.neighbor = main->get_instance_id();
+						EditorPane *second = tree->make_pane_at(place);
+						second->add_panel("view_2d", b);
+						place.before = true;
+						place.ratio = 0.24;
+						tree->make_pane_at(place)->add_panel("scene_tree", a);
+						place.neighbor = second->get_instance_id();
+						place.before = false;
+						place.ratio = 0.76;
+						tree->make_pane_at(place)->add_panel("scene_tree", b);
+						EditorData &editor_data = EditorNode::get_editor_data();
+						Node *root_b = editor_data.get_edited_scene_root(editor_data.get_edited_scene_count() - 1);
+						Node *player = root_b ? root_b->find_child("Player", true, false) : nullptr;
+						if (player) {
+							EditorNode::get_singleton()->get_editor_selection()->add_node(player);
+						}
+					} else if (action == "script_beside_3d") {
 						EditorPaneTree *tree = EditorNode::get_editor_main_screen()->get_pane_tree();
 						EditorPane *first = tree->get_first_pane();
 						EditorPane *second = tree->split_pane(first, false, false, false);
@@ -350,6 +398,22 @@ void EditorScreenshot::_notification(int p_what) {
 							shot_workspaces.push_back(name);
 						}
 						EditorNode::get_singleton()->switch_workspace("Shot Level");
+					} else if (action == "later:workspaces_demo") {
+						// Named as they would be in use. A name the editor already has
+						// is someone's own, deleted after the picture if taken: skipped.
+						Ref<ConfigFile> layouts;
+						layouts.instantiate();
+						layouts->load(EditorSettings::get_singleton()->get_editor_layouts_config());
+						const char *workspaces[] = { "Level Design", "Scripting", "Lighting" };
+						for (const char *name : workspaces) {
+							if (!layouts->has_section(name)) {
+								EditorNode::get_singleton()->save_workspace(name);
+								shot_workspaces.push_back(name);
+							}
+						}
+						if (!shot_workspaces.is_empty()) {
+							EditorNode::get_singleton()->switch_workspace(shot_workspaces[0]);
+						}
 					} else if (action == "later:timeline") {
 						timeline_demo = 1;
 						timeline_demo_frame = Engine::get_singleton()->get_process_frames();

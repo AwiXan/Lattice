@@ -52,6 +52,12 @@
 #define RB_TEX_SPECULAR_MSAA SNAME("specular_msaa")
 #define RB_TEX_NORMAL_ROUGHNESS SNAME("normal_roughness")
 #define RB_TEX_NORMAL_ROUGHNESS_MSAA SNAME("normal_roughness_msaa")
+#define RB_TEX_GBUFFER_ALBEDO SNAME("gbuffer_albedo")
+#define RB_TEX_GBUFFER_ALBEDO_MSAA SNAME("gbuffer_albedo_msaa")
+#define RB_TEX_GBUFFER_ORM SNAME("gbuffer_orm")
+#define RB_TEX_GBUFFER_ORM_MSAA SNAME("gbuffer_orm_msaa")
+#define RB_TEX_GBUFFER_EMISSION SNAME("gbuffer_emission")
+#define RB_TEX_GBUFFER_EMISSION_MSAA SNAME("gbuffer_emission_msaa")
 #define RB_TEX_VOXEL_GI SNAME("voxel_gi")
 #define RB_TEX_VOXEL_GI_MSAA SNAME("voxel_gi_msaa")
 #define RB_TEX_OIT_ACCUMULATION SNAME("oit_accumulation")
@@ -123,7 +129,8 @@ public:
 		enum DepthFrameBufferType {
 			DEPTH_FB,
 			DEPTH_FB_ROUGHNESS,
-			DEPTH_FB_ROUGHNESS_VOXELGI
+			DEPTH_FB_ROUGHNESS_VOXELGI,
+			DEPTH_FB_ROUGHNESS_GBUFFER
 		};
 
 		RID render_hddagi_uniform_set;
@@ -147,6 +154,15 @@ public:
 		RID get_normal_roughness(uint32_t p_layer) { return render_buffers->get_texture_slice(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_NORMAL_ROUGHNESS, p_layer, 0); }
 		RID get_normal_roughness_msaa() const { return render_buffers->get_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_NORMAL_ROUGHNESS_MSAA); }
 		RID get_normal_roughness_msaa(uint32_t p_layer) { return render_buffers->get_texture_slice(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_NORMAL_ROUGHNESS_MSAA, p_layer, 0); }
+
+		void ensure_gbuffer();
+		bool has_gbuffer() const { return render_buffers->has_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_GBUFFER_ALBEDO); }
+		RID get_gbuffer_albedo() const { return render_buffers->get_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_GBUFFER_ALBEDO); }
+		RID get_gbuffer_albedo_msaa() const { return render_buffers->get_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_GBUFFER_ALBEDO_MSAA); }
+		RID get_gbuffer_orm() const { return render_buffers->get_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_GBUFFER_ORM); }
+		RID get_gbuffer_orm_msaa() const { return render_buffers->get_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_GBUFFER_ORM_MSAA); }
+		RID get_gbuffer_emission() const { return render_buffers->get_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_GBUFFER_EMISSION); }
+		RID get_gbuffer_emission_msaa() const { return render_buffers->get_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_GBUFFER_EMISSION_MSAA); }
 
 		void ensure_voxelgi();
 		bool has_voxelgi() const { return render_buffers->has_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_VOXEL_GI); }
@@ -188,7 +204,7 @@ private:
 
 	void _update_render_base_uniform_set();
 	RID _setup_hddagi_render_pass_uniform_set(RID p_albedo_texture, RID p_emission_texture, RID p_emission_aniso_texture, RID p_normal_bits_texture, const RendererRD::MaterialStorage::Samplers &p_samplers, uint32_t p_uniform_buffer_index);
-	RID _setup_render_pass_uniform_set(RenderListType p_render_list, const RenderDataRD *p_render_data, RID p_radiance_texture, const RendererRD::MaterialStorage::Samplers &p_samplers, uint32_t p_uniform_buffer_index, bool p_use_directional_shadow_atlas = false, int p_index = 0);
+	RID _setup_render_pass_uniform_set(RenderListType p_render_list, const RenderDataRD *p_render_data, RID p_radiance_texture, const RendererRD::MaterialStorage::Samplers &p_samplers, uint32_t p_uniform_buffer_index, bool p_use_directional_shadow_atlas = false, int p_index = 0, bool p_velocity_attachment = false);
 
 	struct BestFitNormal {
 		BestFitNormalShaderRD shader;
@@ -217,6 +233,7 @@ private:
 		PASS_MODE_DEPTH_NORMAL_ROUGHNESS,
 		PASS_MODE_DEPTH_NORMAL_ROUGHNESS_VOXEL_GI,
 		PASS_MODE_DEPTH_MATERIAL,
+		PASS_MODE_DEPTH_GBUFFER,
 		PASS_MODE_SDF,
 		PASS_MODE_MAX
 	};
@@ -445,6 +462,8 @@ private:
 		bool used_screen_texture = false;
 		bool used_normal_texture = false;
 		bool used_depth_texture = false;
+		bool used_gbuffer = false;
+		bool used_velocity_texture = false;
 		bool used_sss = false;
 		bool used_lightmap = false;
 		bool used_opaque_stencil = false;
@@ -539,6 +558,8 @@ private:
 			FLAG_USES_MOTION_VECTOR = 131072,
 			FLAG_USES_STENCIL = 262144,
 			FLAG_USES_OIT = 524288,
+			FLAG_USES_GBUFFER = 1048576,
+			FLAG_USES_VELOCITY_TEXTURE = 2097152,
 		};
 
 		union {
@@ -682,6 +703,7 @@ private:
 				uint32_t use_separate_specular : 1;
 				uint32_t use_motion_vectors : 1;
 				uint32_t use_normal_and_roughness : 1;
+				uint32_t use_gbuffer : 1;
 				uint32_t use_lightmaps : 1;
 				uint32_t use_voxelgi : 1;
 				uint32_t use_sdfgi : 1;
@@ -716,6 +738,8 @@ private:
 		bool screen_texture_used = false;
 		bool normal_texture_used = false;
 		bool depth_texture_used = false;
+		bool gbuffer_used = false;
+		bool velocity_texture_used = false;
 		bool sss_used = false;
 	} global_surface_data;
 
