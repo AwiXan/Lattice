@@ -36,6 +36,23 @@ TEST_FORCE_LINK(test_a_hash_map)
 
 namespace TestAHashMap {
 
+struct CollisionHasher {
+	static uint32_t hash(int p_key) {
+		return 0xA5000000 | (static_cast<uint32_t>(p_key) & 0x0F);
+	}
+};
+
+struct CountingComparator {
+	static uint32_t compare_count;
+
+	static bool compare(const int &p_lhs, const int &p_rhs) {
+		compare_count++;
+		return p_lhs == p_rhs;
+	}
+};
+
+uint32_t CountingComparator::compare_count = 0;
+
 TEST_CASE("[AHashMap] List initialization") {
 	AHashMap<int, String> map{ { 0, "A" }, { 1, "B" }, { 2, "C" }, { 3, "D" }, { 4, "E" } };
 
@@ -166,6 +183,32 @@ TEST_CASE("[AHashMap] Replace key") {
 	CHECK(map.replace_key(0, 1));
 	CHECK(map.has(1));
 	CHECK(map[1] == 12934);
+}
+
+TEST_CASE("[AHashMap] Replace key preserves an empty hash slot") {
+	AHashMap<int, int, CollisionHasher, CountingComparator> map;
+	for (int i = 0; i < 15; i++) {
+		map.insert(i, i);
+	}
+
+	CHECK(map.replace_key(5, 26));
+	CHECK(map.has(26));
+	CHECK(!map.has(5));
+
+	CountingComparator::compare_count = 0;
+	CHECK(!map.has(42));
+	CHECK(CountingComparator::compare_count < map.get_capacity() * 2);
+}
+
+TEST_CASE("[AHashMap] Lookup ignores fingerprints after an empty slot") {
+	AHashMap<int, int, CollisionHasher, CountingComparator> map;
+	map.insert(0, 0);
+	map.insert(1, 1);
+	map.insert(3, 3);
+
+	CountingComparator::compare_count = 0;
+	CHECK(!map.has(16));
+	CHECK(CountingComparator::compare_count == 2);
 }
 
 TEST_CASE("[AHashMap] Clear") {

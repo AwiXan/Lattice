@@ -128,7 +128,7 @@ TEST_CASE("[HashSet] Insert, iterate and remove many strings") {
 
 	for (int i = 0; i < elem_max; i++) {
 		if ((i % 5) == 0) {
-			set.erase(itos(i));
+			CHECK_MESSAGE(set.erase(itos(i)), "Failed to erase key " << i);
 		} else {
 			elems_still_valid.push_back(itos(i));
 		}
@@ -161,6 +161,15 @@ TEST_CASE("[HashSet] Erase via key") {
 	set.erase(42);
 	CHECK(!set.has(42));
 	CHECK(!set.find(42));
+}
+
+TEST_CASE("[HashSet] Erasing a key keeps the moved string searchable") {
+	HashSet<String> set;
+	set.insert("first");
+	set.insert("last");
+
+	CHECK(set.erase("first"));
+	CHECK(set.has("last"));
 }
 
 TEST_CASE("[HashSet] Insert and erase half elements") {

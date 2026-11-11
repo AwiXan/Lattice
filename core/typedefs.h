@@ -54,6 +54,10 @@ static_assert(__cplusplus >= 201703L, "Minimum of C++17 required.");
 #include <type_traits>
 #include <utility>
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 // IWYU pragma: end_exports
 
 #if defined(__has_feature)
@@ -214,6 +218,27 @@ struct _GlobalLock {
 #define likely(x) x
 #define unlikely(x) x
 #endif
+
+// Returns the number of trailing zero bits, or 32 when p_value is zero.
+_FORCE_INLINE_ int count_trailing_zeros(uint32_t p_value) {
+	if (p_value == 0) {
+		return 32;
+	}
+#if defined(_MSC_VER)
+	unsigned long index;
+	_BitScanForward(&index, p_value);
+	return static_cast<int>(index);
+#elif defined(__GNUC__) || defined(__clang__)
+	return __builtin_ctz(p_value);
+#else
+	int count = 0;
+	while ((p_value & 1u) == 0) {
+		p_value >>= 1;
+		count++;
+	}
+	return count;
+#endif
+}
 
 #if defined(__GNUC__)
 #define _PRINTF_FORMAT_ATTRIBUTE_2_0 __attribute__((format(printf, 2, 0)))

@@ -34,6 +34,8 @@
 #include "core/os/memory.h"
 #include "core/string/print_string.h"
 #include "core/templates/hashfuncs.h"
+#include "core/templates/hashes.h"
+#include "core/templates/index_array.h"
 #include "core/templates/pair.h"
 
 #include <initializer_list>
@@ -85,195 +87,129 @@ public:
 	// Must be a power of two.
 	static constexpr uint32_t INITIAL_CAPACITY = 16;
 	static constexpr uint32_t EMPTY_HASH = 0;
-	static_assert(EMPTY_HASH == 0, "EMPTY_HASH must always be 0 for the memcpy() optimization.");
 
 private:
-	struct Metadata {
-		uint32_t hash;
-		uint32_t element_idx;
-	};
-
-	static_assert(sizeof(Metadata) == 8);
-
 	typedef KeyValue<TKey, TValue> MapKeyValue;
 	MapKeyValue *_elements = nullptr;
-	Metadata *_metadata = nullptr;
+	Hashes _hashes;
+	IndexArray _hash_idx_to_element_idx;
 
-	// Due to optimization, this is `capacity - 1`. Use + 1 to get normal capacity.
 	uint32_t _capacity_mask = 0;
+	uint32_t _elements_capacity = 0;
 	uint32_t _size = 0;
+	uint32_t _num_deleted = 0;
 
 	uint32_t _hash(const TKey &p_key) const {
-		uint32_t hash = Hasher::hash(p_key);
-
-		if (unlikely(hash == EMPTY_HASH)) {
-			hash = EMPTY_HASH + 1;
-		}
-
-		return hash;
+		return Hasher::hash(p_key);
 	}
 
 	static _FORCE_INLINE_ uint32_t _get_resize_count(uint32_t p_capacity_mask) {
-		return p_capacity_mask ^ (p_capacity_mask + 1) >> 2; // = get_capacity() * 0.75 - 1; Works only if p_capacity_mask = 2^n - 1.
+		return p_capacity_mask - ((p_capacity_mask + 1) >> 4);
 	}
 
-	static _FORCE_INLINE_ uint32_t _get_probe_length(uint32_t p_meta_idx, uint32_t p_hash, uint32_t p_capacity) {
-		const uint32_t original_idx = p_hash & p_capacity;
-		return (p_meta_idx - original_idx + p_capacity + 1) & p_capacity;
+public:
+	_FORCE_INLINE_ bool _compare_function(uint32_t p_hash_idx, const TKey &p_key) const {
+		return Comparator::compare(_elements[_hash_idx_to_element_idx.get_index(p_hash_idx)].key, p_key);
 	}
+private:
 
-	bool _lookup_idx(const TKey &p_key, uint32_t &r_element_idx, uint32_t &r_meta_idx) const {
-		if (unlikely(_elements == nullptr)) {
-			return false; // Failed lookups, no _elements.
-		}
-		return _lookup_idx_with_hash(p_key, r_element_idx, r_meta_idx, _hash(p_key));
-	}
-
-	bool _lookup_idx_with_hash(const TKey &p_key, uint32_t &r_element_idx, uint32_t &r_meta_idx, uint32_t p_hash) const {
-		if (unlikely(_elements == nullptr)) {
-			return false; // Failed lookups, no _elements.
-		}
-
-		uint32_t meta_idx = p_hash & _capacity_mask;
-		Metadata metadata = _metadata[meta_idx];
-		if (metadata.hash == p_hash && Comparator::compare(_elements[metadata.element_idx].key, p_key)) {
-			r_element_idx = metadata.element_idx;
-			r_meta_idx = meta_idx;
-			return true;
-		}
-
-		if (metadata.hash == EMPTY_HASH) {
+	bool _lookup_idx_with_hash(const TKey &p_key, uint32_t &r_element_idx, uint32_t &r_hash_idx, uint32_t p_hash) const {
+		if (_hashes.ptr == nullptr) {
 			return false;
 		}
-
-		// A collision occurred.
-		meta_idx = (meta_idx + 1) & _capacity_mask;
-		uint32_t distance = 1;
-		while (true) {
-			metadata = _metadata[meta_idx];
-			if (metadata.hash == p_hash && Comparator::compare(_elements[metadata.element_idx].key, p_key)) {
-				r_element_idx = metadata.element_idx;
-				r_meta_idx = meta_idx;
-				return true;
-			}
-
-			if (metadata.hash == EMPTY_HASH) {
-				return false;
-			}
-
-			if (distance > _get_probe_length(meta_idx, metadata.hash, _capacity_mask)) {
-				return false;
-			}
-
-			meta_idx = (meta_idx + 1) & _capacity_mask;
-			distance++;
+		if (!_hashes.lookup_pos_with_hash<AHashMap, TKey>(this, p_key, p_hash, _capacity_mask, r_hash_idx)) {
+			return false;
 		}
+		r_element_idx = _hash_idx_to_element_idx.get_index(r_hash_idx);
+		return true;
+	}
+
+	bool _lookup_idx(const TKey &p_key, uint32_t &r_element_idx, uint32_t &r_hash_idx) const {
+		return _lookup_idx_with_hash(p_key, r_element_idx, r_hash_idx, _hash(p_key));
 	}
 
 	uint32_t _insert_metadata(uint32_t p_hash, uint32_t p_element_idx) {
-		uint32_t meta_idx = p_hash & _capacity_mask;
-
-		if (_metadata[meta_idx].hash == EMPTY_HASH) {
-			_metadata[meta_idx] = Metadata{ p_hash, p_element_idx };
-			return meta_idx;
+		bool reused_tombstone = false;
+		uint32_t hash_idx = _hashes.insert_hash(p_hash, _capacity_mask, reused_tombstone);
+		_hash_idx_to_element_idx.set_index(hash_idx, p_element_idx);
+		if (reused_tombstone) {
+			_num_deleted--;
 		}
-
-		uint32_t distance = 1;
-		meta_idx = (meta_idx + 1) & _capacity_mask;
-		Metadata metadata;
-		metadata.hash = p_hash;
-		metadata.element_idx = p_element_idx;
-
-		while (true) {
-			if (_metadata[meta_idx].hash == EMPTY_HASH) {
-#ifdef DEV_ENABLED
-				if (unlikely(distance > 12)) {
-					WARN_PRINT("Excessive collision count, is the right hash function being used?");
-				}
-#endif
-				_metadata[meta_idx] = metadata;
-				return meta_idx;
-			}
-
-			// Not an empty slot, let's check the probing length of the existing one.
-			uint32_t existing_probe_len = _get_probe_length(meta_idx, _metadata[meta_idx].hash, _capacity_mask);
-			if (existing_probe_len < distance) {
-				SWAP(metadata, _metadata[meta_idx]);
-				distance = existing_probe_len;
-			}
-
-			meta_idx = (meta_idx + 1) & _capacity_mask;
-			distance++;
-		}
+		return hash_idx;
 	}
 
 	void _resize_and_rehash(uint32_t p_new_capacity) {
-		uint32_t real_old_capacity = _capacity_mask + 1;
-		// Capacity can't be 0 and must be 2^n - 1.
-		_capacity_mask = MAX(4u, p_new_capacity);
-		uint32_t real_capacity = Math::next_power_of_2(_capacity_mask);
-		_capacity_mask = real_capacity - 1;
-
-		Metadata *old_map_data = _metadata;
-
-		_metadata = reinterpret_cast<Metadata *>(Memory::alloc_static_zeroed(sizeof(Metadata) * real_capacity));
-		_elements = reinterpret_cast<MapKeyValue *>(Memory::realloc_static(_elements, sizeof(MapKeyValue) * (_get_resize_count(_capacity_mask) + 1)));
-
-		if (_size != 0) {
-			for (uint32_t i = 0; i < real_old_capacity; i++) {
-				Metadata metadata = old_map_data[i];
-				if (metadata.hash != EMPTY_HASH) {
-					_insert_metadata(metadata.hash, metadata.element_idx);
-				}
-			}
+		uint32_t new_capacity = Math::next_power_of_2(MAX(INITIAL_CAPACITY, p_new_capacity));
+		uint32_t new_mask = new_capacity - 1;
+		while (_get_resize_count(new_mask) + 1 < _size) {
+			new_capacity *= 2;
+			new_mask = new_capacity - 1;
 		}
 
-		Memory::free_static(old_map_data);
+		uint8_t *old_hashes = _hashes.ptr;
+		_capacity_mask = new_mask;
+		_hashes.ptr = reinterpret_cast<uint8_t *>(Memory::alloc_static_zeroed(new_capacity + HashGroup::GROUP_SIZE));
+		memset(_hashes.ptr + new_capacity, Hashes::END_HASH, HashGroup::GROUP_SIZE);
+		_hash_idx_to_element_idx.initialize(new_capacity, _get_resize_count(_capacity_mask) + 1);
+		_num_deleted = 0;
+
+		if (old_hashes != nullptr) {
+			for (uint32_t i = 0; i < _size; i++) {
+				_insert_metadata(_hash(_elements[i].key), i);
+			}
+			Memory::free_static(old_hashes);
+		}
+	}
+
+	void _ensure_element_capacity(uint32_t p_capacity) {
+		if (_elements != nullptr && _elements_capacity >= p_capacity) {
+			return;
+		}
+		uint32_t new_capacity = MAX(2u, _elements_capacity);
+		while (new_capacity < p_capacity) {
+			new_capacity += MAX(1u, new_capacity / 2);
+		}
+		_elements = reinterpret_cast<MapKeyValue *>(Memory::realloc_static(_elements, sizeof(MapKeyValue) * new_capacity));
+		_elements_capacity = new_capacity;
 	}
 
 	int32_t _insert_element(const TKey &p_key, const TValue &p_value, uint32_t p_hash) {
-		if (unlikely(_elements == nullptr)) {
-			// Allocate on demand to save memory.
-
-			uint32_t real_capacity = _capacity_mask + 1;
-			_metadata = reinterpret_cast<Metadata *>(Memory::alloc_static_zeroed(sizeof(Metadata) * real_capacity));
-			_elements = reinterpret_cast<MapKeyValue *>(Memory::alloc_static(sizeof(MapKeyValue) * (_get_resize_count(_capacity_mask) + 1)));
+		if (_hashes.ptr == nullptr) {
+			_resize_and_rehash(_capacity_mask + 1);
 		}
-
-		if (unlikely(_size > _get_resize_count(_capacity_mask))) {
-			_resize_and_rehash(_capacity_mask * 2);
+		if (_size + _num_deleted > _get_resize_count(_capacity_mask)) {
+			if (_size > _get_resize_count(_capacity_mask)) {
+				_resize_and_rehash((_capacity_mask + 1) * 4);
+			} else {
+				_resize_and_rehash(_capacity_mask + 1);
+			}
 		}
-
+		_ensure_element_capacity(_size + 1);
 		memnew_placement(&_elements[_size], MapKeyValue(p_key, p_value));
-
 		_insert_metadata(p_hash, _size);
-		_size++;
-		return _size - 1;
+		return _size++;
 	}
 
 	void _init_from(const AHashMap &p_other) {
 		_capacity_mask = p_other._capacity_mask;
-		uint32_t real_capacity = _capacity_mask + 1;
 		_size = p_other._size;
-
-		if (p_other._size == 0) {
+		_num_deleted = p_other._num_deleted;
+		_elements_capacity = p_other._elements_capacity;
+		if (_size == 0) {
 			return;
 		}
-
-		_metadata = reinterpret_cast<Metadata *>(Memory::alloc_static(sizeof(Metadata) * real_capacity));
-		_elements = reinterpret_cast<MapKeyValue *>(Memory::alloc_static(sizeof(MapKeyValue) * (_get_resize_count(_capacity_mask) + 1)));
-
-		if constexpr (std::is_trivially_copyable_v<TKey> && std::is_trivially_copyable_v<TValue>) {
-			void *destination = _elements;
-			const void *source = p_other._elements;
-			memcpy(destination, source, sizeof(MapKeyValue) * _size);
+		_elements = reinterpret_cast<MapKeyValue *>(Memory::alloc_static(sizeof(MapKeyValue) * _elements_capacity));
+		if constexpr (std::is_trivially_copyable_v<MapKeyValue>) {
+			memcpy(_elements, p_other._elements, sizeof(MapKeyValue) * _size);
 		} else {
 			for (uint32_t i = 0; i < _size; i++) {
 				memnew_placement(&_elements[i], MapKeyValue(p_other._elements[i]));
 			}
 		}
-
-		memcpy(_metadata, p_other._metadata, sizeof(Metadata) * real_capacity);
+		uint32_t capacity = _capacity_mask + 1;
+		_hashes.ptr = reinterpret_cast<uint8_t *>(Memory::alloc_static(sizeof(uint8_t) * (capacity + HashGroup::GROUP_SIZE)));
+		memcpy(_hashes.ptr, p_other._hashes.ptr, capacity + HashGroup::GROUP_SIZE);
+		_hash_idx_to_element_idx = p_other._hash_idx_to_element_idx;
 	}
 
 public:
@@ -287,11 +223,12 @@ public:
 	}
 
 	void clear() {
-		if (_elements == nullptr || _size == 0) {
+		if (_hashes.ptr == nullptr) {
 			return;
 		}
 
-		memset(_metadata, EMPTY_HASH, (_capacity_mask + 1) * sizeof(Metadata));
+		memset(_hashes.ptr, Hashes::EMPTY_HASH, _capacity_mask + 1);
+		memset(_hashes.ptr + _capacity_mask + 1, Hashes::END_HASH, HashGroup::GROUP_SIZE);
 		if constexpr (!(std::is_trivially_destructible_v<TKey> && std::is_trivially_destructible_v<TValue>)) {
 			for (uint32_t i = 0; i < _size; i++) {
 				_elements[i].key.~TKey();
@@ -300,6 +237,7 @@ public:
 		}
 
 		_size = 0;
+		_num_deleted = 0;
 	}
 
 	TValue &get(const TKey &p_key) {
@@ -355,25 +293,22 @@ public:
 			return false;
 		}
 
-		uint32_t next_meta_idx = (meta_idx + 1) & _capacity_mask;
-		while (_metadata[next_meta_idx].hash != EMPTY_HASH && _get_probe_length(next_meta_idx, _metadata[next_meta_idx].hash, _capacity_mask) != 0) {
-			SWAP(_metadata[next_meta_idx], _metadata[meta_idx]);
-
-			meta_idx = next_meta_idx;
-			next_meta_idx = (next_meta_idx + 1) & _capacity_mask;
+		uint32_t moved_hash_idx = 0;
+		if (element_idx + 1 < _size) {
+			uint32_t moved_element_idx = 0;
+			CRASH_COND_MSG(!_lookup_idx(_elements[_size - 1].key, moved_element_idx, moved_hash_idx) || moved_element_idx != _size - 1, "AHashMap element index is inconsistent.");
 		}
 
-		_metadata[meta_idx].hash = EMPTY_HASH;
+		_hashes.delete_hash(meta_idx);
+		_num_deleted++;
 		_elements[element_idx].key.~TKey();
 		_elements[element_idx].value.~TValue();
 		_size--;
 
 		if (element_idx < _size) {
-			memcpy((void *)&_elements[element_idx], (const void *)&_elements[_size], sizeof(MapKeyValue));
-			uint32_t moved_element_idx = 0;
-			uint32_t moved_meta_idx = 0;
-			_lookup_idx(_elements[_size].key, moved_element_idx, moved_meta_idx);
-			_metadata[moved_meta_idx].element_idx = element_idx;
+			memnew_placement(&_elements[element_idx], MapKeyValue(std::move(_elements[_size])));
+			_hash_idx_to_element_idx.set_index(moved_hash_idx, element_idx);
+			_elements[_size].~MapKeyValue();
 		}
 
 		return true;
@@ -392,18 +327,14 @@ public:
 		MapKeyValue &element = _elements[element_idx];
 		const_cast<TKey &>(element.key) = p_new_key;
 
-		uint32_t next_meta_idx = (meta_idx + 1) & _capacity_mask;
-		while (_metadata[next_meta_idx].hash != EMPTY_HASH && _get_probe_length(next_meta_idx, _metadata[next_meta_idx].hash, _capacity_mask) != 0) {
-			SWAP(_metadata[next_meta_idx], _metadata[meta_idx]);
-
-			meta_idx = next_meta_idx;
-			next_meta_idx = (next_meta_idx + 1) & _capacity_mask;
-		}
-
-		_metadata[meta_idx].hash = EMPTY_HASH;
+		_hashes.delete_hash(meta_idx);
+		_num_deleted++;
 
 		uint32_t hash = _hash(p_new_key);
 		_insert_metadata(hash, element_idx);
+		if (_size + _num_deleted > _capacity_mask) {
+			_resize_and_rehash(_capacity_mask + 1);
+		}
 
 		return true;
 	}
@@ -411,18 +342,23 @@ public:
 	// Reserves space for a number of elements, useful to avoid many resizes and rehashes.
 	// If adding a known (possibly large) number of elements at once, must be larger than old capacity.
 	void reserve(uint32_t p_new_capacity) {
-		if (_elements == nullptr) {
-			_capacity_mask = MAX(4u, p_new_capacity);
-			_capacity_mask = Math::next_power_of_2(_capacity_mask) - 1;
-			return; // Unallocated yet.
-		}
-		if (p_new_capacity <= get_capacity()) {
-			if (p_new_capacity < size()) {
-				WARN_VERBOSE("reserve() called with a capacity smaller than the current size. This is likely a mistake.");
-			}
+		if (p_new_capacity < _size) {
+			WARN_VERBOSE("reserve() called with a capacity smaller than the current size. This is likely a mistake.");
 			return;
 		}
-		_resize_and_rehash(p_new_capacity);
+		_ensure_element_capacity(p_new_capacity);
+		uint32_t needed_capacity = MAX(INITIAL_CAPACITY, p_new_capacity);
+		uint32_t needed_mask = Math::next_power_of_2(needed_capacity) - 1;
+		while (_get_resize_count(needed_mask) + 1 < p_new_capacity) {
+			needed_mask = needed_mask * 2 + 1;
+		}
+		if (needed_mask > _capacity_mask) {
+			if (_hashes.ptr == nullptr) {
+				_capacity_mask = needed_mask;
+			} else {
+				_resize_and_rehash(needed_mask + 1);
+			}
+		}
 	}
 
 	/** Iterator API **/
@@ -531,10 +467,10 @@ public:
 	};
 
 	_FORCE_INLINE_ Iterator begin() {
-		return Iterator(_elements, _elements, _elements + _size);
+		return Iterator(_elements, _elements, _elements == nullptr ? nullptr : _elements + _size);
 	}
 	_FORCE_INLINE_ Iterator end() {
-		return Iterator(_elements + _size, _elements, _elements + _size);
+		return Iterator(_elements == nullptr ? nullptr : _elements + _size, _elements, _elements == nullptr ? nullptr : _elements + _size);
 	}
 	_FORCE_INLINE_ Iterator last() {
 		if (unlikely(_size == 0)) {
@@ -560,10 +496,10 @@ public:
 	}
 
 	_FORCE_INLINE_ ConstIterator begin() const {
-		return ConstIterator(_elements, _elements, _elements + _size);
+		return ConstIterator(_elements, _elements, _elements == nullptr ? nullptr : _elements + _size);
 	}
 	_FORCE_INLINE_ ConstIterator end() const {
-		return ConstIterator(_elements + _size, _elements, _elements + _size);
+		return ConstIterator(_elements == nullptr ? nullptr : _elements + _size, _elements, _elements == nullptr ? nullptr : _elements + _size);
 	}
 	_FORCE_INLINE_ ConstIterator last() const {
 		if (unlikely(_size == 0)) {
@@ -664,14 +600,19 @@ public:
 
 	AHashMap(AHashMap &&p_other) {
 		_elements = p_other._elements;
-		_metadata = p_other._metadata;
+		_hashes = p_other._hashes;
+		_hash_idx_to_element_idx = std::move(p_other._hash_idx_to_element_idx);
 		_capacity_mask = p_other._capacity_mask;
+		_elements_capacity = p_other._elements_capacity;
 		_size = p_other._size;
+		_num_deleted = p_other._num_deleted;
 
 		p_other._elements = nullptr;
-		p_other._metadata = nullptr;
-		p_other._capacity_mask = 0;
+		p_other._hashes.ptr = nullptr;
+		p_other._capacity_mask = INITIAL_CAPACITY - 1;
+		p_other._elements_capacity = 0;
 		p_other._size = 0;
+		p_other._num_deleted = 0;
 	}
 
 	explicit AHashMap(const AHashMap &p_other) {
@@ -689,9 +630,8 @@ public:
 	}
 
 	AHashMap(uint32_t p_initial_capacity) {
-		// Capacity can't be 0 and must be 2^n - 1.
-		_capacity_mask = MAX(4u, p_initial_capacity);
-		_capacity_mask = Math::next_power_of_2(_capacity_mask) - 1;
+		_capacity_mask = INITIAL_CAPACITY - 1;
+		reserve(p_initial_capacity);
 	}
 	AHashMap() :
 			_capacity_mask(INITIAL_CAPACITY - 1) {
@@ -713,11 +653,17 @@ public:
 				}
 			}
 			Memory::free_static(_elements);
-			Memory::free_static(_metadata);
 			_elements = nullptr;
 		}
+		if (_hashes.ptr != nullptr) {
+			Memory::free_static(_hashes.ptr);
+			_hashes.ptr = nullptr;
+		}
+		_hash_idx_to_element_idx.reset();
 		_capacity_mask = INITIAL_CAPACITY - 1;
+		_elements_capacity = 0;
 		_size = 0;
+		_num_deleted = 0;
 	}
 
 	~AHashMap() {
