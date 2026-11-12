@@ -139,6 +139,12 @@
 			This is useful to simulate [url=https://en.wikipedia.org/wiki/Aerial_perspective]aerial perspective[/url] in large scenes with low density fog. However, it is not very useful for high-density fog, as the sky will shine through. When set to [code]1.0[/code], the fog color comes completely from the [Sky]. If set to [code]0.0[/code], aerial perspective is disabled.
 			Notice that this does not sample the [Sky] directly, but rather the radiance cubemap. The cubemap is sampled at a mipmap level depending on the depth of the rendered pixel; the farther away, the higher the resolution of the sampled mipmap. This results in the actual color being a blurred version of the sky, with more blur closer to the camera. The highest mipmap resolution is used at a depth of [member Camera3D.far].
 		</member>
+		<member name="fog_blur_enabled" type="bool" setter="set_fog_blur_enabled" getter="is_fog_blur_enabled" default="false">
+			If [code]true[/code], applies depth-aware optical scattering blur to the 3D scene where standard fog or volumetric fog is present, including local [FogVolume] nodes. This does not affect 2D content.
+		</member>
+		<member name="fog_blur_intensity" type="float" setter="set_fog_blur_intensity" getter="get_fog_blur_intensity" default="0.5">
+			Controls the screen-space blur strength. The effect scales with fog opacity and uses screen color mipmaps, so denser and more distant fog produces more blur. Values above [code]1.0[/code] can increase blur in lighter fog; the result saturates at the coarsest available mipmap.
+		</member>
 		<member name="fog_density" type="float" setter="set_fog_density" getter="get_fog_density" default="0.01">
 			The fog density to be used. This is demonstrated in different ways depending on the [member fog_mode] mode chosen:
 			[b]Exponential Fog Mode:[/b] Higher values result in denser fog. The fog rendering is exponential like in real life.

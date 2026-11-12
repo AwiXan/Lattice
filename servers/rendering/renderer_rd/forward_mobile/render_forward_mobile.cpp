@@ -958,6 +958,15 @@ void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color
 		using_subpass_post_process = false;
 	}
 
+	bool fog_blur_active = p_render_data->environment.is_valid() &&
+			environment_get_fog_blur_enabled(p_render_data->environment) &&
+			environment_get_fog_blur_intensity(p_render_data->environment) > 0.0f &&
+			(environment_get_fog_enabled(p_render_data->environment) || environment_get_volumetric_fog_enabled(p_render_data->environment));
+	if (use_msaa && fog_blur_active && !p_render_data->reflection_probe.is_valid()) {
+		scene_state.used_depth_texture = true;
+		resolve_depth_buffer = true;
+	}
+
 	if (use_msaa && _compositor_effects_has_flag(p_render_data, RSE::COMPOSITOR_EFFECT_FLAG_ACCESS_RESOLVED_DEPTH, RSE::COMPOSITOR_EFFECT_CALLBACK_TYPE_ANY)) {
 		// We'll be able to do this when we finish PR #78598
 		WARN_PRINT_ONCE("Depth buffer resolve for rendering effect callback is not supported in the mobile renderer");
@@ -981,6 +990,9 @@ void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color
 
 	// fill our render lists early so we can find out if we use various features
 	_fill_render_list(RENDER_LIST_OPAQUE, p_render_data, PASS_MODE_COLOR);
+	if (fog_blur_active && !is_reflection_probe) {
+		scene_state.used_depth_texture = true;
+	}
 	if (scene_state.used_opaque_stencil) {
 		render_list[RENDER_LIST_OPAQUE].sort_by_key_and_stencil();
 	} else {
@@ -1018,7 +1030,7 @@ void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color
 		if (rb->get_scaling_3d_mode() != RSE::VIEWPORT_SCALING_3D_MODE_OFF) {
 			// can't do blit subpass because we're scaling
 			using_subpass_post_process = false;
-		} else if (p_render_data->environment.is_valid() && (environment_get_glow_enabled(p_render_data->environment) || RSG::camera_attributes->camera_attributes_uses_auto_exposure(p_render_data->camera_attributes) || RSG::camera_attributes->camera_attributes_uses_dof(p_render_data->camera_attributes) || environment_get_background(p_render_data->environment) == RSE::ENV_BG_CANVAS)) {
+		} else if (p_render_data->environment.is_valid() && (environment_get_glow_enabled(p_render_data->environment) || RSG::camera_attributes->camera_attributes_uses_auto_exposure(p_render_data->camera_attributes) || RSG::camera_attributes->camera_attributes_uses_dof(p_render_data->camera_attributes) || environment_get_background(p_render_data->environment) == RSE::ENV_BG_CANVAS || fog_blur_active)) {
 			// can't do blit subpass because we're using post processes
 			using_subpass_post_process = false;
 		}
@@ -1441,6 +1453,8 @@ void RenderForwardMobile::_render_scene(RenderDataRD *p_render_data, const Color
 		if (ce_has_post_transparent) {
 			_process_compositor_effects(RSE::COMPOSITOR_EFFECT_CALLBACK_TYPE_POST_TRANSPARENT, p_render_data);
 		}
+
+		_render_buffers_fog_blur(p_render_data);
 
 		// If we need extra effects we do this in its own pass
 		RENDER_TIMESTAMP("Tonemap");

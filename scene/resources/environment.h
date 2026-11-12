@@ -201,6 +201,8 @@ private:
 	float fog_height_density = 0.0; //can be negative to invert effect
 	float fog_aerial_perspective = 0.0;
 	float fog_sky_affect = 1.0;
+	bool fog_blur_enabled = false;
+	float fog_blur_intensity = 0.5;
 
 	void _update_fog();
 
@@ -422,6 +424,10 @@ public:
 	float get_fog_aerial_perspective() const;
 	void set_fog_sky_affect(float p_sky_affect);
 	float get_fog_sky_affect() const;
+	void set_fog_blur_enabled(bool p_enabled);
+	bool is_fog_blur_enabled() const;
+	void set_fog_blur_intensity(float p_intensity);
+	float get_fog_blur_intensity() const;
 
 	// Depth Fog
 	void set_fog_depth_curve(float p_curve);

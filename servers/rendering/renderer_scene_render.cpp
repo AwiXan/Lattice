@@ -393,12 +393,20 @@ RendererEnvironmentStorage::TonemapParameters RendererSceneRender::environment_g
 
 // Fog
 
-void RendererSceneRender::environment_set_fog(RID p_env, bool p_enable, const Color &p_light_color, float p_light_energy, float p_sun_scatter, float p_density, float p_height, float p_height_density, float p_aerial_perspective, float p_sky_affect, RSE::EnvironmentFogMode p_mode) {
-	environment_storage.environment_set_fog(p_env, p_enable, p_light_color, p_light_energy, p_sun_scatter, p_density, p_height, p_height_density, p_aerial_perspective, p_sky_affect, p_mode);
+void RendererSceneRender::environment_set_fog(RID p_env, bool p_enable, const Color &p_light_color, float p_light_energy, float p_sun_scatter, float p_density, float p_height, float p_height_density, float p_aerial_perspective, float p_sky_affect, RSE::EnvironmentFogMode p_mode, bool p_blur_enabled, float p_blur_intensity) {
+	environment_storage.environment_set_fog(p_env, p_enable, p_light_color, p_light_energy, p_sun_scatter, p_density, p_height, p_height_density, p_aerial_perspective, p_sky_affect, p_mode, p_blur_enabled, p_blur_intensity);
 }
 
 bool RendererSceneRender::environment_get_fog_enabled(RID p_env) const {
 	return environment_storage.environment_get_fog_enabled(p_env);
+}
+
+bool RendererSceneRender::environment_get_fog_blur_enabled(RID p_env) const {
+	return environment_storage.environment_get_fog_blur_enabled(p_env);
+}
+
+float RendererSceneRender::environment_get_fog_blur_intensity(RID p_env) const {
+	return environment_storage.environment_get_fog_blur_intensity(p_env);
 }
 
 RSE::EnvironmentFogMode RendererSceneRender::environment_get_fog_mode(RID p_env) const {

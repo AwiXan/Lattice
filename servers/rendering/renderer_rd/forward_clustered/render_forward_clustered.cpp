@@ -2135,6 +2135,12 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	_update_render_base_uniform_set();
 
 	_fill_render_list(RENDER_LIST_OPAQUE, p_render_data, PASS_MODE_COLOR, using_hddagi, using_hddagi || using_voxelgi, using_motion_pass);
+	if (!is_reflection_probe && p_render_data->environment.is_valid() &&
+			environment_get_fog_blur_enabled(p_render_data->environment) &&
+			environment_get_fog_blur_intensity(p_render_data->environment) > 0.0f &&
+			(environment_get_fog_enabled(p_render_data->environment) || environment_get_volumetric_fog_enabled(p_render_data->environment))) {
+		scene_state.used_depth_texture = true;
+	}
 	render_list[RENDER_LIST_OPAQUE].sort_by_key();
 	render_list[RENDER_LIST_MOTION].sort_by_key();
 	render_list[RENDER_LIST_ALPHA].sort_by_reverse_depth_and_priority();

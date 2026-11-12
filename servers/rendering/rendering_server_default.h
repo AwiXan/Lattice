@@ -885,7 +885,7 @@ public:
 
 	FUNC7(environment_set_adjustment, RID, bool, float, float, float, bool, RID)
 
-	FUNC11(environment_set_fog, RID, bool, const Color &, float, float, float, float, float, float, float, RSE::EnvironmentFogMode)
+	FUNC13(environment_set_fog, RID, bool, const Color &, float, float, float, float, float, float, float, RSE::EnvironmentFogMode, bool, float)
 
 	FUNC4(environment_set_fog_depth, RID, float, float, float)
 	FUNC14(environment_set_volumetric_fog, RID, bool, float, const Color &, const Color &, float, float, float, float, float, bool, float, float, float)

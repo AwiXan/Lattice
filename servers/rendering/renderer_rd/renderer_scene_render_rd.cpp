@@ -402,6 +402,61 @@ void RendererSceneRenderRD::_render_buffers_copy_screen_texture(const RenderData
 	RD::get_singleton()->draw_command_end_label();
 }
 
+void RendererSceneRenderRD::_render_buffers_fog_blur(const RenderDataRD *p_render_data) {
+	ERR_FAIL_NULL(p_render_data);
+
+	if (!p_render_data->environment.is_valid() || !environment_get_fog_blur_enabled(p_render_data->environment)) {
+		return;
+	}
+
+	if (p_render_data->reflection_probe.is_valid()) {
+		return;
+	}
+
+	float intensity = environment_get_fog_blur_intensity(p_render_data->environment);
+	bool standard_fog_enabled = environment_get_fog_enabled(p_render_data->environment);
+	bool volumetric_fog_enabled = environment_get_volumetric_fog_enabled(p_render_data->environment);
+	if (intensity <= 0.0f || (!standard_fog_enabled && !volumetric_fog_enabled)) {
+		return;
+	}
+
+	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
+	ERR_FAIL_COND(rb.is_null());
+
+	_render_buffers_ensure_screen_texture(p_render_data);
+	_render_buffers_copy_screen_texture(p_render_data);
+
+	Size2i internal_size = rb->get_internal_size();
+	bool screen_copy_uses_blur_texture = !rb->has_upscaled_texture() || internal_size == rb->get_target_size();
+	StringName source_texture = screen_copy_uses_blur_texture ? RB_TEX_BLUR_0 : RB_TEX_BACK_COLOR;
+	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
+	RID volumetric_fog_texture = texture_storage->texture_rd_get_default(RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_3D_WHITE);
+	float volumetric_fog_inv_length = 1.0f;
+	float volumetric_fog_detail_spread = 1.0f;
+	if (volumetric_fog_enabled && rb->has_custom_data(RB_SCOPE_FOG)) {
+		Ref<RendererRD::Fog::VolumetricFog> fog = rb->get_custom_data(RB_SCOPE_FOG);
+		volumetric_fog_texture = fog->fog_map;
+		if (fog->length > 0.0f) {
+			volumetric_fog_inv_length = 1.0f / fog->length;
+		}
+		if (fog->spread > 0.0f) {
+			volumetric_fog_detail_spread = 1.0f / fog->spread;
+		}
+	}
+
+	fog_blur->fog_blur_compute(
+			rb,
+			p_render_data->scene_data,
+			source_texture,
+			intensity,
+			environment_get_fog_mode(p_render_data->environment) == RSE::ENV_FOG_MODE_DEPTH,
+			volumetric_fog_enabled,
+			volumetric_fog_texture,
+			volumetric_fog_inv_length,
+			volumetric_fog_detail_spread,
+			copy_effects);
+}
+
 void RendererSceneRenderRD::_render_buffers_ensure_depth_texture(const RenderDataRD *p_render_data) {
 	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
 	ERR_FAIL_COND(rb.is_null());
@@ -467,6 +522,10 @@ void RendererSceneRenderRD::_render_buffers_motion_blur(const RenderDataRD *p_re
 	bool can_use_effects = target_size.x >= 8 && target_size.y >= 8; // FIXME I think this should check internal size, we do all our post processing at this size...
 	can_use_effects &= _debug_draw_can_use_effects(debug_draw);
 	bool can_use_storage = _render_buffers_can_be_storage();
+
+	if (can_use_effects) {
+		_render_buffers_fog_blur(p_render_data);
+	}
 
 	bool using_motion_blur = RSG::camera_attributes->camera_attributes_uses_motion_blur(p_render_data->camera_attributes);
 
@@ -1922,6 +1981,7 @@ void RendererSceneRenderRD::init() {
 	}
 
 	bokeh_dof = memnew(RendererRD::BokehDOF(!can_use_storage));
+	fog_blur = memnew(RendererRD::FogBlur);
 	motion_blur = memnew(RendererRD::MotionBlur());
 	copy_effects = memnew(RendererRD::CopyEffects(raster_effects));
 	debug_effects = memnew(RendererRD::DebugEffects);
@@ -1949,6 +2009,9 @@ RendererSceneRenderRD::~RendererSceneRenderRD() {
 	// vrs and fsr are made only where they can be used.
 	if (motion_blur) {
 		memdelete(motion_blur);
+	}
+	if (fog_blur) {
+		memdelete(fog_blur);
 	}
 	if (bokeh_dof) {
 		memdelete(bokeh_dof);
