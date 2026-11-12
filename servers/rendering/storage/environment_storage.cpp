@@ -345,7 +345,7 @@ RendererEnvironmentStorage::TonemapParameters RendererEnvironmentStorage::enviro
 
 // Fog
 
-void RendererEnvironmentStorage::environment_set_fog(RID p_env, bool p_enable, const Color &p_light_color, float p_light_energy, float p_sun_scatter, float p_density, float p_height, float p_height_density, float p_fog_aerial_perspective, float p_sky_affect, RSE::EnvironmentFogMode p_mode, bool p_blur_enabled, float p_blur_intensity, float p_blur_max_lod) {
+void RendererEnvironmentStorage::environment_set_fog(RID p_env, bool p_enable, const Color &p_light_color, float p_light_energy, float p_sun_scatter, float p_density, float p_height, float p_height_density, float p_fog_aerial_perspective, float p_sky_affect, RSE::EnvironmentFogMode p_mode, bool p_blur_enabled, float p_blur_intensity, float p_blur_max_lod, bool p_gaussian_filter_enabled) {
 	Environment *env = environment_owner.get_or_null(p_env);
 	ERR_FAIL_NULL(env);
 	env->fog_enabled = p_enable;
@@ -361,6 +361,7 @@ void RendererEnvironmentStorage::environment_set_fog(RID p_env, bool p_enable, c
 	env->fog_blur_enabled = p_blur_enabled;
 	env->fog_blur_intensity = p_blur_intensity;
 	env->fog_blur_max_lod = p_blur_max_lod;
+	env->fog_blur_gaussian_filter_enabled = p_gaussian_filter_enabled;
 }
 
 bool RendererEnvironmentStorage::environment_get_fog_enabled(RID p_env) const {
@@ -385,6 +386,12 @@ float RendererEnvironmentStorage::environment_get_fog_blur_max_lod(RID p_env) co
 	Environment *env = environment_owner.get_or_null(p_env);
 	ERR_FAIL_NULL_V(env, 4.0f);
 	return env->fog_blur_max_lod;
+}
+
+bool RendererEnvironmentStorage::environment_get_fog_blur_gaussian_filter_enabled(RID p_env) const {
+	Environment *env = environment_owner.get_or_null(p_env);
+	ERR_FAIL_NULL_V(env, true);
+	return env->fog_blur_gaussian_filter_enabled;
 }
 
 RSE::EnvironmentFogMode RendererEnvironmentStorage::environment_get_fog_mode(RID p_env) const {

@@ -1312,12 +1312,13 @@ public:
 	PASS3RC(float, environment_get_white, RID, bool, float)
 
 	// Fog
-	PASS14(environment_set_fog, RID, bool, const Color &, float, float, float, float, float, float, float, RSE::EnvironmentFogMode, bool, float, float)
+	PASS15(environment_set_fog, RID, bool, const Color &, float, float, float, float, float, float, float, RSE::EnvironmentFogMode, bool, float, float, bool)
 
 	PASS1RC(bool, environment_get_fog_enabled, RID)
 	PASS1RC(bool, environment_get_fog_blur_enabled, RID)
 	PASS1RC(float, environment_get_fog_blur_intensity, RID)
 	PASS1RC(float, environment_get_fog_blur_max_lod, RID)
+	PASS1RC(bool, environment_get_fog_blur_gaussian_filter_enabled, RID)
 	PASS1RC(Color, environment_get_fog_light_color, RID)
 	PASS1RC(float, environment_get_fog_light_energy, RID)
 	PASS1RC(float, environment_get_fog_sun_scatter, RID)

@@ -148,6 +148,9 @@
 		<member name="fog_blur_max_lod" type="float" setter="set_fog_blur_max_lod" getter="get_fog_blur_max_lod" default="4.0">
 			The maximum screen color mipmap level used by fog blur. Lower values preserve more detail and prevent distant objects from becoming a solid color. The value is limited by the coarsest mipmap available for the viewport.
 		</member>
+		<member name="fog_blur_gaussian_filter_enabled" type="bool" setter="set_fog_blur_gaussian_filter_enabled" getter="is_fog_blur_gaussian_filter_enabled" default="true">
+			If [code]true[/code], smooths the mipmap blur with a 13-tap Gaussian filter for a softer result at the cost of additional rendering work. Disable it to use the faster mipmap-only filter.
+		</member>
 		<member name="fog_density" type="float" setter="set_fog_density" getter="get_fog_density" default="0.01">
 			The fog density to be used. This is demonstrated in different ways depending on the [member fog_mode] mode chosen:
 			[b]Exponential Fog Mode:[/b] Higher values result in denser fog. The fog rendering is exponential like in real life.

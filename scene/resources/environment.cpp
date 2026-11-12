@@ -933,6 +933,15 @@ float Environment::get_fog_blur_max_lod() const {
 	return fog_blur_max_lod;
 }
 
+void Environment::set_fog_blur_gaussian_filter_enabled(bool p_enabled) {
+	fog_blur_gaussian_filter_enabled = p_enabled;
+	_update_fog();
+}
+
+bool Environment::is_fog_blur_gaussian_filter_enabled() const {
+	return fog_blur_gaussian_filter_enabled;
+}
+
 void Environment::_update_fog() {
 	RS::get_singleton()->environment_set_fog(
 			environment,
@@ -948,7 +957,8 @@ void Environment::_update_fog() {
 			RSE::EnvironmentFogMode(fog_mode),
 			fog_blur_enabled,
 			fog_blur_intensity,
-			fog_blur_max_lod);
+			fog_blur_max_lod,
+			fog_blur_gaussian_filter_enabled);
 }
 
 // Depth Fog
@@ -1619,6 +1629,8 @@ void Environment::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_fog_blur_intensity"), &Environment::get_fog_blur_intensity);
 	ClassDB::bind_method(D_METHOD("set_fog_blur_max_lod", "max_lod"), &Environment::set_fog_blur_max_lod);
 	ClassDB::bind_method(D_METHOD("get_fog_blur_max_lod"), &Environment::get_fog_blur_max_lod);
+	ClassDB::bind_method(D_METHOD("set_fog_blur_gaussian_filter_enabled", "enabled"), &Environment::set_fog_blur_gaussian_filter_enabled);
+	ClassDB::bind_method(D_METHOD("is_fog_blur_gaussian_filter_enabled"), &Environment::is_fog_blur_gaussian_filter_enabled);
 
 	ClassDB::bind_method(D_METHOD("set_fog_depth_curve", "curve"), &Environment::set_fog_depth_curve);
 	ClassDB::bind_method(D_METHOD("get_fog_depth_curve"), &Environment::get_fog_depth_curve);
@@ -1648,6 +1660,7 @@ void Environment::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "fog_blur_enabled", PROPERTY_HINT_GROUP_ENABLE), "set_fog_blur_enabled", "is_fog_blur_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "fog_blur_intensity", PROPERTY_HINT_RANGE, "0,1,0.01,or_greater"), "set_fog_blur_intensity", "get_fog_blur_intensity");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "fog_blur_max_lod", PROPERTY_HINT_RANGE, "0,10,0.1,or_greater"), "set_fog_blur_max_lod", "get_fog_blur_max_lod");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "fog_blur_gaussian_filter_enabled"), "set_fog_blur_gaussian_filter_enabled", "is_fog_blur_gaussian_filter_enabled");
 
 	ClassDB::bind_method(D_METHOD("set_volumetric_fog_enabled", "enabled"), &Environment::set_volumetric_fog_enabled);
 	ClassDB::bind_method(D_METHOD("is_volumetric_fog_enabled"), &Environment::is_volumetric_fog_enabled);

@@ -103,6 +103,7 @@ private:
 		bool fog_blur_enabled = false;
 		float fog_blur_intensity = 0.5;
 		float fog_blur_max_lod = 4.0;
+		bool fog_blur_gaussian_filter_enabled = true;
 
 		// Depth Fog
 		float fog_depth_curve = 1.0;
@@ -243,11 +244,12 @@ public:
 	TonemapParameters environment_get_tonemap_parameters(RID p_env, bool p_limit_agx_white, float p_output_max_value) const;
 
 	// Fog
-	void environment_set_fog(RID p_env, bool p_enable, const Color &p_light_color, float p_light_energy, float p_sun_scatter, float p_density, float p_height, float p_height_density, float p_aerial_perspective, float p_sky_affect, RSE::EnvironmentFogMode p_mode, bool p_blur_enabled, float p_blur_intensity, float p_blur_max_lod);
+	void environment_set_fog(RID p_env, bool p_enable, const Color &p_light_color, float p_light_energy, float p_sun_scatter, float p_density, float p_height, float p_height_density, float p_aerial_perspective, float p_sky_affect, RSE::EnvironmentFogMode p_mode, bool p_blur_enabled, float p_blur_intensity, float p_blur_max_lod, bool p_gaussian_filter_enabled);
 	bool environment_get_fog_enabled(RID p_env) const;
 	bool environment_get_fog_blur_enabled(RID p_env) const;
 	float environment_get_fog_blur_intensity(RID p_env) const;
 	float environment_get_fog_blur_max_lod(RID p_env) const;
+	bool environment_get_fog_blur_gaussian_filter_enabled(RID p_env) const;
 	RSE::EnvironmentFogMode environment_get_fog_mode(RID p_env) const;
 	Color environment_get_fog_light_color(RID p_env) const;
 	float environment_get_fog_light_energy(RID p_env) const;

@@ -21,6 +21,7 @@ layout(push_constant, std430) uniform Params {
 	int view_index;
 	float intensity;
 	float max_blur_lod;
+	int gaussian_filter_enabled;
 	int depth_fog;
 	int volumetric_enabled;
 	float volumetric_fog_inv_length;
@@ -80,6 +81,33 @@ float get_fog_amount(vec3 p_view_position, vec2 p_uv) {
 	return clamp(fog_amount, 0.0, 1.0);
 }
 
+vec3 sample_gaussian_blur(vec2 p_uv, float p_lod) {
+	float sample_lod = max(p_lod - 2.0, 0.0);
+	int sample_mip = int(floor(sample_lod));
+	vec2 texel_size = 1.0 / vec2(textureSize(screen_sampler, sample_mip));
+	float radius = exp2(p_lod - sample_lod) - 1.0;
+	vec2 offset = texel_size * radius;
+
+	vec3 a = textureLod(screen_sampler, p_uv + offset * vec2(-1.0, -1.0), sample_lod).rgb;
+	vec3 b = textureLod(screen_sampler, p_uv + offset * vec2(0.0, -1.0), sample_lod).rgb;
+	vec3 c = textureLod(screen_sampler, p_uv + offset * vec2(1.0, -1.0), sample_lod).rgb;
+	vec3 d = textureLod(screen_sampler, p_uv + offset * vec2(-0.5, -0.5), sample_lod).rgb;
+	vec3 e = textureLod(screen_sampler, p_uv + offset * vec2(0.5, -0.5), sample_lod).rgb;
+	vec3 f = textureLod(screen_sampler, p_uv + offset * vec2(-1.0, 0.0), sample_lod).rgb;
+	vec3 g = textureLod(screen_sampler, p_uv, sample_lod).rgb;
+	vec3 h = textureLod(screen_sampler, p_uv + offset * vec2(1.0, 0.0), sample_lod).rgb;
+	vec3 i = textureLod(screen_sampler, p_uv + offset * vec2(-0.5, 0.5), sample_lod).rgb;
+	vec3 j = textureLod(screen_sampler, p_uv + offset * vec2(0.5, 0.5), sample_lod).rgb;
+	vec3 k = textureLod(screen_sampler, p_uv + offset * vec2(-1.0, 1.0), sample_lod).rgb;
+	vec3 l = textureLod(screen_sampler, p_uv + offset * vec2(0.0, 1.0), sample_lod).rgb;
+	vec3 m = textureLod(screen_sampler, p_uv + offset * vec2(1.0, 1.0), sample_lod).rgb;
+
+	return (d + e + i + j) * 0.125 +
+			(a + c + k + m) * 0.03125 +
+			(b + f + h + l) * 0.0625 +
+			g * 0.125;
+}
+
 void main() {
 	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
 	ivec2 screen_size = imageSize(output_image);
@@ -95,6 +123,6 @@ void main() {
 	float optical_depth = -log(max(1.0 - fog_amount, 0.0001));
 	float lod = min(optical_depth * params.intensity * float(params.max_lod), min(params.max_blur_lod, float(params.max_lod)));
 
-	vec3 blurred = textureLod(screen_sampler, uv, lod).rgb;
+	vec3 blurred = params.gaussian_filter_enabled != 0 ? sample_gaussian_blur(uv, lod) : textureLod(screen_sampler, uv, lod).rgb;
 	imageStore(output_image, pixel, vec4(blurred, original.a));
 }

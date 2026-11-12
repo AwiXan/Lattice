@@ -415,6 +415,7 @@ void RendererSceneRenderRD::_render_buffers_fog_blur(const RenderDataRD *p_rende
 
 	float intensity = environment_get_fog_blur_intensity(p_render_data->environment);
 	float max_blur_lod = environment_get_fog_blur_max_lod(p_render_data->environment);
+	bool gaussian_filter_enabled = environment_get_fog_blur_gaussian_filter_enabled(p_render_data->environment);
 	bool standard_fog_enabled = environment_get_fog_enabled(p_render_data->environment);
 	bool volumetric_fog_enabled = environment_get_volumetric_fog_enabled(p_render_data->environment);
 	if (intensity <= 0.0f || max_blur_lod <= 0.0f || (!standard_fog_enabled && !volumetric_fog_enabled)) {
@@ -451,6 +452,7 @@ void RendererSceneRenderRD::_render_buffers_fog_blur(const RenderDataRD *p_rende
 			source_texture,
 			intensity,
 			max_blur_lod,
+			gaussian_filter_enabled,
 			environment_get_fog_mode(p_render_data->environment) == RSE::ENV_FOG_MODE_DEPTH,
 			volumetric_fog_enabled,
 			volumetric_fog_texture,

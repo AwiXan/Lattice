@@ -204,6 +204,7 @@ private:
 	bool fog_blur_enabled = false;
 	float fog_blur_intensity = 0.5;
 	float fog_blur_max_lod = 4.0;
+	bool fog_blur_gaussian_filter_enabled = true;
 
 	void _update_fog();
 
@@ -431,6 +432,8 @@ public:
 	float get_fog_blur_intensity() const;
 	void set_fog_blur_max_lod(float p_max_lod);
 	float get_fog_blur_max_lod() const;
+	void set_fog_blur_gaussian_filter_enabled(bool p_enabled);
+	bool is_fog_blur_gaussian_filter_enabled() const;
 
 	// Depth Fog
 	void set_fog_depth_curve(float p_curve);

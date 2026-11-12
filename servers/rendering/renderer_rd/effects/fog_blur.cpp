@@ -63,7 +63,7 @@ RendererRD::FogBlur::~FogBlur() {
 	RD::get_singleton()->free_rid(fog_blur.nearest_sampler);
 }
 
-void RendererRD::FogBlur::fog_blur_compute(Ref<RenderSceneBuffersRD> p_render_buffers, RenderSceneDataRD *p_scene_data, StringName p_source_texture, float p_intensity, float p_max_blur_lod, bool p_depth_fog, bool p_volumetric_fog_enabled, RID p_volumetric_fog_texture, float p_volumetric_fog_inv_length, float p_volumetric_fog_detail_spread, CopyEffects *p_copy_effects) {
+void RendererRD::FogBlur::fog_blur_compute(Ref<RenderSceneBuffersRD> p_render_buffers, RenderSceneDataRD *p_scene_data, StringName p_source_texture, float p_intensity, float p_max_blur_lod, bool p_gaussian_filter_enabled, bool p_depth_fog, bool p_volumetric_fog_enabled, RID p_volumetric_fog_texture, float p_volumetric_fog_inv_length, float p_volumetric_fog_detail_spread, CopyEffects *p_copy_effects) {
 	ERR_FAIL_COND(p_render_buffers.is_null());
 	ERR_FAIL_NULL(p_scene_data);
 	ERR_FAIL_NULL(p_copy_effects);
@@ -111,6 +111,7 @@ void RendererRD::FogBlur::fog_blur_compute(Ref<RenderSceneBuffersRD> p_render_bu
 		push_constant.view_index = view;
 		push_constant.intensity = p_intensity;
 		push_constant.max_blur_lod = p_max_blur_lod;
+		push_constant.gaussian_filter_enabled = p_gaussian_filter_enabled ? 1 : 0;
 		push_constant.depth_fog = p_depth_fog ? 1 : 0;
 		push_constant.volumetric_enabled = p_volumetric_fog_enabled ? 1 : 0;
 		push_constant.volumetric_fog_inv_length = p_volumetric_fog_inv_length;
