@@ -143,7 +143,10 @@
 			If [code]true[/code], applies depth-aware optical scattering blur to the 3D scene where standard fog or volumetric fog is present, including local [FogVolume] nodes. This does not affect 2D content.
 		</member>
 		<member name="fog_blur_intensity" type="float" setter="set_fog_blur_intensity" getter="get_fog_blur_intensity" default="0.5">
-			Controls the screen-space blur strength. The effect scales with fog opacity and uses screen color mipmaps, so denser and more distant fog produces more blur. Values above [code]1.0[/code] can increase blur in lighter fog; the result saturates at the coarsest available mipmap.
+			Controls the screen-space blur strength. Fog optical depth selects a screen color mipmap level directly, so denser and more distant fog produces more blur without blending the blurred color with the original. Values above [code]1.0[/code] can increase blur in lighter fog; the result saturates at the coarsest available mipmap.
+		</member>
+		<member name="fog_blur_max_lod" type="float" setter="set_fog_blur_max_lod" getter="get_fog_blur_max_lod" default="4.0">
+			The maximum screen color mipmap level used by fog blur. Lower values preserve more detail and prevent distant objects from becoming a solid color. The value is limited by the coarsest mipmap available for the viewport.
 		</member>
 		<member name="fog_density" type="float" setter="set_fog_density" getter="get_fog_density" default="0.01">
 			The fog density to be used. This is demonstrated in different ways depending on the [member fog_mode] mode chosen:

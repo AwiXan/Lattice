@@ -46,6 +46,7 @@ class FogBlur {
 		int32_t max_lod;
 		int32_t view_index;
 		float intensity;
+		float max_blur_lod;
 		int32_t depth_fog;
 		int32_t volumetric_enabled;
 		float volumetric_fog_inv_length;
@@ -64,7 +65,7 @@ public:
 	FogBlur();
 	~FogBlur();
 
-	void fog_blur_compute(Ref<RenderSceneBuffersRD> p_render_buffers, RenderSceneDataRD *p_scene_data, StringName p_source_texture, float p_intensity, bool p_depth_fog, bool p_volumetric_fog_enabled, RID p_volumetric_fog_texture, float p_volumetric_fog_inv_length, float p_volumetric_fog_detail_spread, CopyEffects *p_copy_effects);
+	void fog_blur_compute(Ref<RenderSceneBuffersRD> p_render_buffers, RenderSceneDataRD *p_scene_data, StringName p_source_texture, float p_intensity, float p_max_blur_lod, bool p_depth_fog, bool p_volumetric_fog_enabled, RID p_volumetric_fog_texture, float p_volumetric_fog_inv_length, float p_volumetric_fog_detail_spread, CopyEffects *p_copy_effects);
 };
 
 } //namespace RendererRD

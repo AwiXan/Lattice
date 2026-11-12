@@ -924,6 +924,15 @@ float Environment::get_fog_blur_intensity() const {
 	return fog_blur_intensity;
 }
 
+void Environment::set_fog_blur_max_lod(float p_max_lod) {
+	fog_blur_max_lod = MAX(p_max_lod, 0.0f);
+	_update_fog();
+}
+
+float Environment::get_fog_blur_max_lod() const {
+	return fog_blur_max_lod;
+}
+
 void Environment::_update_fog() {
 	RS::get_singleton()->environment_set_fog(
 			environment,
@@ -938,7 +947,8 @@ void Environment::_update_fog() {
 			fog_sky_affect,
 			RSE::EnvironmentFogMode(fog_mode),
 			fog_blur_enabled,
-			fog_blur_intensity);
+			fog_blur_intensity,
+			fog_blur_max_lod);
 }
 
 // Depth Fog
@@ -1607,6 +1617,8 @@ void Environment::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_fog_blur_enabled"), &Environment::is_fog_blur_enabled);
 	ClassDB::bind_method(D_METHOD("set_fog_blur_intensity", "intensity"), &Environment::set_fog_blur_intensity);
 	ClassDB::bind_method(D_METHOD("get_fog_blur_intensity"), &Environment::get_fog_blur_intensity);
+	ClassDB::bind_method(D_METHOD("set_fog_blur_max_lod", "max_lod"), &Environment::set_fog_blur_max_lod);
+	ClassDB::bind_method(D_METHOD("get_fog_blur_max_lod"), &Environment::get_fog_blur_max_lod);
 
 	ClassDB::bind_method(D_METHOD("set_fog_depth_curve", "curve"), &Environment::set_fog_depth_curve);
 	ClassDB::bind_method(D_METHOD("get_fog_depth_curve"), &Environment::get_fog_depth_curve);
@@ -1635,6 +1647,7 @@ void Environment::_bind_methods() {
 	ADD_GROUP("Fog Blur", "fog_blur_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "fog_blur_enabled", PROPERTY_HINT_GROUP_ENABLE), "set_fog_blur_enabled", "is_fog_blur_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "fog_blur_intensity", PROPERTY_HINT_RANGE, "0,1,0.01,or_greater"), "set_fog_blur_intensity", "get_fog_blur_intensity");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "fog_blur_max_lod", PROPERTY_HINT_RANGE, "0,10,0.1,or_greater"), "set_fog_blur_max_lod", "get_fog_blur_max_lod");
 
 	ClassDB::bind_method(D_METHOD("set_volumetric_fog_enabled", "enabled"), &Environment::set_volumetric_fog_enabled);
 	ClassDB::bind_method(D_METHOD("is_volumetric_fog_enabled"), &Environment::is_volumetric_fog_enabled);

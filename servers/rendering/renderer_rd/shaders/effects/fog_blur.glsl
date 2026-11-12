@@ -20,6 +20,7 @@ layout(push_constant, std430) uniform Params {
 	int max_lod;
 	int view_index;
 	float intensity;
+	float max_blur_lod;
 	int depth_fog;
 	int volumetric_enabled;
 	float volumetric_fog_inv_length;
@@ -91,10 +92,9 @@ void main() {
 	float raw_depth = texelFetch(depth_sampler, pixel, 0).r;
 	vec3 view_position = reconstruct_view_position(pixel, screen_size, raw_depth);
 	float fog_amount = get_fog_amount(view_position, uv);
-	float scatter = clamp(fog_amount * params.intensity, 0.0, 1.0);
-	float lod = scatter * float(params.max_lod);
+	float optical_depth = -log(max(1.0 - fog_amount, 0.0001));
+	float lod = min(optical_depth * params.intensity * float(params.max_lod), min(params.max_blur_lod, float(params.max_lod)));
 
 	vec3 blurred = textureLod(screen_sampler, uv, lod).rgb;
-	vec3 color = mix(original.rgb, blurred, scatter);
-	imageStore(output_image, pixel, vec4(color, original.a));
+	imageStore(output_image, pixel, vec4(blurred, original.a));
 }

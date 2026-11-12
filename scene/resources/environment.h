@@ -203,6 +203,7 @@ private:
 	float fog_sky_affect = 1.0;
 	bool fog_blur_enabled = false;
 	float fog_blur_intensity = 0.5;
+	float fog_blur_max_lod = 4.0;
 
 	void _update_fog();
 
@@ -428,6 +429,8 @@ public:
 	bool is_fog_blur_enabled() const;
 	void set_fog_blur_intensity(float p_intensity);
 	float get_fog_blur_intensity() const;
+	void set_fog_blur_max_lod(float p_max_lod);
+	float get_fog_blur_max_lod() const;
 
 	// Depth Fog
 	void set_fog_depth_curve(float p_curve);
