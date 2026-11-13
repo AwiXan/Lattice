@@ -34,6 +34,7 @@
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "core/os/os.h"
+#include "scene/resources/style_box_flat.h"
 #include "scene/theme/theme_db.h"
 #include "servers/display/accessibility_server.h"
 #include "servers/rendering/rendering_server.h"
@@ -311,6 +312,27 @@ void ItemList::set_item_custom_bg_color(int p_idx, const Color &p_custom_bg_colo
 
 	items.write[p_idx].custom_bg = p_custom_bg_color;
 	queue_redraw();
+}
+
+void ItemList::set_item_custom_bg_corner_radius(int p_idx, float p_radius) {
+	if (p_idx < 0) {
+		p_idx += get_item_count();
+	}
+	ERR_FAIL_INDEX(p_idx, items.size());
+
+	p_radius = MAX(0.0f, p_radius);
+	if (items[p_idx].custom_bg_corner_radius == p_radius) {
+		return;
+	}
+
+	items.write[p_idx].custom_bg_corner_radius = p_radius;
+	queue_redraw();
+}
+
+float ItemList::get_item_custom_bg_corner_radius(int p_idx) const {
+	ERR_FAIL_INDEX_V(p_idx, items.size(), 0.0f);
+
+	return items[p_idx].custom_bg_corner_radius;
 }
 
 Color ItemList::get_item_custom_bg_color(int p_idx) const {
@@ -1541,6 +1563,7 @@ void ItemList::_notification(int p_what) {
 			}
 
 			Rect2 cursor_rcache; // Place to save the position of the cursor and draw it after everything else.
+			Ref<StyleBoxFlat> rounded_bg_stylebox;
 
 			// Draw visible items.
 			for (int i = first_item_visible; i < items.size(); i++) {
@@ -1585,7 +1608,16 @@ void ItemList::_notification(int p_what) {
 						draw_style_box(theme_cache.hovered_style, r);
 					}
 					if (should_draw_custom_bg) {
-						draw_rect(r, items[i].custom_bg);
+						if (items[i].custom_bg_corner_radius > 0.0f) {
+							if (rounded_bg_stylebox.is_null()) {
+								rounded_bg_stylebox.instantiate();
+							}
+							rounded_bg_stylebox->set_bg_color(items[i].custom_bg);
+							rounded_bg_stylebox->set_corner_radius_all(Math::round(items[i].custom_bg_corner_radius));
+							draw_style_box(rounded_bg_stylebox, r);
+						} else {
+							draw_rect(r, items[i].custom_bg);
+						}
 					}
 				}
 

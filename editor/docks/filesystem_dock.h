@@ -165,6 +165,7 @@ private:
 
 	Button *button_toggle_display_mode = nullptr;
 	Button *button_file_list_display_mode = nullptr;
+	Button *button_scene_preview_mode = nullptr;
 	Button *button_hist_next = nullptr;
 	Button *button_hist_prev = nullptr;
 	LineEdit *current_path_line_edit = nullptr;
@@ -220,9 +221,16 @@ private:
 	bool confirm_to_copy = false;
 
 	bool always_show_folders = false;
+	bool scene_camera_previews = false;
 	int thumbnail_size_setting = 0;
 
 	bool editor_is_dark_icon_and_font = false;
+
+	struct SceneIconInfo {
+		Ref<Texture2D> icon;
+		Color background;
+	};
+	HashMap<String, SceneIconInfo> scene_icon_cache;
 
 	class FileOrFolder {
 	public:
@@ -276,6 +284,7 @@ private:
 	void _reselect_items_selected_on_drag_begin(bool reset = false);
 
 	Ref<Texture2D> _get_tree_item_icon(bool p_is_valid, const String &p_file_type, const String &p_icon_path);
+
 	void _create_tree(TreeItem *p_parent, EditorFileSystemDirectory *p_dir, const Vector<String> &p_uncollapsed_paths, const Vector<String> &p_selected_paths);
 	void _update_tree(const Vector<String> &p_uncollapsed_paths = Vector<String>(), bool p_uncollapse_root = false, bool p_scroll_to_selected = true, const Vector<String> &p_override_selection = Vector<String>());
 	void _navigate_to_path(const String &p_path, bool p_select_in_favorites = false, bool p_grab_focus = false);
@@ -290,6 +299,7 @@ private:
 	void _update_file_list(bool p_keep_selection, const Vector<String> &p_override_selection = Vector<String>());
 	void _toggle_file_display();
 	void _set_file_display(bool p_active);
+	void _scene_preview_mode_toggled(bool p_enabled);
 	void _fs_changed();
 
 	void _select_file(const String &p_path, bool p_select_in_favorites = false, bool p_navigate = true);
@@ -409,6 +419,7 @@ public:
 	static constexpr double ITEM_BG_DARK_SCALE = 0.3;
 
 	static Color get_dir_icon_color(const String &p_dir_path, const Color &p_default);
+	Ref<Texture2D> get_scene_class_icon(const String &p_path, Color &r_background);
 
 	const HashMap<String, Color> &get_folder_colors() const;
 	Dictionary get_assigned_folder_colors() const;

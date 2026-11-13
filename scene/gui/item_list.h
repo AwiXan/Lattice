@@ -83,6 +83,7 @@ private:
 		String tooltip;
 		Color custom_fg;
 		Color custom_bg = Color(0.0, 0.0, 0.0, 0.0);
+		float custom_bg_corner_radius = 0.0;
 
 		int column = 0;
 		Rect2 rect_cache;
@@ -268,6 +269,8 @@ public:
 
 	void set_item_custom_bg_color(int p_idx, const Color &p_custom_bg_color);
 	Color get_item_custom_bg_color(int p_idx) const;
+	void set_item_custom_bg_corner_radius(int p_idx, float p_radius);
+	float get_item_custom_bg_corner_radius(int p_idx) const;
 
 	void set_item_custom_fg_color(int p_idx, const Color &p_custom_fg_color);
 	Color get_item_custom_fg_color(int p_idx) const;

@@ -39,6 +39,7 @@
 #include "core/io/resource_saver.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
+#include "core/object/script_language.h"
 #include "core/os/keyboard.h"
 #include "core/os/os.h"
 #include "core/templates/list.h"
@@ -225,6 +226,57 @@ Ref<Texture2D> FileSystemDock::_get_tree_item_icon(bool p_is_valid, const String
 	} else {
 		return get_editor_theme_icon(SNAME("File"));
 	}
+}
+
+Ref<Texture2D> FileSystemDock::get_scene_class_icon(const String &p_path, Color &r_background) {
+	SceneIconInfo *cached = scene_icon_cache.getptr(p_path);
+	if (cached) {
+		r_background = cached->background;
+		return cached->icon;
+	}
+
+	SceneIconInfo info;
+	info.background = Color(0.16, 0.13, 0.18);
+	Ref<PackedScene> packed_scene = ResourceLoader::load(p_path, "PackedScene");
+	if (packed_scene.is_valid()) {
+		Ref<SceneState> state = packed_scene->get_state();
+		if (state.is_valid() && state->get_node_count() > 0) {
+			const StringName root_type = state->get_node_type(0);
+			if (ClassDB::is_parent_class(root_type, SNAME("Node3D"))) {
+				info.background = Color(0.30, 0.12, 0.15);
+			} else if (ClassDB::is_parent_class(root_type, SNAME("Control"))) {
+				info.background = Color(0.20, 0.13, 0.30);
+			} else if (ClassDB::is_parent_class(root_type, SNAME("Node2D"))) {
+				info.background = Color(0.12, 0.18, 0.32);
+			} else {
+				info.background = Color(0.14, 0.22, 0.20);
+			}
+
+			for (int i = 0; i < state->get_node_property_count(0); i++) {
+				if (state->get_node_property_name(0, i) == SNAME("script")) {
+					Ref<Script> script = state->get_node_property_value(0, i);
+					if (script.is_valid()) {
+						info.icon = EditorNode::get_editor_data().get_script_icon(script->get_path());
+						if (info.icon.is_valid()) {
+							break;
+						}
+					}
+				}
+			}
+
+			if (info.icon.is_null() && !root_type.is_empty()) {
+				info.icon = EditorNode::get_singleton()->get_class_icon(root_type);
+			}
+		}
+	}
+
+	if (info.icon.is_null()) {
+		info.icon = EditorNode::get_singleton()->get_class_icon(SNAME("PackedScene"));
+	}
+
+	scene_icon_cache.insert(p_path, info);
+	r_background = info.background;
+	return info.icon;
 }
 
 void FileSystemDock::_create_tree(TreeItem *p_parent, EditorFileSystemDirectory *p_dir, const Vector<String> &p_uncollapsed_paths, const Vector<String> &p_selected_paths) {
@@ -580,6 +632,7 @@ void FileSystemDock::_notification(int p_what) {
 			EditorResourcePreview::get_singleton()->connect("preview_invalidated", callable_mp(this, &FileSystemDock::_preview_invalidated));
 
 			button_file_list_display_mode->connect(SceneStringName(pressed), callable_mp(this, &FileSystemDock::_toggle_file_display));
+			button_scene_preview_mode->connect(SceneStringName(toggled), callable_mp(this, &FileSystemDock::_scene_preview_mode_toggled));
 			files->connect("item_activated", callable_mp(this, &FileSystemDock::_file_list_activate_file));
 			button_hist_next->connect(SceneStringName(pressed), callable_mp(this, &FileSystemDock::_fw_history));
 			button_hist_prev->connect(SceneStringName(pressed), callable_mp(this, &FileSystemDock::_bw_history));
@@ -588,6 +641,8 @@ void FileSystemDock::_notification(int p_what) {
 			current_path_line_edit->connect(SceneStringName(text_submitted), callable_mp(this, &FileSystemDock::_navigate_to_path).bind(false, true));
 
 			always_show_folders = bool(EDITOR_GET("docks/filesystem/always_show_folders"));
+			scene_camera_previews = bool(EDITOR_GET("docks/filesystem/scene_camera_previews"));
+			button_scene_preview_mode->set_pressed_no_signal(scene_camera_previews);
 			thumbnail_size_setting = EDITOR_GET("docks/filesystem/thumbnail_size");
 
 			set_file_list_display_mode(FileSystemDock::FILE_LIST_DISPLAY_LIST);
@@ -655,6 +710,7 @@ void FileSystemDock::_notification(int p_what) {
 			} else {
 				button_file_list_display_mode->set_button_icon(get_editor_theme_icon(SNAME("FileList")));
 			}
+			button_scene_preview_mode->set_button_icon(get_editor_theme_icon(SNAME("Camera3D")));
 
 			tree_search_box->set_right_icon(get_editor_theme_icon(SNAME("Search")));
 			tree_button_sort->set_button_icon(get_editor_theme_icon(SNAME("Sort")));
@@ -886,19 +942,37 @@ void FileSystemDock::navigate_to_path(const String &p_path) {
 }
 
 void FileSystemDock::_file_list_thumbnail_done(const String &p_path, const Ref<Texture2D> &p_preview, const Ref<Texture2D> &p_small_preview, int p_index, const String &p_filename) {
+	if (p_index >= files->get_item_count() || files->get_item_text(p_index) != p_filename || files->get_item_metadata(p_index) != p_path) {
+		return;
+	}
+
+	int file_index;
+	EditorFileSystemDirectory *directory = EditorFileSystem::get_singleton()->find_file(p_path, &file_index);
+	if (directory && directory->get_file_type(file_index) == SNAME("PackedScene")) {
+		Color scene_background;
+		Ref<Texture2D> class_icon = get_scene_class_icon(p_path, scene_background);
+		files->set_item_tag_icon(p_index, class_icon);
+
+		if (file_list_display_mode == FILE_LIST_DISPLAY_THUMBNAILS && scene_camera_previews) {
+			if (p_preview.is_valid()) {
+				files->set_item_icon(p_index, _apply_thumbnail_filter(p_preview, p_path));
+			}
+		} else {
+			files->set_item_icon(p_index, class_icon);
+			if (file_list_display_mode == FILE_LIST_DISPLAY_THUMBNAILS) {
+				files->set_item_custom_bg_color(p_index, scene_background);
+				if (!scene_camera_previews) {
+					files->set_item_custom_bg_corner_radius(p_index, 8.0 * EDSCALE);
+				}
+			}
+		}
+		return;
+	}
+
 	if (p_preview.is_valid()) {
-		if (p_index < files->get_item_count() && files->get_item_text(p_index) == p_filename && files->get_item_metadata(p_index) == p_path) {
-			Ref<Texture2D> thumbnail;
-
-			if (file_list_display_mode == FILE_LIST_DISPLAY_LIST) {
-				thumbnail = p_small_preview;
-			} else {
-				thumbnail = p_preview;
-			}
-
-			if (thumbnail.is_valid()) {
-				files->set_item_icon(p_index, _apply_thumbnail_filter(thumbnail, p_path));
-			}
+		Ref<Texture2D> thumbnail = file_list_display_mode == FILE_LIST_DISPLAY_LIST ? p_small_preview : p_preview;
+		if (thumbnail.is_valid()) {
+			files->set_item_icon(p_index, _apply_thumbnail_filter(thumbnail, p_path));
 		}
 	}
 }
@@ -947,12 +1021,20 @@ void FileSystemDock::_set_file_display(bool p_active) {
 		file_list_display_mode = FILE_LIST_DISPLAY_LIST;
 		button_file_list_display_mode->set_button_icon(get_editor_theme_icon(SNAME("FileThumbnail")));
 		button_file_list_display_mode->set_tooltip_text(TTRC("View items as a grid of thumbnails."));
+		button_scene_preview_mode->hide();
 	} else {
 		file_list_display_mode = FILE_LIST_DISPLAY_THUMBNAILS;
 		button_file_list_display_mode->set_button_icon(get_editor_theme_icon(SNAME("FileList")));
 		button_file_list_display_mode->set_tooltip_text(TTRC("View items as a list."));
+		button_scene_preview_mode->show();
 	}
 
+	_update_file_list(true);
+}
+
+void FileSystemDock::_scene_preview_mode_toggled(bool p_enabled) {
+	scene_camera_previews = p_enabled;
+	EditorSettings::get_singleton()->set_setting("docks/filesystem/scene_camera_previews", p_enabled);
 	_update_file_list(true);
 }
 
@@ -1212,13 +1294,26 @@ void FileSystemDock::_update_file_list(bool p_keep_selection, const Vector<Strin
 
 		Ref<Texture2D> type_icon;
 		Ref<Texture2D> big_icon;
+		Color scene_background;
+		const bool is_scene = finfo->type == SNAME("PackedScene");
 
 		String tooltip = fpath;
 
 		// Select the icons.
-		type_icon = _get_tree_item_icon(!finfo->import_broken, finfo->type, finfo->icon_path);
+		if (!finfo->import_broken && is_scene) {
+			SceneIconInfo *cached_scene_icon = scene_icon_cache.getptr(fpath);
+			if (cached_scene_icon) {
+				type_icon = cached_scene_icon->icon;
+				scene_background = cached_scene_icon->background;
+			} else {
+				type_icon = _get_tree_item_icon(true, finfo->type, finfo->icon_path);
+				scene_background = Color(0.16, 0.13, 0.18);
+			}
+		} else {
+			type_icon = _get_tree_item_icon(!finfo->import_broken, finfo->type, finfo->icon_path);
+		}
 		if (!finfo->import_broken) {
-			big_icon = file_thumbnail;
+			big_icon = is_scene && !scene_camera_previews ? type_icon : file_thumbnail;
 		} else {
 			big_icon = file_thumbnail_broken;
 			tooltip += "\n" + TTR("Status: Import of file failed. Please fix file and reimport manually.");
@@ -1231,6 +1326,10 @@ void FileSystemDock::_update_file_list(bool p_keep_selection, const Vector<Strin
 			item_index = files->get_item_count() - 1;
 			files->set_item_metadata(item_index, fpath);
 			files->set_item_tag_icon(item_index, type_icon);
+			if (is_scene && !finfo->import_broken && !scene_camera_previews) {
+				files->set_item_custom_bg_color(item_index, scene_background);
+				files->set_item_custom_bg_corner_radius(item_index, 8.0 * EDSCALE);
+			}
 
 		} else {
 			files->add_item(fname, type_icon, true);
@@ -1407,6 +1506,7 @@ void FileSystemDock::_file_list_activate_file(int p_idx) {
 
 void FileSystemDock::_preview_invalidated(const String &p_path) {
 	if (file_list_display_mode == FILE_LIST_DISPLAY_THUMBNAILS && p_path.get_base_dir() == current_path && searched_tokens.is_empty() && file_list_vb->is_visible_in_tree()) {
+		scene_icon_cache.erase(p_path);
 		for (int i = 0; i < files->get_item_count(); i++) {
 			if (files->get_item_metadata(i) == p_path) {
 				// Re-request preview.
@@ -1418,6 +1518,7 @@ void FileSystemDock::_preview_invalidated(const String &p_path) {
 }
 
 void FileSystemDock::_fs_changed() {
+	scene_icon_cache.clear();
 	button_hist_prev->set_disabled(history_pos == 0);
 	button_hist_next->set_disabled(history_pos == history.size() - 1);
 	scanning_vb->hide();
@@ -3746,6 +3847,11 @@ void FileSystemDock::_file_list_item_clicked(int p_item, const Vector2 &p_pos, M
 	files->grab_focus(true);
 
 	// Right click is pressed in the file list.
+	if (p_item >= 0 && p_item < files->get_item_count() && !files->is_selected(p_item)) {
+		files->deselect_all();
+		files->select(p_item);
+	}
+
 	Vector<String> paths;
 	for (int i = 0; i < files->get_item_count(); i++) {
 		if (!files->is_selected(i)) {
@@ -4593,6 +4699,13 @@ FileSystemDock::FileSystemDock() {
 	button_file_list_display_mode->set_accessibility_name(TTRC("Display Mode"));
 	button_file_list_display_mode->set_theme_type_variation("FlatMenuButton");
 	path_hb->add_child(button_file_list_display_mode);
+
+	button_scene_preview_mode = memnew(Button);
+	button_scene_preview_mode->set_accessibility_name(TTRC("Scene Camera Previews"));
+	button_scene_preview_mode->set_tooltip_text(TTRC("Show camera previews for scenes."));
+	button_scene_preview_mode->set_theme_type_variation("FlatMenuButton");
+	button_scene_preview_mode->set_toggle_mode(true);
+	path_hb->add_child(button_scene_preview_mode);
 
 	files_mc = memnew(MarginContainer);
 	file_list_vb->add_child(files_mc);

@@ -58,6 +58,7 @@
 #include "editor/debugger/script_editor_debugger.h"
 #include "editor/doc/editor_help.h"
 #include "editor/docks/editor_dock_manager.h"
+#include "editor/docks/asset_placer_dock.h"
 #include "editor/docks/filesystem_dock.h"
 #include "editor/docks/groups_dock.h"
 #include "editor/docks/history_dock.h"
@@ -9597,6 +9598,9 @@ EditorNode::EditorNode() {
 	filesystem_dock->connect("display_mode_changed", callable_mp(this, &EditorNode::_save_editor_layout));
 	get_project_settings()->connect_filesystem_dock_signals(filesystem_dock);
 	editor_dock_manager->add_dock(filesystem_dock);
+
+	AssetPlacerDock *asset_placer_dock = memnew(AssetPlacerDock);
+	editor_dock_manager->add_dock(asset_placer_dock);
 
 	memnew(InspectorDock(editor_data));
 	editor_dock_manager->add_dock(InspectorDock::get_singleton());
