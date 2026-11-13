@@ -309,6 +309,15 @@ public:
 
 		float length;
 		float spread;
+		bool temporal_history_valid = false;
+		bool temporal_history_initialized = false;
+		uint32_t temporal_history_skip_frames = 0;
+		RID temporal_history_environment;
+		RID temporal_history_sky;
+		float temporal_history_density = 0.0f;
+		uint32_t temporal_history_voxel_gi_count = 0;
+		Vector<RID> temporal_history_fog_volumes;
+		Vector<RID> gi_texture_rids;
 
 		RID light_density_map;
 		RID prev_light_density_map;

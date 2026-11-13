@@ -574,6 +574,69 @@ void Fog::volumetric_fog_update(const VolumetricFogSettings &p_settings, const F
 	RD::get_singleton()->draw_command_begin_label("Volumetric Fog");
 
 	Ref<VolumetricFog> fog = p_settings.vfog;
+	bool temporal_reprojection_enabled = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_temporal_reprojection(p_settings.env);
+	float fog_density = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_density(p_settings.env);
+	float fog_length = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_length(p_settings.env);
+	float fog_detail_spread = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_detail_spread(p_settings.env);
+	RID sky_rid = RendererSceneRenderRD::get_singleton()->environment_get_sky(p_settings.env);
+	bool shadow_textures_changed = fog->shadow_atlas_depth != p_settings.shadow_atlas_depth || fog->directional_shadow_depth != p_settings.directional_shadow_depth;
+	bool gi_textures_changed = fog->gi_texture_rids.size() != RendererRD::GI::MAX_VOXEL_GI_INSTANCES;
+	if (!gi_textures_changed) {
+		for (int i = 0; i < RendererRD::GI::MAX_VOXEL_GI_INSTANCES; i++) {
+			if (fog->gi_texture_rids[i] != p_settings.rbgi->voxel_gi_textures[i]) {
+				gi_textures_changed = true;
+				break;
+			}
+		}
+	}
+
+	if (shadow_textures_changed || gi_textures_changed) {
+		// Descriptors can remain valid when shadow atlases or VoxelGI textures change.
+		fog->sync_gi_dependent_sets_validity(true);
+		if (fog->copy_uniform_set.is_valid() && RD::get_singleton()->uniform_set_is_valid(fog->copy_uniform_set)) {
+			RD::get_singleton()->free_rid(fog->copy_uniform_set);
+		}
+		fog->copy_uniform_set = RID();
+		fog->shadow_atlas_depth = p_settings.shadow_atlas_depth;
+		fog->directional_shadow_depth = p_settings.directional_shadow_depth;
+		fog->gi_texture_rids.resize(RendererRD::GI::MAX_VOXEL_GI_INSTANCES);
+		for (int i = 0; i < RendererRD::GI::MAX_VOXEL_GI_INSTANCES; i++) {
+			fog->gi_texture_rids.write[i] = p_settings.rbgi->voxel_gi_textures[i];
+		}
+	}
+
+	bool fog_volume_set_changed = fog->temporal_history_fog_volumes.size() != p_fog_volumes.size();
+	for (int i = 0; !fog_volume_set_changed && i < (int)p_fog_volumes.size(); i++) {
+		bool found = false;
+		for (int j = 0; j < fog->temporal_history_fog_volumes.size(); j++) {
+			if (fog->temporal_history_fog_volumes[j] == p_fog_volumes[i]) {
+				found = true;
+				break;
+			}
+		}
+		fog_volume_set_changed = !found;
+	}
+
+	bool temporal_history_inputs_changed = !fog->temporal_history_initialized ||
+			fog->temporal_history_environment != p_settings.env ||
+			fog->temporal_history_sky != sky_rid ||
+			!Math::is_equal_approx(fog->temporal_history_density, fog_density) ||
+			fog->temporal_history_voxel_gi_count != (uint32_t)p_voxel_gi_count ||
+			!Math::is_equal_approx(fog->length, fog_length) ||
+			!Math::is_equal_approx(fog->spread, fog_detail_spread) ||
+			fog_volume_set_changed ||
+			shadow_textures_changed ||
+			gi_textures_changed;
+	if (temporal_history_inputs_changed) {
+		// Fog is computed before HDDAGI is updated, so discard the old field
+		// for one additional frame after a scene or lighting change.
+		fog->temporal_history_skip_frames = 2;
+	}
+
+	// A map or environment switch makes the previous froxel field unrelated.
+	bool use_temporal_reprojection = temporal_reprojection_enabled &&
+			fog->temporal_history_valid &&
+			fog->temporal_history_skip_frames == 0;
 
 	if (p_fog_volumes.size() > 0) {
 		RD::get_singleton()->draw_command_begin_label("Render Volumetric Fog Volumes");
@@ -611,7 +674,7 @@ void Fog::volumetric_fog_update(const VolumetricFogSettings &p_settings, const F
 		params.fog_volume_size[1] = fog->height;
 		params.fog_volume_size[2] = fog->depth;
 
-		params.use_temporal_reprojection = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_temporal_reprojection(p_settings.env);
+		params.use_temporal_reprojection = use_temporal_reprojection;
 		params.temporal_frame = RSG::rasterizer->get_frame_number() % VolumetricFog::MAX_TEMPORAL_FRAMES;
 		params.detail_spread = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_detail_spread(p_settings.env);
 		params.temporal_blend = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_temporal_reprojection_amount(p_settings.env);
@@ -794,21 +857,6 @@ void Fog::volumetric_fog_update(const VolumetricFogSettings &p_settings, const F
 		RD::get_singleton()->draw_command_end_label();
 
 		RD::get_singleton()->compute_list_end();
-	}
-
-	// A shadow atlas that did not exist when the sets were made is bound as a black
-	// stand-in, which is never freed, so the sets would stay valid and never pick up
-	// the atlas once it exists. The fog then lights up everywhere, as if nothing cast
-	// a shadow: made in a scene without a directional light that casts shadows, and
-	// kept into one that has it, it stayed that way until its size changed.
-	if (fog->shadow_atlas_depth != p_settings.shadow_atlas_depth || fog->directional_shadow_depth != p_settings.directional_shadow_depth) {
-		fog->sync_gi_dependent_sets_validity(true);
-		if (fog->copy_uniform_set.is_valid() && RD::get_singleton()->uniform_set_is_valid(fog->copy_uniform_set)) {
-			RD::get_singleton()->free_rid(fog->copy_uniform_set);
-		}
-		fog->copy_uniform_set = RID();
-		fog->shadow_atlas_depth = p_settings.shadow_atlas_depth;
-		fog->directional_shadow_depth = p_settings.directional_shadow_depth;
 	}
 
 	bool gi_dependent_sets_valid = fog->sync_gi_dependent_sets_validity();
@@ -1080,8 +1128,8 @@ void Fog::volumetric_fog_update(const VolumetricFogSettings &p_settings, const F
 		}
 	}
 
-	fog->length = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_length(p_settings.env);
-	fog->spread = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_detail_spread(p_settings.env);
+	fog->length = fog_length;
+	fog->spread = fog_detail_spread;
 
 	VolumetricFogShader::ParamsUBO params;
 
@@ -1126,7 +1174,7 @@ void Fog::volumetric_fog_update(const VolumetricFogSettings &p_settings, const F
 	params.base_emission[0] = emission.r * RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_emission_energy(p_settings.env);
 	params.base_emission[1] = emission.g * RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_emission_energy(p_settings.env);
 	params.base_emission[2] = emission.b * RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_emission_energy(p_settings.env);
-	params.base_density = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_density(p_settings.env);
+	params.base_density = fog_density;
 
 	Color base_scattering = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_scattering(p_settings.env).srgb_to_linear();
 	params.base_scattering[0] = base_scattering.r;
@@ -1134,7 +1182,7 @@ void Fog::volumetric_fog_update(const VolumetricFogSettings &p_settings, const F
 	params.base_scattering[2] = base_scattering.b;
 	params.phase_g = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_anisotropy(p_settings.env);
 
-	params.detail_spread = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_detail_spread(p_settings.env);
+	params.detail_spread = fog_detail_spread;
 	params.gi_inject = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_gi_inject(p_settings.env);
 
 	params.cam_rotation[0] = p_cam_transform.basis[0][0];
@@ -1156,10 +1204,9 @@ void Fog::volumetric_fog_update(const VolumetricFogSettings &p_settings, const F
 	Transform3D to_prev_cam_view = p_prev_cam_inv_transform * p_cam_transform;
 	RendererRD::MaterialStorage::store_transform(to_prev_cam_view, params.to_prev_view);
 
-	params.use_temporal_reprojection = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_temporal_reprojection(p_settings.env);
+	params.use_temporal_reprojection = use_temporal_reprojection;
 	params.temporal_blend = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_temporal_reprojection_amount(p_settings.env);
 
-	RID sky_rid = RendererSceneRenderRD::get_singleton()->environment_get_sky(p_settings.env);
 	if (sky_rid.is_valid()) {
 		float uv_border_size = p_settings.sky->sky_get_uv_border_size(sky_rid);
 		params.sky_border_size[0] = uv_border_size;
@@ -1242,6 +1289,20 @@ void Fog::volumetric_fog_update(const VolumetricFogSettings &p_settings, const F
 	RD::get_singleton()->compute_list_dispatch_threads(compute_list, fog->width, fog->height, 1);
 
 	RD::get_singleton()->compute_list_end();
+
+	if (fog->temporal_history_skip_frames > 0) {
+		fog->temporal_history_skip_frames--;
+	}
+	fog->temporal_history_valid = temporal_reprojection_enabled && fog->temporal_history_skip_frames == 0;
+	fog->temporal_history_initialized = true;
+	fog->temporal_history_environment = p_settings.env;
+	fog->temporal_history_sky = sky_rid;
+	fog->temporal_history_density = fog_density;
+	fog->temporal_history_voxel_gi_count = p_voxel_gi_count;
+	fog->temporal_history_fog_volumes.resize(p_fog_volumes.size());
+	for (int i = 0; i < (int)p_fog_volumes.size(); i++) {
+		fog->temporal_history_fog_volumes.write[i] = p_fog_volumes[i];
+	}
 
 	RENDER_TIMESTAMP("< Volumetric Fog");
 	RD::get_singleton()->draw_command_end_label();
