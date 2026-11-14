@@ -17,6 +17,7 @@
 // MODE_DEBUG: one thread per pixel, draws the debug views.
 
 #define PROBE_OCT_SIZE 8
+#define GATHER_ALPHA 0.12 // Weight of this frame's gathered ambient against the history, while little changes.
 #define GROUP_SIZE 8
 
 layout(local_size_x = GROUP_SIZE, local_size_y = GROUP_SIZE, local_size_z = 1) in;
@@ -27,6 +28,7 @@ layout(local_size_x = GROUP_SIZE, local_size_y = GROUP_SIZE, local_size_z = 1) i
 #define FLAG_SPATIAL_FILTER 2
 #define FLAG_HALF_RAYS 4
 #define FLAG_HISTORY_VALID 8
+#define FLAG_GATHER_HISTORY 16 // Last frame's gathered ambient can be reprojected.
 
 #define HIT_NONE 0.0
 #define HIT_SCREEN 1.0
@@ -121,6 +123,8 @@ layout(rgba16f, set = 0, binding = 18) uniform restrict image2D probe_sh; // 3 t
 layout(r32ui, set = 0, binding = 19) uniform restrict writeonly uimage2D ambient_buffer;
 layout(rg8, set = 0, binding = 20) uniform restrict image2D blend_buffer;
 layout(rgba16f, set = 0, binding = 21) uniform restrict writeonly image2D debug_image;
+layout(rgba16f, set = 0, binding = 22) uniform restrict readonly image2D gather_history; // Last frame's ambient (rgb) and the depth it was seen at (a), per GI pixel.
+layout(rgba16f, set = 0, binding = 23) uniform restrict writeonly image2D gather_result;
 
 layout(push_constant, std430) uniform Push {
 	ivec2 gi_size;
@@ -203,6 +207,44 @@ bool fetch_surface(ivec2 p_pixel, out vec3 r_view_pos, out vec3 r_view_normal) {
 	r_view_pos = pos.xyz / pos.w;
 	r_view_normal = normalize(raw_normal * 2.0 - 1.0);
 	return true;
+}
+
+vec3 view_position(ivec2 p_pixel, float p_depth) {
+	vec4 pos = params.inv_projection * vec4(pixel_to_ndc(vec2(p_pixel)), p_depth, 1.0);
+	return pos.xyz / pos.w;
+}
+
+// The facing of the surface as the depth buffer sees it (flat per triangle), not
+// as its normal map or smoothed normals say: stable from pixel to pixel and
+// frame to frame, so that "same plane" tests do not flicker with the pixel a probe
+// happens to land on. Each axis uses the side with the smaller depth step.
+vec3 fetch_geometric_normal(ivec2 p_pixel, vec3 p_view_pos, vec3 p_shading_normal) {
+	ivec2 max_pixel = params.screen_size - 1;
+	vec3 dx[2];
+	vec3 dy[2];
+	for (int i = 0; i < 2; i++) {
+		int s = i * 2 - 1;
+		ivec2 px = clamp(p_pixel + ivec2(s, 0), ivec2(0), max_pixel);
+		ivec2 py = clamp(p_pixel + ivec2(0, s), ivec2(0), max_pixel);
+		float depth_x = texelFetch(sampler2D(depth_buffer, linear_sampler), px, 0).r;
+		float depth_y = texelFetch(sampler2D(depth_buffer, linear_sampler), py, 0).r;
+		// Sky or off the screen: a step too large to be picked.
+		dx[i] = depth_x > 0.0 ? view_position(px, depth_x) - p_view_pos : vec3(0.0, 0.0, 1e6);
+		dy[i] = depth_y > 0.0 ? view_position(py, depth_y) - p_view_pos : vec3(0.0, 0.0, 1e6);
+	}
+	vec3 ddx = abs(dx[0].z) < abs(dx[1].z) ? -dx[0] : dx[1];
+	vec3 ddy = abs(dy[0].z) < abs(dy[1].z) ? -dy[0] : dy[1];
+	vec3 n = cross(ddx, ddy);
+	float len = length(n);
+	if (len < 1e-10 || abs(ddx.z) > 1e5 || abs(ddy.z) > 1e5) {
+		return p_shading_normal;
+	}
+	n /= len;
+	// Facing the camera, and on the side of the shading normal.
+	if (dot(n, p_view_pos) > 0.0) {
+		n = -n;
+	}
+	return dot(n, p_shading_normal) > 0.2 ? n : p_shading_normal;
 }
 
 vec3 view_to_world_dir(vec3 p_view) {
@@ -371,9 +413,11 @@ vec3 sh_irradiance(ivec2 p_probe, vec3 p_normal) {
 #ifdef MODE_TRACE
 
 shared vec3 probe_view_pos;
-shared vec3 probe_view_normal;
+shared vec3 probe_view_normal; // Geometric (from depth), see fetch_geometric_normal().
 shared bool probe_valid;
-shared ivec2 history_probe;
+// Last frame's probes in the 3x3 tiles around where this one was, with how much each counts.
+shared ivec2 history_origin;
+shared float history_weight[9];
 shared bool history_valid;
 
 // Importance sampling: threads with no ray of their own (below the surface, or a dim
@@ -455,8 +499,9 @@ void main() {
 				local = ivec2(tile_size / 2);
 			}
 			ivec2 pixel = min(tile_origin + local, params.screen_size - 1);
-			vec3 view_pos, view_normal;
-			if (fetch_surface(pixel, view_pos, view_normal)) {
+			vec3 view_pos, shading_normal;
+			if (fetch_surface(pixel, view_pos, shading_normal)) {
+				vec3 view_normal = fetch_geometric_normal(pixel, view_pos, shading_normal);
 				probe_valid = true;
 				probe_view_pos = view_pos;
 				probe_view_normal = view_normal;
@@ -467,38 +512,40 @@ void main() {
 				imageStore(probe_position, probe, vec4(world_pos + params.cam_origin.xyz, depth));
 				imageStore(probe_normal, probe, vec4(world_normal, float((pixel.x - tile_origin.x) + (pixel.y - tile_origin.y) * 16)));
 
-				// The same surface in last frame's probe of where this one was.
+				// The same surface in last frame's probes around where this one was. They are
+				// blended, nearer ones counting more, so that history glides over the probes
+				// as the camera moves instead of hopping from one to the next; the ones not on
+				// this surface (across an edge) do not count at all.
 				if (bool(params.flags & FLAG_HISTORY_VALID)) {
 					vec4 prev_clip = params.prev_reprojection * vec4(world_pos, 1.0);
 					if (prev_clip.w > 0.0) {
 						vec2 prev_pixel = ((prev_clip.xy / prev_clip.w) * 0.5 + 0.5) * vec2(params.screen_size);
 						ivec2 prev_center = ivec2(floor(prev_pixel / float(tile_size)));
+						history_origin = prev_center - ivec2(1);
 						// A tile seen at a grazing angle covers that much more of its surface.
 						float facing = max(abs(dot(world_normal, normalize(world_pos))), 0.15);
 						float tile_world_size = float(tile_size) * depth * params.pixel_angle / facing;
-						float best_distance = tile_world_size * 1.5 + 0.05;
-						// A tile across an edge has its probe on one surface one frame and on the
-						// other the next: look for this surface in the tiles around too, and take
-						// the closest probe that is on it.
+						float radius = tile_world_size * 1.25 + 0.05;
+						float total_weight = 0.0;
 						for (int k = 0; k < 9; k++) {
-							ivec2 prev_probe = prev_center + ivec2(k % 3, k / 3) - ivec2(1);
-							if (any(lessThan(prev_probe, ivec2(0))) || any(greaterThanEqual(prev_probe, params.probe_count))) {
-								continue;
+							float weight = 0.0;
+							ivec2 prev_probe = history_origin + ivec2(k % 3, k / 3);
+							if (all(greaterThanEqual(prev_probe, ivec2(0))) && all(lessThan(prev_probe, params.probe_count))) {
+								vec4 prev_pos = imageLoad(prev_probe_position, prev_probe);
+								if (prev_pos.w > 0.0) {
+									vec3 prev_normal = imageLoad(prev_probe_normal, prev_probe).xyz;
+									vec3 offset = prev_pos.xyz - (world_pos + params.cam_origin.xyz);
+									bool same_plane = abs(dot(offset, world_normal)) < 0.05 * depth / facing + 0.02;
+									float distance_weight = max(0.0, 1.0 - length(offset) / radius);
+									if (same_plane) {
+										weight = distance_weight * distance_weight * smoothstep(0.7, 0.95, dot(prev_normal, world_normal));
+									}
+								}
 							}
-							vec4 prev_pos = imageLoad(prev_probe_position, prev_probe);
-							if (prev_pos.w <= 0.0) {
-								continue;
-							}
-							vec3 prev_normal = imageLoad(prev_probe_normal, prev_probe).xyz;
-							vec3 offset = prev_pos.xyz - (world_pos + params.cam_origin.xyz);
-							bool same_plane = abs(dot(offset, world_normal)) < 0.05 * depth / facing + 0.02;
-							float distance = length(offset);
-							if (same_plane && distance < best_distance && dot(prev_normal, world_normal) > 0.8) {
-								best_distance = distance;
-								history_valid = true;
-								history_probe = prev_probe;
-							}
+							history_weight[k] = weight;
+							total_weight += weight;
 						}
+						history_valid = total_weight > 0.0001;
 					}
 				}
 			}
@@ -526,7 +573,30 @@ void main() {
 
 	vec4 history = vec4(0.0);
 	if (history_valid) {
-		history = imageLoad(radiance_history, history_probe * PROBE_OCT_SIZE + texel);
+		// The probes of last frame this one stands in for, blended by how much each counts;
+		// the ones that hold nothing in this direction (below their horizon) are left out.
+		vec3 history_sum = vec3(0.0);
+		float history_weight_sum = 0.0;
+		float best_weight = 0.0;
+		float history_hit = 0.0;
+		for (int k = 0; k < 9; k++) {
+			float weight = history_weight[k];
+			if (weight > 0.0) {
+				ivec2 prev_probe = history_origin + ivec2(k % 3, k / 3);
+				vec4 h = imageLoad(radiance_history, prev_probe * PROBE_OCT_SIZE + texel);
+				if (h.a > 0.0) {
+					history_sum += h.rgb * weight;
+					history_weight_sum += weight;
+					if (weight > best_weight) {
+						best_weight = weight;
+						history_hit = h.a;
+					}
+				}
+			}
+		}
+		if (history_weight_sum > 0.0) {
+			history = vec4(history_sum / history_weight_sum, history_hit);
+		}
 	}
 
 	const vec3 luminance_weights = vec3(0.2126, 0.7152, 0.0722);
@@ -716,13 +786,16 @@ void main() {
 			}
 			vec3 n_normal = imageLoad(probe_normal, n).xyz;
 			float plane_distance = abs(dot(n_pos.xyz - center_pos.xyz, center_normal));
-			if (plane_distance > 0.05 * center_pos.w + 0.05 || dot(n_normal, center_normal) < 0.7) {
+			// Soft edges: a neighbour that is only just on the plane counts a little, so that
+			// it does not switch on and off as the probes move around in their tiles.
+			float surface_weight = (1.0 - smoothstep(0.5, 1.0, plane_distance / (0.05 * center_pos.w + 0.05))) * smoothstep(0.6, 0.9, dot(n_normal, center_normal));
+			if (surface_weight <= 0.0) {
 				continue;
 			}
 			vec4 n_radiance = imageLoad(radiance_trace, n * PROBE_OCT_SIZE + texel);
 			if (n_radiance.a > 0.0) {
-				accum += n_radiance.rgb * neighbour_weight;
-				weight_accum += neighbour_weight;
+				accum += n_radiance.rgb * neighbour_weight * surface_weight;
+				weight_accum += neighbour_weight * surface_weight;
 			}
 		}
 		radiance.rgb = accum / weight_accum;
@@ -767,6 +840,12 @@ void main() {
 
 #ifdef MODE_GATHER
 
+// Where a probe actually sits on the screen: in a different pixel of its tile each frame.
+vec2 probe_pixel(ivec2 p_probe, float p_packed_pixel) {
+	int packed_pixel = int(p_packed_pixel + 0.5);
+	return vec2(p_probe * int(params.tile_size) + ivec2(packed_pixel % 16, packed_pixel / 16)) + 0.5;
+}
+
 void main() {
 	ivec2 gi_pos = ivec2(gl_GlobalInvocationID.xy);
 	if (any(greaterThanEqual(gi_pos, push.gi_size))) {
@@ -776,43 +855,51 @@ void main() {
 
 	vec3 view_pos, view_normal;
 	if (!fetch_surface(pixel, view_pos, view_normal)) {
+		imageStore(gather_result, gi_pos, vec4(0.0));
 		return;
 	}
 	vec3 world_pos = view_to_world_dir(view_pos) + params.cam_origin.xyz;
+	// The shading normal (normal map included) picks the direction the irradiance is read
+	// in; the geometric one is what decides which probes lie on the same surface.
 	vec3 normal = normalize(view_to_world_dir(view_normal));
+	vec3 geo_normal = normalize(view_to_world_dir(fetch_geometric_normal(pixel, view_pos, view_normal)));
 	float depth = -view_pos.z;
+	float tile = float(params.tile_size);
 
-	vec2 tile_f = (vec2(pixel) + 0.5) / float(params.tile_size) - 0.5;
-	ivec2 base = ivec2(floor(tile_f));
-	vec2 f = tile_f - vec2(base);
+	vec2 pixel_center = vec2(pixel) + 0.5;
+	ivec2 base = ivec2(floor(pixel_center / tile - 0.5));
 
 	vec3 irradiance = vec3(0.0);
 	float weight_accum = 0.0;
 
+	// The four tiles nearest, each weighted by how near its probe really is (not its
+	// tile's middle: the probe moves about its tile, and so would the light with it).
 	for (int i = 0; i < 4; i++) {
-		ivec2 offset = ivec2(i & 1, i >> 1);
-		ivec2 probe = clamp(base + offset, ivec2(0), params.probe_count - 1);
+		ivec2 probe = clamp(base + ivec2(i & 1, i >> 1), ivec2(0), params.probe_count - 1);
 		vec4 p = imageLoad(probe_position, probe);
 		if (p.w <= 0.0) {
 			continue;
 		}
-		vec3 p_normal = imageLoad(probe_normal, probe).xyz;
-		vec2 bilinear = mix(1.0 - f, f, vec2(offset));
-		float weight = bilinear.x * bilinear.y;
-		float plane_distance = abs(dot(p.xyz - world_pos, normal));
+		vec4 p_normal = imageLoad(probe_normal, probe);
+		vec2 tent = max(vec2(0.0), 1.0 - abs(pixel_center - probe_pixel(probe, p_normal.w)) / (tile * 1.5));
+		float weight = tent.x * tent.y;
+		float plane_distance = abs(dot(p.xyz - world_pos, geo_normal));
 		weight *= exp(-plane_distance / (0.02 * depth + 0.02));
-		weight *= pow(max(dot(normal, p_normal), 0.0), 4.0);
+		weight *= smoothstep(0.5, 0.9, dot(geo_normal, p_normal.xyz));
 		if (weight > 0.0) {
 			irradiance += sh_irradiance(probe, normal) * weight;
 			weight_accum += weight;
 		}
 	}
 
-	if (weight_accum < 0.001) {
-		// Nothing fits around: any probe of the 3x3 tiles that faces the same way.
-		irradiance = vec3(0.0);
-		weight_accum = 0.0;
-		ivec2 center = ivec2(vec2(pixel) / float(params.tile_size));
+	// Where little fits around (a corner, a thin object), the probes of the 3x3 tiles that
+	// face the same way fill in, in the share that is missing: a smooth change, not a
+	// switch between the two ways of weighting, which showed as pixels flickering.
+	const float full_weight = 0.1;
+	if (weight_accum < full_weight) {
+		vec3 fallback = vec3(0.0);
+		float fallback_weight = 0.0;
+		ivec2 center = ivec2(pixel_center / tile);
 		for (int y = -1; y <= 1; y++) {
 			for (int x = -1; x <= 1; x++) {
 				ivec2 probe = clamp(center + ivec2(x, y), ivec2(0), params.probe_count - 1);
@@ -820,26 +907,74 @@ void main() {
 				if (p.w <= 0.0) {
 					continue;
 				}
-				vec3 p_normal = imageLoad(probe_normal, probe).xyz;
-				float plane_distance = abs(dot(p.xyz - world_pos, normal));
-				float weight = pow(max(dot(normal, p_normal), 0.0), 4.0) / (1.0 + plane_distance * 4.0);
+				vec4 p_normal = imageLoad(probe_normal, probe);
+				vec2 tent = max(vec2(0.0), 1.0 - abs(pixel_center - probe_pixel(probe, p_normal.w)) / (tile * 2.5));
+				float plane_distance = abs(dot(p.xyz - world_pos, geo_normal));
+				float weight = tent.x * tent.y * smoothstep(0.2, 0.8, dot(geo_normal, p_normal.xyz)) / (1.0 + plane_distance * 4.0);
 				if (weight > 0.0) {
-					irradiance += sh_irradiance(probe, normal) * weight;
-					weight_accum += weight;
+					fallback += sh_irradiance(probe, normal) * weight;
+					fallback_weight += weight;
 				}
 			}
 		}
-		if (weight_accum < 0.0001) {
+		if (fallback_weight > 0.0001) {
+			float share = full_weight - weight_accum;
+			irradiance += fallback / fallback_weight * share;
+			weight_accum += share;
+		} else if (weight_accum < 0.0001) {
+			imageStore(gather_result, gi_pos, vec4(0.0));
 			return; // HDDAGI's own gather stays.
 		}
 	}
 
 	vec3 ambient = irradiance / weight_accum / M_PI * hddagi.energy;
+
+	// What is left of the noise (probes moving about their tiles, rays) is averaged over
+	// frames, per pixel: last frame's result of the same surface point, reprojected, and
+	// only as far as it was the same surface (by depth) and has not changed a lot (a light
+	// that moves, a door that opens, goes through at once; flicker is a few percent).
+	if (bool(params.flags & FLAG_GATHER_HISTORY)) {
+		vec4 prev_clip = params.prev_reprojection * vec4(view_to_world_dir(view_pos), 1.0);
+		if (prev_clip.w > 0.0) {
+			vec2 prev_pixel = ((prev_clip.xy / prev_clip.w) * 0.5 + 0.5) * vec2(params.screen_size);
+			vec2 src_pos = (prev_pixel - 0.5) / float(1 << push.res_shift);
+			ivec2 src_base = ivec2(floor(src_pos));
+			vec2 src_f = src_pos - vec2(src_base);
+			vec3 history_sum = vec3(0.0);
+			float history_weight = 0.0;
+			for (int i = 0; i < 4; i++) {
+				ivec2 offset = ivec2(i & 1, i >> 1);
+				ivec2 src = src_base + offset;
+				if (any(lessThan(src, ivec2(0))) || any(greaterThanEqual(src, push.gi_size))) {
+					continue;
+				}
+				vec4 h = imageLoad(gather_history, src);
+				if (h.a <= 0.0) {
+					continue;
+				}
+				vec2 bilinear = mix(1.0 - src_f, src_f, vec2(offset));
+				float depth_weight = max(0.0, 1.0 - abs(h.a - prev_clip.w) / (0.04 * prev_clip.w + 0.05));
+				float weight = bilinear.x * bilinear.y * depth_weight;
+				history_sum += h.rgb * weight;
+				history_weight += weight;
+			}
+			if (history_weight > 0.1) {
+				vec3 history = history_sum / history_weight;
+				const vec3 luminance_weights = vec3(0.2126, 0.7152, 0.0722);
+				float current_luminance = dot(ambient, luminance_weights);
+				float history_luminance = dot(history, luminance_weights);
+				float change = abs(current_luminance - history_luminance) / (max(current_luminance, history_luminance) + 0.03);
+				float alpha = mix(GATHER_ALPHA, 1.0, smoothstep(0.25, 0.8, change));
+				alpha = mix(1.0, alpha, smoothstep(0.1, 0.6, history_weight));
+				ambient = mix(history, ambient, alpha);
+			}
+		}
+	}
+	imageStore(gather_result, gi_pos, vec4(ambient, depth));
 	imageStore(ambient_buffer, gi_pos, uvec4(rgbe_encode(ambient)));
 	vec4 blend = imageLoad(blend_buffer, gi_pos);
 	imageStore(blend_buffer, gi_pos, vec4(1.0, blend.g, 0.0, 0.0));
 }
-
 #endif // MODE_GATHER
 
 #ifdef MODE_DEBUG

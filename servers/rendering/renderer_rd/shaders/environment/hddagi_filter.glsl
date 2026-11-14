@@ -25,7 +25,7 @@ layout(constant_id = 0) const bool sc_half_res = false;
 #define RADIUS 12
 #endif
 
-#define ROUGHNESS_TO_REFLECTION_TRESHOOLD 0.3
+#define ROUGHNESS_TO_REFLECTION_TRESHOOLD 0.25 // As in gi.glsl.
 
 layout(set = 0, binding = 7, std140) uniform SceneData {
 	mat4x4 inv_projection[2];
@@ -111,6 +111,14 @@ uint rgbe_encode(vec3 rgb) {
 	return e | (urgb.b << 18) | (urgb.g << 9) | (urgb.r & 0x1FF);
 }
 
+// Writes what a pixel has to the destination as it is: both passes of the filter
+// read the other one's output, so pixels it does not filter must be there too.
+void copy_through(ivec2 p_pos) {
+	vec2 blend = texelFetch(sampler2D(blend_buffer, linear_sampler), p_pos, 0).rg;
+	imageStore(dst_specular_buffer, p_pos, uvec4(rgbe_encode(texelFetch(sampler2D(specular_buffer, linear_sampler), p_pos, 0).rgb)));
+	imageStore(dst_blend_buffer, p_pos, vec4(blend, 0, 0));
+}
+
 void main() {
 	ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
 
@@ -122,7 +130,8 @@ void main() {
 	vec4 normal_roughness = fetch_normal_and_roughness(depth_pos);
 
 	if (normal_roughness.rgb == vec3(0.0) || normal_roughness.a >= ROUGHNESS_TO_REFLECTION_TRESHOOLD) {
-		return; // No need to do anything.
+		copy_through(pos);
+		return;
 	}
 
 	float depth = reconstruct_position(depth_pos).z;
@@ -133,10 +142,17 @@ void main() {
 
 #ifdef HALF_SIZE
 	// Over the same stretch of the screen below half resolution too.
-	int radius = max(1, RADIUS >> (int(params.res_shift) - 1));
+	int base_radius = max(1, RADIUS >> (int(params.res_shift) - 1));
 #else
-	int radius = RADIUS;
+	int base_radius = RADIUS;
 #endif
+
+	// A mirror has one direction per pixel and nothing to smooth out, a rougher surface
+	// has them spread out by the dither: the blur grows with the roughness, so that sharp
+	// reflections stay sharp.
+	float spread = clamp(normal_roughness.a / ROUGHNESS_TO_REFLECTION_TRESHOOLD * 1.5, 0.0, 1.0);
+	int radius = int(ceil(float(base_radius) * spread));
+	float depth_scale = 1.0 / (0.1 * abs(depth) + 0.2);
 
 	for (int i = -radius; i <= radius; i++) {
 		ivec2 read_pos = pos + params.filter_dir * i;
@@ -149,7 +165,9 @@ void main() {
 		float d = reconstruct_position(read_pos).z;
 		vec4 nr = fetch_normal_and_roughness(read_pos);
 
-		float weight = exp(-abs(depth - d));
+		// A tent over the kernel, not a box: no edge to the blur.
+		float weight = 1.0 - float(abs(i)) / float(radius + 1);
+		weight *= exp(-abs(depth - d) * depth_scale);
 		float dp = max(0.0, dot(nr.rgb, normal_roughness.rgb));
 		dp = pow(dp, 4.0); // The more curvature, the less filter.
 		weight *= dp;
@@ -165,8 +183,6 @@ void main() {
 		specular_accum /= total_weight;
 	}
 
-	//imageStore(dst_specular_buffer,pos,uvec4(rgbe_encode(specular_accum.rgb)));
 	imageStore(dst_specular_buffer, pos, uvec4(rgbe_encode(specular_accum.rgb)));
-	uint blend = uint(clamp(specular_accum.a * 0xF, 0, 0xF)) | (uint(clamp(diffuse_blend * 0xF, 0, 0xF)) << 4);
 	imageStore(dst_blend_buffer, pos, vec4(diffuse_blend, specular_accum.a, 0, 0));
 }

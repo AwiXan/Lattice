@@ -171,7 +171,7 @@ private:
 	float dynamic_gi_probe_bias = 1.1;
 	float dynamic_gi_occlusion_bias = 0.1;
 	bool dynamic_gi_filter_ambient = true;
-	bool dynamic_gi_filter_reflections = false;
+	bool dynamic_gi_filter_reflections = true;
 	void _update_dynamic_gi();
 
 	// Glow

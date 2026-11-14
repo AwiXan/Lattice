@@ -105,29 +105,60 @@ away. That is exactly the part Lumen replaces with screen probes.
      occlusion weights) at its origin in its direction. These probes already
      include the sky, so this is also the sky term.
 3. **Temporal + spatial filtering.** Each probe's new radiance is blended
-   with the history radiance of the same tile from the previous frame, after
-   checking that last frame's probe of that tile was on the same surface
-   (world-space distance relative to depth, normal agreement). If it wasn't
-   (a tile across an edge has its probe on one surface one frame and on the
-   other the next), the closest matching probe among the 3×3 tiles around is
-   taken. On a mismatch
-   (disocclusion, camera cut) the history is dropped and the new trace stands
-   alone. The tolerance grows on surfaces seen at a grazing angle, where a tile
-   covers that much more of the surface. The new sample weighs `1/frames`, with
-   a project setting for the frame count. Then a spatial pass averages each
-   texel with the same direction of the neighbouring probes (3×3 with 16 px
-   tiles, 5×5 with 8 px ones, so about the same screen area; the weight halves
-   every tile in each axis, every two tiles on 5×5), weighted by plane distance
-   and normal similarity, which
-   removes most of the per-ray noise before history is stored. The filtered map
-   becomes next frame's history (ping-pong).
+   with the history radiance of the same surface from the previous frame. The
+   history is the blend of last frame's probes in the 3×3 tiles around where
+   this one was, each weighted by `(1 - distance / radius)²` (world distance, so
+   that it follows the probes' real, jittered positions), a smooth normal
+   agreement, and a plane test (a probe on another surface across an edge
+   counts for nothing). Blending several instead of taking the closest one
+   makes the history glide over the probes as the camera moves; hopping from
+   probe to probe showed as tiles popping. A texel without history in a
+   neighbour (below its horizon) is left out of that texel's blend. If no probe
+   fits (disocclusion, camera cut) the history is dropped and the new trace
+   stands alone. The tolerance grows on surfaces seen at a grazing angle, where
+   a tile covers that much more of the surface. The new sample weighs
+   `1/frames`, with a project setting for the frame count. Then a spatial pass
+   averages each texel with the same direction of the neighbouring probes (3×3
+   with 16 px tiles, 5×5 with 8 px ones, so about the same screen area; the
+   weight halves every tile in each axis, every two tiles on 5×5), weighted by
+   plane distance and normal similarity (both fade out smoothly, no cut-off, so
+   that a neighbour does not switch on and off as probes move in their tiles),
+   which removes most of the per-ray noise before history is stored. The
+   filtered map becomes next frame's history (ping-pong).
+
+   *Geometric normals.* Every "same surface" decision (history, spatial filter,
+   gather) and the probe's hemisphere use the normal worked out from the depth
+   buffer (`fetch_geometric_normal()`, smaller depth step per axis), never the
+   normal buffer's: with a normal map, or smoothed vertex normals, the normal
+   of the pixel a probe happens to land on changes from frame to frame, so the
+   plane and facing tests flipped, history was dropped at random, and the
+   gather's weights flickered at pixel scale (it looked like Z-fighting). The
+   normal buffer's normal is only used for reading the irradiance.
 4. **Irradiance and gather.** The filter pass also projects each filtered
    octahedral map onto L1 spherical harmonics (4 coefficients × RGB) and
    convolves with the clamped cosine. The gather pass then evaluates, for every
-   GI pixel, the four nearest probes (bilinear in tile space) at the pixel's
-   normal, weighted by bilinear × plane-distance × normal agreement, and writes
-   irradiance / π into the existing `ambient` GI buffer with blend 1. Pixels
-   with no valid probe around keep HDDAGI's own value.
+   GI pixel, the four nearest tiles' probes at the pixel's normal, weighted by
+   a tent around each probe's *actual* screen position (it moves inside its
+   tile; weighting by the tile's middle shifted the interpolation by up to half
+   a tile every frame) × plane distance (geometric normal) × normal agreement,
+   and writes irradiance / π into the existing `ambient` GI buffer with blend
+   1. Where little fits (weights under 0.1), the probes of the 3×3 tiles that
+   face the same way make up the missing share, so the transition is
+   continuous; only pixels with no usable probe at all keep HDDAGI's own value.
+
+   *Temporal filter of the gather.* The gather's result is kept per GI pixel
+   (RGBA16F, ping-pong, the depth it was seen at in alpha). Next frame each
+   pixel reprojects its surface point into it, reads the four texels around
+   weighted by bilinear × depth agreement, and blends with weight 0.12 for the
+   new value (`GATHER_ALPHA`). The weight goes up to 1 where the new and the old
+   value differ a lot (25 %–80 % relative luminance), so that a moving light or
+   an opening door is not smeared, while the flicker of a few percent that is
+   left (probes moving about their tiles, ray noise) is averaged out. Without
+   a matching old texel (disocclusion, resolution change, camera cut) the new
+   value stands alone. Test room, 960×540, still camera, mean absolute
+   difference of two consecutive frames (0–255): 0.46 before the work on
+   flicker, 0.12 with geometric normals and weights by real probe positions,
+   0.015 with this filter (HDDAGI: 0.0007).
 
 Importance sampling, as implemented: Lumen distributes a probe's rays with
 the product of the BRDF and the previous frame's radiance. Lumen Lite does the
@@ -181,7 +212,15 @@ feedback, energy, sky) keep their meaning.
 
 * **Reflections.** First version: the HDDAGI reflection path (one HDDA ray for
   glossy pixels, probe specular for rough ones) still writes the `reflection`
-  buffer; SSR and reflection probes stay on top as today. Next step: rough
+  buffer; SSR and reflection probes stay on top as today. Its smoothness (shared
+  by both Dynamic GI modes): the light at a hit is interpolated trilinearly
+  around the exact point where the ray met the voxel face (not read as one
+  value per 20 cm cell); the reflection filter (on by default now) blurs in
+  proportion to the roughness, so mirrors stay sharp, with a tent kernel and
+  with the pixels it skips copied through; and the scene shader interpolates
+  the four half-resolution GI texels around a pixel, bilateral by facing, in
+  place of taking the nearest one (which showed 2×2 pixel blocks). Next step:
+  rough
   reflections (roughness > 0.4) read the screen probes' radiance map in the
   reflection direction, and only glossy pixels trace, reusing the
   screen-then-world tracer.

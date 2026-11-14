@@ -2260,66 +2260,139 @@ void fragment_shader(in SceneData scene_data) {
 
 		ivec2 coord = ivec2(gl_FragCoord.xy);
 
-		if (implementation_data.gi_upscale) {
-			if (implementation_data.gi_upscale_shift > 0) {
-				coord -= coord & 1;
-			}
-
-			ivec2 closest_coord = coord;
+		vec3 buffer_ambient;
+		vec3 buffer_reflection;
+		vec2 buffer_blend;
 
 #ifdef USE_MULTIVIEW
-			vec4 closest_nr = texelFetch(sampler2DArray(normal_roughness_buffer, SAMPLER_LINEAR_CLAMP), ivec3(coord, ViewIndex), 0);
-#else // USE_MULTIVIEW
-			vec4 closest_nr = texelFetch(sampler2D(normal_roughness_buffer, SAMPLER_LINEAR_CLAMP), coord, 0);
-#endif // USE_MULTIVIEW
+#define GI_FETCH(m_tex, m_coord) texelFetch(sampler2DArray(m_tex, SAMPLER_LINEAR_CLAMP), ivec3(m_coord, ViewIndex), 0)
+#define GI_SIZE(m_tex) ivec2(textureSize(sampler2DArray(m_tex, SAMPLER_LINEAR_CLAMP), 0).xy)
+#else
+#define GI_FETCH(m_tex, m_coord) texelFetch(sampler2D(m_tex, SAMPLER_LINEAR_CLAMP), m_coord, 0)
+#define GI_SIZE(m_tex) ivec2(textureSize(sampler2D(m_tex, SAMPLER_LINEAR_CLAMP), 0))
+#endif
 
-			float closest_r = closest_nr.a;
-			bool dynamic_object = closest_r > 0.5;
-			if (dynamic_object) {
-				closest_r = 1.0 - closest_r;
-			}
-			closest_r /= (127.0 / 255.0);
+		if (implementation_data.gi_upscale && implementation_data.gi_upscale_shift > 0) {
+			// GI is worked out below full resolution, one texel for each block of pixels (the
+			// block's first one). Picking the nearest texel shows its blocks as squares, most
+			// of all in reflections: interpolate the four around instead, as far as they face
+			// the way this pixel does, so that the light does not bleed over edges.
+			ivec2 gi_max = GI_SIZE(ambient_buffer) - 1;
+			ivec2 nr_max = GI_SIZE(normal_roughness_buffer) - 1;
+			vec2 src_pos = vec2(coord) / float(1 << implementation_data.gi_upscale_shift);
+			ivec2 src_base = ivec2(floor(src_pos));
+			vec2 src_f = src_pos - vec2(src_base);
 
-			float closest_ang = dot(normal, normalize(closest_nr.xyz * 2.0 - 1.0));
-			closest_ang -= abs(closest_r - roughness) * 0.5;
+			vec3 ambient_sum = vec3(0.0);
+			vec3 reflection_sum = vec3(0.0);
+			float ambient_alpha = 0.0;
+			float reflection_alpha = 0.0;
+			float ambient_weight = 0.0;
+			float reflection_weight = 0.0;
+
+			// What the four are too unlike for: the one most like this pixel.
+			float best_facing = -2.0;
+			ivec2 best_src = clamp(src_base, ivec2(0), gi_max);
 
 			for (int i = 0; i < 4; i++) {
-				const ivec2 neighbors[4] = ivec2[](ivec2(1, 0), ivec2(0, 1), ivec2(-1, 0), ivec2(0, -1));
-				ivec2 neighbour_coord = coord + (neighbors[i] << implementation_data.gi_upscale_shift);
-#ifdef USE_MULTIVIEW
-				closest_nr = texelFetch(sampler2DArray(normal_roughness_buffer, SAMPLER_LINEAR_CLAMP), ivec3(neighbour_coord, ViewIndex), 0);
-#else // USE_MULTIVIEW
-				closest_nr = texelFetch(sampler2D(normal_roughness_buffer, SAMPLER_LINEAR_CLAMP), neighbour_coord, 0);
-#endif // USE_MULTIVIEW
-
-				float r = closest_nr.a;
-				dynamic_object = r > 0.5;
-				if (dynamic_object) {
-					r = 1.0 - r;
+				ivec2 offset = ivec2(i & 1, i >> 1);
+				ivec2 src = clamp(src_base + offset, ivec2(0), gi_max);
+				ivec2 src_nr_coord = min(src << implementation_data.gi_upscale_shift, nr_max);
+				vec4 src_nr = GI_FETCH(normal_roughness_buffer, src_nr_coord);
+				if (src_nr.xyz == vec3(0.0)) {
+					continue; // Nothing drawn there: holds no GI.
 				}
-				r /= (127.0 / 255.0);
 
-				float ang = dot(normal, normalize(closest_nr.xyz * 2.0 - 1.0));
-				ang -= abs(r - roughness) * 0.5;
-
-				if (ang > closest_ang) {
-					closest_ang = ang;
-					closest_coord = neighbour_coord;
+				float src_roughness = src_nr.a;
+				if (src_roughness > 0.5) {
+					src_roughness = 1.0 - src_roughness;
 				}
+				src_roughness /= (127.0 / 255.0);
+
+				float facing = dot(normal, normalize(src_nr.xyz * 2.0 - 1.0));
+				if (facing - abs(src_roughness - roughness) * 0.5 > best_facing) {
+					best_facing = facing - abs(src_roughness - roughness) * 0.5;
+					best_src = src;
+				}
+
+				// Soft, and flat where normals are alike: normal maps vary the normal from pixel to
+				// pixel, and the weights must not follow that.
+				float weight = smoothstep(0.3, 0.9, facing);
+				weight *= (offset.x == 1 ? src_f.x : 1.0 - src_f.x) * (offset.y == 1 ? src_f.y : 1.0 - src_f.y);
+				float src_reflection_weight = weight * max(0.0, 1.0 - abs(src_roughness - roughness) * 2.0);
+
+				vec2 src_blend = GI_FETCH(ambient_reflection_blend_buffer, src).rg;
+				ambient_sum += GI_FETCH(ambient_buffer, src).rgb * src_blend.r * weight;
+				ambient_alpha += src_blend.r * weight;
+				ambient_weight += weight;
+				reflection_sum += GI_FETCH(reflection_buffer, src).rgb * src_blend.g * src_reflection_weight;
+				reflection_alpha += src_blend.g * src_reflection_weight;
+				reflection_weight += src_reflection_weight;
 			}
 
-			coord = closest_coord >> implementation_data.gi_upscale_shift;
+			vec2 best_blend = GI_FETCH(ambient_reflection_blend_buffer, best_src).rg;
+			if (ambient_weight > 0.0001) {
+				buffer_blend.r = ambient_alpha / ambient_weight;
+				buffer_ambient = ambient_alpha > 0.0 ? ambient_sum / ambient_alpha : vec3(0.0);
+			} else {
+				buffer_blend.r = best_blend.r;
+				buffer_ambient = GI_FETCH(ambient_buffer, best_src).rgb;
+			}
+			if (reflection_weight > 0.0001) {
+				buffer_blend.g = reflection_alpha / reflection_weight;
+				buffer_reflection = reflection_alpha > 0.0 ? reflection_sum / reflection_alpha : vec3(0.0);
+			} else {
+				buffer_blend.g = best_blend.g;
+				buffer_reflection = GI_FETCH(reflection_buffer, best_src).rgb;
+			}
+		} else {
+			if (implementation_data.gi_upscale) {
+				// Full resolution GI with MSAA: the pixel's own texel, or the one of the four around it
+				// that faces the same way when it is on the edge of something.
+				ivec2 closest_coord = coord;
+				vec4 closest_nr = GI_FETCH(normal_roughness_buffer, coord);
+
+				float closest_r = closest_nr.a;
+				bool dynamic_object = closest_r > 0.5;
+				if (dynamic_object) {
+					closest_r = 1.0 - closest_r;
+				}
+				closest_r /= (127.0 / 255.0);
+
+				float closest_ang = dot(normal, normalize(closest_nr.xyz * 2.0 - 1.0));
+				closest_ang -= abs(closest_r - roughness) * 0.5;
+
+				for (int i = 0; i < 4; i++) {
+					const ivec2 neighbors[4] = ivec2[](ivec2(1, 0), ivec2(0, 1), ivec2(-1, 0), ivec2(0, -1));
+					ivec2 neighbour_coord = coord + neighbors[i];
+					closest_nr = GI_FETCH(normal_roughness_buffer, neighbour_coord);
+
+					float r = closest_nr.a;
+					dynamic_object = r > 0.5;
+					if (dynamic_object) {
+						r = 1.0 - r;
+					}
+					r /= (127.0 / 255.0);
+
+					float ang = dot(normal, normalize(closest_nr.xyz * 2.0 - 1.0));
+					ang -= abs(r - roughness) * 0.5;
+
+					if (ang > closest_ang) {
+						closest_ang = ang;
+						closest_coord = neighbour_coord;
+					}
+				}
+
+				coord = closest_coord;
+			}
+
+			buffer_ambient = GI_FETCH(ambient_buffer, coord).rgb;
+			buffer_reflection = GI_FETCH(reflection_buffer, coord).rgb;
+			buffer_blend = GI_FETCH(ambient_reflection_blend_buffer, coord).rg;
 		}
 
-#ifdef USE_MULTIVIEW
-		vec3 buffer_ambient = texelFetch(sampler2DArray(ambient_buffer, SAMPLER_LINEAR_CLAMP), ivec3(coord, ViewIndex), 0).rgb;
-		vec3 buffer_reflection = texelFetch(sampler2DArray(reflection_buffer, SAMPLER_LINEAR_CLAMP), ivec3(coord, ViewIndex), 0).rgb;
-		vec2 buffer_blend = texelFetch(sampler2DArray(ambient_reflection_blend_buffer, SAMPLER_LINEAR_CLAMP), ivec3(coord, ViewIndex), 0).rg;
-#else // USE_MULTIVIEW
-		vec3 buffer_ambient = texelFetch(sampler2D(ambient_buffer, SAMPLER_LINEAR_CLAMP), coord, 0).rgb;
-		vec3 buffer_reflection = texelFetch(sampler2D(reflection_buffer, SAMPLER_LINEAR_CLAMP), coord, 0).rgb;
-		vec2 buffer_blend = texelFetch(sampler2D(ambient_reflection_blend_buffer, SAMPLER_LINEAR_CLAMP), coord, 0).rg;
-#endif // USE_MULTIVIEW
+#undef GI_FETCH
+#undef GI_SIZE
 
 		ambient_light = mix(ambient_light, buffer_ambient, buffer_blend.r);
 		indirect_specular_light = mix(indirect_specular_light, buffer_reflection, buffer_blend.g);

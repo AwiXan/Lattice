@@ -648,28 +648,45 @@ void hddagi_process(vec3 vertex, vec3 normal, vec3 reflection, float roughness, 
 					light.a = 1;
 
 					if (!disoccluded) {
-						// filter using the neighbors!
+						// Filter using the neighbors: the light is one value per cell, so reading just the
+						// cell hit shows the voxels as blocks in a reflection. Instead it is interpolated
+						// (trilinear) around the exact point the ray hit, over the lit cells that are there.
 						uint neighbour_bits = imageLoad(voxel_neighbours, read_cell + ivec3(0, (hddagi.grid_size.y * hit_cascade), 0)).r;
-						vec3 cascade_ofs = hddagi.cascades[hit_cascade].position;
 						float to_cell = hddagi.cascades[hit_cascade].to_cell;
-						float cascade_cell_size = 1.0 / to_cell;
 
 						const ivec3 facing_directions[26] = ivec3[](ivec3(-1, 0, 0), ivec3(1, 0, 0), ivec3(0, -1, 0), ivec3(0, 1, 0), ivec3(0, 0, -1), ivec3(0, 0, 1), ivec3(-1, -1, -1), ivec3(-1, -1, 0), ivec3(-1, -1, 1), ivec3(-1, 0, -1), ivec3(-1, 0, 1), ivec3(-1, 1, -1), ivec3(-1, 1, 0), ivec3(-1, 1, 1), ivec3(0, -1, -1), ivec3(0, -1, 1), ivec3(0, 1, -1), ivec3(0, 1, 1), ivec3(1, -1, -1), ivec3(1, -1, 0), ivec3(1, -1, 1), ivec3(1, 0, -1), ivec3(1, 0, 1), ivec3(1, 1, -1), ivec3(1, 1, 0), ivec3(1, 1, 1));
-						vec3 light_cell_pos = (vec3(hit_cell) + 0.5) * cascade_cell_size + cascade_ofs;
-						vec4 light_accum = vec4(light.rgb, 1.0) * max(0.0, 1.0 - point_to_ray_distance(light_cell_pos, ray_pos, ray_dir) * to_cell);
+
+						// Where the ray met the face of the solid cell, in cells of the hit cascade; hit_cell
+						// is the open cell in front of it now. Moved into the middle layer of such cells.
+						vec3 face = vec3(hit_face);
+						vec3 abs_face = abs(face);
+						int axis = abs_face.x >= abs_face.y && abs_face.x >= abs_face.z ? 0 : (abs_face.y >= abs_face.z ? 1 : 2);
+						vec3 hit_origin = (ray_pos - hddagi.cascades[hit_cascade].position) * to_cell;
+						float plane = float(hit_cell[axis]) + (face[axis] < 0.0 ? 1.0 : 0.0);
+						float hit_t = abs(n[axis]) > 0.0001 ? max((plane - hit_origin[axis]) / n[axis], 0.0) : 0.0;
+						vec3 base_center = vec3(hit_cell) + 0.5;
+						vec3 hit_point = hit_origin + n * hit_t + face * 0.5;
+						hit_point = base_center + clamp(hit_point - base_center, vec3(-0.5), vec3(0.5));
+
+						// Across the face the weight falls off at half the speed: lit cells of the next
+						// layer (around an edge) still count a little, as the surface bends there.
+						vec3 falloff = mix(vec3(1.0), vec3(0.5), abs_face);
+						vec3 base_d = abs(base_center - hit_point) * falloff;
+						vec3 base_w = max(vec3(0.0), vec3(1.0) - base_d);
+						vec4 light_accum = vec4(light.rgb, 1.0) * (base_w.x * base_w.y * base_w.z);
 						while (neighbour_bits != 0) {
-							uint msb = findLSB(neighbour_bits);
-							vec3 rel = vec3(facing_directions[msb]);
-							vec3 neighbour_pos = light_cell_pos + rel * cascade_cell_size;
-							float w = max(0.0, 1.0 - point_to_ray_distance(neighbour_pos, ray_pos, ray_dir) * to_cell);
+							uint lsb = findLSB(neighbour_bits);
+							ivec3 neighbour_cell = hit_cell + facing_directions[lsb];
+							vec3 neighbour_d = abs(vec3(neighbour_cell) + 0.5 - hit_point) * falloff;
+							vec3 neighbour_w = max(vec3(0.0), vec3(1.0) - neighbour_d);
+							float w = neighbour_w.x * neighbour_w.y * neighbour_w.z;
 							if (w > 0.0) {
-								ivec3 neighbour_cell = hit_cell + facing_directions[msb];
 								read_cell = (neighbour_cell + (hddagi.cascades[hit_cascade].region_world_offset * REGION_SIZE)) & (ivec3(hddagi.grid_size) - 1);
 								vec3 neighbour_light = texelFetch(sampler3D(light_cascades, linear_sampler), read_cell + ivec3(0, (hddagi.grid_size.y * hit_cascade), 0), 0).rgb;
 								light_accum += vec4(neighbour_light, 1.0) * w;
 							}
 
-							neighbour_bits &= ~(1 << msb);
+							neighbour_bits &= ~(1 << lsb);
 						}
 
 						if (light_accum.a > 0.0) {
@@ -704,7 +721,7 @@ vec4 voxel_cone_trace(texture3D probe, vec3 cell_size, vec3 pos, vec3 direction,
 	float dist = p_bias;
 	vec4 color = vec4(0.0);
 
-	while (dist < max_distance && color.a < 1.0) {
+	while (dist < max_distance && color.a < 0.95) { // The forward path stops at 0.95 too: the last 5% of opacity is not worth the steps.
 		float diameter = max(1.0, 2.0 * tan_half_angle * dist);
 		vec3 uvw_pos = (pos + dist * direction) * cell_size;
 		float half_diameter = diameter * 0.5;
@@ -727,7 +744,7 @@ vec4 voxel_cone_trace_45_degrees(texture3D probe, vec3 cell_size, vec3 pos, vec3
 	float radius = max(0.5, dist);
 	float lod_level = log2(radius * 2.0);
 
-	while (dist < max_distance && color.a < 1.0) {
+	while (dist < max_distance && color.a < 0.95) { // The forward path stops at 0.95 too: the last 5% of opacity is not worth the steps.
 		vec3 uvw_pos = (pos + dist * direction) * cell_size;
 
 		//check if outside, then break

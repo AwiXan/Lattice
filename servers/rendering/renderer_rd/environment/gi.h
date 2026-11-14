@@ -169,6 +169,7 @@ public:
 		void update(bool p_update_light_instances, const Vector<RID> &p_light_instances, const PagedArray<RenderGeometryInstance *> &p_dynamic_objects);
 		void debug(RD::DrawListID p_draw_list, RID p_framebuffer, const Projection &p_camera_with_transform, bool p_lighting, bool p_emission, float p_alpha);
 		void free_resources();
+		void _create_dynamic_maps(const Vector3i &p_octree_size);
 	};
 
 private:
@@ -498,6 +499,7 @@ private:
 			FLAG_SPATIAL_FILTER = 2,
 			FLAG_HALF_RAYS = 4,
 			FLAG_HISTORY_VALID = 8,
+			FLAG_GATHER_HISTORY = 16,
 		};
 
 		struct UBO {
@@ -847,6 +849,11 @@ public:
 		RID radiance_trace;
 		RID probe_sh;
 
+		// The ambient the gather wrote, per GI pixel, for the temporal filter; [frame & 1] as above.
+		RID gather_history[2];
+		Size2i gather_size;
+		bool gather_history_valid = false;
+
 		RID last_lit; // The lit opaque scene of last frame, half size.
 		Size2i last_lit_size;
 		RID debug_texture;
@@ -861,6 +868,7 @@ public:
 
 		bool is_allocated() const { return ubo.is_valid(); }
 		void allocate(const Size2i &p_screen_size, uint32_t p_tile_size);
+		void allocate_gather_history(const Size2i &p_gi_size);
 
 		virtual void configure(RenderSceneBuffersRD *p_render_buffers) override {}
 		virtual void free_data() override;

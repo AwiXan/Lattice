@@ -3115,6 +3115,10 @@
 			The VoxelGI quality to use. High quality leads to more precise lighting and better reflections, but is slower to render. This setting does not affect the baked data and doesn't require baking the [VoxelGI] again to apply.
 			[b]Note:[/b] This property is only read when the project starts. To control VoxelGI quality at runtime, call [method RenderingServer.voxel_gi_set_quality] instead.
 		</member>
+		<member name="rendering/global_illumination/voxel_gi/dynamic_oversampling" type="int" setter="" getter="" default="2">
+			How many powers of two larger than the volume the textures are that dynamic objects (a [GeometryInstance3D] with [member GeometryInstance3D.gi_mode] set to Dynamic) are drawn into for [VoxelGI]. [code]4[/code] is 16 times the size of the volume in each axis, as it was before this setting: sharper dynamic objects, but it can take gigabytes of video memory and a lot of GPU time with large volumes. [code]0[/code] draws them at the volume's own resolution.
+			[b]Note:[/b] This property is read when a [VoxelGI] is created or its data changes, not every frame.
+		</member>
 		<member name="rendering/lightmapping/bake_performance/max_rays_per_pass" type="int" setter="" getter="" default="4">
 			The maximum number of rays that can be thrown per pass when baking lightmaps with [LightmapGI]. Depending on the scene, adjusting this value may result in higher GPU utilization when baking lightmaps, leading to faster bake times.
 			[b]Note:[/b] Using a value that is too high for your system can cause crashes due to the GPU being unresponsive for long periods of time, and the graphics driver being reset by the OS.
