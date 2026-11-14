@@ -204,7 +204,7 @@ private:
 	bool fog_blur_enabled = false;
 	float fog_blur_intensity = 0.5;
 	float fog_blur_max_lod = 4.0;
-	bool fog_blur_gaussian_filter_enabled = true;
+	bool fog_blur_gaussian_filter_enabled = false;
 
 	void _update_fog();
 

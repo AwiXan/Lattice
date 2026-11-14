@@ -348,7 +348,7 @@ void RendererSceneRenderRD::_render_buffers_ensure_screen_texture(const RenderDa
 	}
 }
 
-void RendererSceneRenderRD::_render_buffers_copy_screen_texture(const RenderDataRD *p_render_data) {
+void RendererSceneRenderRD::_render_buffers_copy_screen_texture(const RenderDataRD *p_render_data, bool p_gaussian_mipmaps) {
 	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
 	ERR_FAIL_COND(rb.is_null());
 
@@ -391,7 +391,14 @@ void RendererSceneRenderRD::_render_buffers_copy_screen_texture(const RenderData
 			dest = rb->get_texture_slice(RB_SCOPE_BUFFERS, texture_name, v, i);
 			Size2i msize = rb->get_texture_slice_size(RB_SCOPE_BUFFERS, texture_name, i);
 
-			if (can_use_storage) {
+			if (p_gaussian_mipmaps) {
+				Rect2i mip_region(Point2i(), msize);
+				if (can_use_storage) {
+					copy_effects->gaussian_blur(source, dest, mip_region, msize);
+				} else {
+					copy_effects->gaussian_blur_raster(source, dest, mip_region, msize);
+				}
+			} else if (can_use_storage) {
 				copy_effects->make_mipmap(source, dest, msize);
 			} else {
 				copy_effects->make_mipmap_raster(source, dest, msize);
@@ -426,7 +433,7 @@ void RendererSceneRenderRD::_render_buffers_fog_blur(const RenderDataRD *p_rende
 	ERR_FAIL_COND(rb.is_null());
 
 	_render_buffers_ensure_screen_texture(p_render_data);
-	_render_buffers_copy_screen_texture(p_render_data);
+	_render_buffers_copy_screen_texture(p_render_data, true);
 
 	Size2i internal_size = rb->get_internal_size();
 	bool screen_copy_uses_blur_texture = !rb->has_upscaled_texture() || internal_size == rb->get_target_size();

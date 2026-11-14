@@ -85,19 +85,19 @@ vec3 sample_gaussian_blur(vec2 p_uv, float p_lod) {
 	float radius = 0.5 * (exp2(p_lod) - 1.0);
 	vec2 offset = radius / vec2(textureSize(screen_sampler, 0));
 
-	vec3 a = textureLod(screen_sampler, p_uv + offset * vec2(-1.0, -1.0), p_lod).rgb;
-	vec3 b = textureLod(screen_sampler, p_uv + offset * vec2(0.0, -1.0), p_lod).rgb;
-	vec3 c = textureLod(screen_sampler, p_uv + offset * vec2(1.0, -1.0), p_lod).rgb;
-	vec3 d = textureLod(screen_sampler, p_uv + offset * vec2(-0.5, -0.5), p_lod).rgb;
-	vec3 e = textureLod(screen_sampler, p_uv + offset * vec2(0.5, -0.5), p_lod).rgb;
-	vec3 f = textureLod(screen_sampler, p_uv + offset * vec2(-1.0, 0.0), p_lod).rgb;
-	vec3 g = textureLod(screen_sampler, p_uv, p_lod).rgb;
-	vec3 h = textureLod(screen_sampler, p_uv + offset * vec2(1.0, 0.0), p_lod).rgb;
-	vec3 i = textureLod(screen_sampler, p_uv + offset * vec2(-0.5, 0.5), p_lod).rgb;
-	vec3 j = textureLod(screen_sampler, p_uv + offset * vec2(0.5, 0.5), p_lod).rgb;
-	vec3 k = textureLod(screen_sampler, p_uv + offset * vec2(-1.0, 1.0), p_lod).rgb;
-	vec3 l = textureLod(screen_sampler, p_uv + offset * vec2(0.0, 1.0), p_lod).rgb;
-	vec3 m = textureLod(screen_sampler, p_uv + offset * vec2(1.0, 1.0), p_lod).rgb;
+	vec3 a = textureLod(screen_sampler, p_uv + offset * vec2(-1.0, -1.0), 0.0).rgb;
+	vec3 b = textureLod(screen_sampler, p_uv + offset * vec2(0.0, -1.0), 0.0).rgb;
+	vec3 c = textureLod(screen_sampler, p_uv + offset * vec2(1.0, -1.0), 0.0).rgb;
+	vec3 d = textureLod(screen_sampler, p_uv + offset * vec2(-0.5, -0.5), 0.0).rgb;
+	vec3 e = textureLod(screen_sampler, p_uv + offset * vec2(0.5, -0.5), 0.0).rgb;
+	vec3 f = textureLod(screen_sampler, p_uv + offset * vec2(-1.0, 0.0), 0.0).rgb;
+	vec3 g = textureLod(screen_sampler, p_uv, 0.0).rgb;
+	vec3 h = textureLod(screen_sampler, p_uv + offset * vec2(1.0, 0.0), 0.0).rgb;
+	vec3 i = textureLod(screen_sampler, p_uv + offset * vec2(-0.5, 0.5), 0.0).rgb;
+	vec3 j = textureLod(screen_sampler, p_uv + offset * vec2(0.5, 0.5), 0.0).rgb;
+	vec3 k = textureLod(screen_sampler, p_uv + offset * vec2(-1.0, 1.0), 0.0).rgb;
+	vec3 l = textureLod(screen_sampler, p_uv + offset * vec2(0.0, 1.0), 0.0).rgb;
+	vec3 m = textureLod(screen_sampler, p_uv + offset * vec2(1.0, 1.0), 0.0).rgb;
 
 	return (d + e + i + j) * 0.125 +
 			(a + c + k + m) * 0.03125 +
@@ -117,8 +117,7 @@ void main() {
 	float raw_depth = texelFetch(depth_sampler, pixel, 0).r;
 	vec3 view_position = reconstruct_view_position(pixel, screen_size, raw_depth);
 	float fog_amount = get_fog_amount(view_position, uv);
-	float optical_depth = -log(max(1.0 - fog_amount, 0.0001));
-	float lod = min(optical_depth * params.intensity * float(params.max_lod), min(params.max_blur_lod, float(params.max_lod)));
+	float lod = min(fog_amount * params.intensity * params.max_blur_lod, min(params.max_blur_lod, float(params.max_lod)));
 
 	vec3 blurred = params.gaussian_filter_enabled != 0 ? sample_gaussian_blur(uv, lod) : textureLod(screen_sampler, uv, lod).rgb;
 	imageStore(output_image, pixel, vec4(blurred, original.a));
