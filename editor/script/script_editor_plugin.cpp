@@ -4363,13 +4363,12 @@ ScriptEditor::ScriptEditor(WindowWrapper *p_wrapper) {
 	menu_hb->add_child(script_forward);
 	script_forward->connect(SceneStringName(pressed), callable_mp(this, &ScriptEditor::_history_forward));
 
-	menu_hb->add_child(memnew(VSeparator));
-
+	// In Lattice, EditorPane already provides floating window controls,
+	// so the redundant floating button in the menu bar is omitted.
 	make_floating = memnew(ScreenSelect);
 	make_floating->set_tooltip_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 	make_floating->connect("request_open_in_screen", callable_mp(window_wrapper, &WindowWrapper::enable_window_on_screen).bind(true));
-
-	menu_hb->add_child(make_floating);
+	make_floating->hide();
 	p_wrapper->connect("window_visibility_changed", callable_mp(this, &ScriptEditor::_window_changed));
 
 	tab_container->connect("tab_changed", callable_mp(this, &ScriptEditor::_tab_changed));

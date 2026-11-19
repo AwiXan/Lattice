@@ -63,6 +63,8 @@ class EditorScenePanel : public VBoxContainer {
 	EditorButtonMirror toolbar_mirror;
 	LineEdit *filter = nullptr;
 
+	MarginContainer *mode_margin = nullptr;
+	PanelContainer *mode_panel = nullptr;
 	HBoxContainer *mode_bar = nullptr;
 	Button *local_button = nullptr;
 	Button *remote_button = nullptr;

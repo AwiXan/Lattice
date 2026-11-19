@@ -71,6 +71,7 @@ public:
 		DROP_RIGHT,
 		DROP_TOP,
 		DROP_BOTTOM,
+		DROP_WINDOW,
 	};
 
 	// Where a drop at this point would land. The header is not part of it: a

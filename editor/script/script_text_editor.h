@@ -202,6 +202,7 @@ protected:
 	bool can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const;
 	void drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from);
 
+	String _get_node_drop_text(const Dictionary &p_d, const Point2i &p_pos) const;
 	void _set_drop_info_text(const Dictionary &p_info) const;
 
 	String _get_absolute_path(const String &rel_path);

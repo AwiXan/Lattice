@@ -493,6 +493,7 @@ private:
 
 	bool drag_action = false;
 	bool drag_caret_force_displayed = false;
+	String drag_preview_text;
 
 	void _caret_changed(int p_caret = -1);
 	void _emit_caret_changed();
@@ -1006,6 +1007,9 @@ public:
 	int add_caret(int p_line, int p_column);
 	void remove_caret(int p_caret);
 	void remove_drag_caret();
+	void set_drag_caret(const Point2 &p_point);
+	void set_drag_preview_text(const String &p_text);
+	String get_drag_preview_text() const;
 	void remove_secondary_carets();
 	int get_caret_count() const;
 	void add_caret_at_carets(bool p_below);

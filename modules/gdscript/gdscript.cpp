@@ -2710,7 +2710,6 @@ void GDScriptLanguage::_reload_inheriters(const HashSet<GDScript *> &p_bases, GD
 		scr->reload(true);
 	}
 }
-
 void GDScriptLanguage::_reload_trait_users(GDScript *p_reloaded) {
 	const String path = p_reloaded->get_path();
 	// Files using traits of each other would reload each other forever.

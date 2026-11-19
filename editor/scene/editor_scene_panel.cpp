@@ -39,9 +39,12 @@
 #include "editor/editor_node.h"
 #include "editor/scene/scene_tree_editor.h"
 #include "editor/settings/editor_settings.h"
+#include "editor/themes/editor_scale.h"
 #include "scene/gui/button.h"
 #include "scene/gui/line_edit.h"
+#include "scene/gui/margin_container.h"
 #include "scene/gui/option_button.h"
+#include "scene/gui/panel_container.h"
 #include "scene/gui/scroll_container.h"
 
 void EditorScenePanel::_mode_pressed(bool p_remote) {
@@ -231,6 +234,13 @@ void EditorScenePanel::_update_theme() {
 	if (!base) {
 		return;
 	}
+	const float edscale = EDSCALE;
+	if (mode_margin) {
+		mode_margin->add_theme_constant_override("margin_left", 4 * edscale);
+		mode_margin->add_theme_constant_override("margin_right", 4 * edscale);
+		mode_margin->add_theme_constant_override("margin_top", 2 * edscale);
+		mode_margin->add_theme_constant_override("margin_bottom", 2 * edscale);
+	}
 	local_button->set_button_icon(base->get_editor_theme_icon(SNAME("PackedScene")));
 	// What the run bar shows for a running game, rather than RemoteDebug, which
 	// reads as a broken file to anyone not steeped in the debugger's menus.
@@ -327,13 +337,30 @@ EditorScenePanel::EditorScenePanel() {
 	filter->add_theme_constant_override("minimum_character_width", 0);
 	filter->connect(SceneStringName(text_changed), callable_mp(this, &EditorScenePanel::_filter_changed));
 
+	mode_margin = memnew(MarginContainer);
+	mode_margin->add_theme_constant_override("margin_left", 4 * EDSCALE);
+	mode_margin->add_theme_constant_override("margin_right", 4 * EDSCALE);
+	mode_margin->add_theme_constant_override("margin_top", 2 * EDSCALE);
+	mode_margin->add_theme_constant_override("margin_bottom", 2 * EDSCALE);
+	add_child(mode_margin);
+
+	mode_panel = memnew(PanelContainer);
+	mode_panel->set_theme_type_variation("PanelContainerButtonGroup");
+	mode_margin->add_child(mode_panel);
+
 	mode_bar = memnew(HBoxContainer);
-	add_child(mode_bar);
+	mode_bar->add_theme_constant_override("separation", 0);
+	mode_panel->add_child(mode_bar);
+
+	Ref<ButtonGroup> mode_group;
+	mode_group.instantiate();
 
 	local_button = memnew(Button);
+	local_button->set_theme_type_variation(SceneStringName(FlatButton));
+	local_button->set_h_size_flags(SIZE_EXPAND_FILL);
 	local_button->set_toggle_mode(true);
+	local_button->set_button_group(mode_group);
 	local_button->set_pressed(true);
-	local_button->set_flat(true);
 	local_button->set_focus_mode(FOCUS_NONE);
 	local_button->set_text(TTRC("Local"));
 	local_button->set_tooltip_text(TTRC("Show the scene being edited."));
@@ -341,8 +368,10 @@ EditorScenePanel::EditorScenePanel() {
 	mode_bar->add_child(local_button);
 
 	remote_button = memnew(Button);
+	remote_button->set_theme_type_variation(SceneStringName(FlatButton));
+	remote_button->set_h_size_flags(SIZE_EXPAND_FILL);
 	remote_button->set_toggle_mode(true);
-	remote_button->set_flat(true);
+	remote_button->set_button_group(mode_group);
 	remote_button->set_focus_mode(FOCUS_NONE);
 	remote_button->set_text(TTRC("Remote"));
 	remote_button->set_tooltip_text(TTRC("Show the scene the running game has."));
@@ -350,7 +379,7 @@ EditorScenePanel::EditorScenePanel() {
 	mode_bar->add_child(remote_button);
 
 	session_button = memnew(OptionButton);
-	session_button->set_flat(true);
+	session_button->set_theme_type_variation(SceneStringName(FlatButton));
 	session_button->set_h_size_flags(SIZE_EXPAND_FILL);
 	session_button->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 	session_button->set_tooltip_text(TTRC("Which running game this panel watches."));
