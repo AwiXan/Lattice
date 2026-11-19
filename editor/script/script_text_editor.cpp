@@ -1978,6 +1978,13 @@ bool ScriptTextEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_
 					String(d["type"]) == "obj_property" ||
 					String(d["type"]) == "files_and_dirs")) {
 		_set_drop_info_text(d);
+		CodeEdit *ce = code_editor ? code_editor->get_text_editor() : nullptr;
+		if (ce) {
+			ce->set_drag_caret(p_point);
+			Point2i pos = ce->get_line_column_at_pos(p_point);
+			String ghost = _get_node_drop_text(d, pos);
+			ce->set_drag_preview_text(ghost);
+		}
 		return true;
 	}
 
@@ -2101,6 +2108,114 @@ String ScriptTextEditor::_get_dropped_resource_as_exported_member(const Ref<Reso
 	}
 
 	return vformat("@export var %s: %s", variable_name, class_name);
+}
+
+String ScriptTextEditor::_get_node_drop_text(const Dictionary &p_d, const Point2i &p_pos) const {
+	const String type = p_d.get("type", "");
+	Node *scene_root = get_tree()->get_edited_scene_root();
+	Ref<Script> script = edited_res;
+
+	const bool member_drop_modifier_pressed = Input::get_singleton()->is_key_pressed(Key::CMD_OR_CTRL);
+	const bool export_drop_modifier_pressed = Input::get_singleton()->is_key_pressed(Key::ALT);
+
+	if (type == "nodes") {
+		if (!scene_root || !script.is_valid() || !ClassDB::is_parent_class(script->get_instance_base_type(), "Node")) {
+			return String();
+		}
+		Node *sn = _find_script_node(scene_root, script);
+		if (!sn) {
+			sn = scene_root;
+		}
+		Array nodes = p_d.get("nodes", Array());
+		String text_to_drop;
+
+		if (member_drop_modifier_pressed) {
+			const bool use_type = EDITOR_GET("text_editor/completion/add_type_hints");
+			for (int i = 0; i < nodes.size(); i++) {
+				NodePath np = nodes[i];
+				Node *node = get_node(np);
+				if (!node) {
+					continue;
+				}
+				bool is_unique = node->is_unique_name_in_owner() && (node->get_owner() == sn || node->get_owner() == sn->get_owner());
+				String path = is_unique ? String(node->get_name()) : String(sn->get_path_to(node));
+				for (const String &segment : path.split("/")) {
+					if (!segment.is_valid_unicode_identifier()) {
+						path = _quote_drop_data(path);
+						break;
+					}
+				}
+				String variable_name = String(node->get_name()).to_snake_case().validate_unicode_identifier();
+				if (use_type) {
+					StringName custom_class_name;
+					Ref<Script> node_script = node->get_script();
+					while (node_script.is_valid() && custom_class_name.is_empty()) {
+						custom_class_name = node_script->get_global_name();
+						node_script = node_script->get_base_script();
+					}
+					const StringName class_name = custom_class_name.is_empty() ? node->get_class_name() : custom_class_name;
+					text_to_drop += vformat("@onready var %s: %s = %c%s", variable_name, class_name, is_unique ? '%' : '$', path);
+				} else {
+					text_to_drop += vformat("@onready var %s = %c%s", variable_name, is_unique ? '%' : '$', path);
+				}
+				if (i < nodes.size() - 1) {
+					text_to_drop += "\n";
+				}
+			}
+		} else if (export_drop_modifier_pressed) {
+			for (int i = 0; i < nodes.size(); i++) {
+				NodePath np = nodes[i];
+				Node *node = get_node(np);
+				if (!node) {
+					continue;
+				}
+				String variable_name = String(node->get_name()).to_snake_case().validate_unicode_identifier();
+				StringName custom_class_name;
+				Ref<Script> node_script = node->get_script();
+				while (node_script.is_valid() && custom_class_name.is_empty()) {
+					custom_class_name = node_script->get_global_name();
+					node_script = node_script->get_base_script();
+				}
+				const StringName class_name = custom_class_name.is_empty() ? node->get_class_name() : custom_class_name;
+				text_to_drop += vformat("@export var %s: %s", variable_name, class_name);
+				if (i < nodes.size() - 1) {
+					text_to_drop += "\n";
+				}
+			}
+		} else {
+			for (int i = 0; i < nodes.size(); i++) {
+				if (i > 0) {
+					text_to_drop += ", ";
+				}
+				NodePath np = nodes[i];
+				Node *node = get_node(np);
+				if (!node) {
+					continue;
+				}
+				bool is_unique = node->is_unique_name_in_owner() && (node->get_owner() == sn || node->get_owner() == sn->get_owner());
+				String path = is_unique ? String(node->get_name()) : String(sn->get_path_to(node));
+				for (const String &segment : path.split("/")) {
+					if (!segment.is_valid_ascii_identifier()) {
+						path = _quote_drop_data(path);
+						break;
+					}
+				}
+				text_to_drop += (is_unique ? "%" : "$") + path;
+			}
+		}
+		return text_to_drop;
+	} else if (type == "files" || type == "files_and_dirs") {
+		const PackedStringArray files = p_d.get("files", PackedStringArray());
+		PackedStringArray parts;
+		for (const String &path : files) {
+			parts.append(_quote_drop_data(path));
+		}
+		return String(", ").join(parts);
+	} else if (type == "obj_property") {
+		bool add_literal = EDITOR_GET("text_editor/completion/add_node_path_literals");
+		return (add_literal ? "^" : "") + _quote_drop_data(String(p_d.get("property", "")));
+	}
+	return String();
 }
 
 void ScriptTextEditor::drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) {

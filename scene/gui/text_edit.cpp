@@ -1981,6 +1981,17 @@ void TextEdit::_notification(int p_what) {
 
 											RS::get_singleton()->canvas_item_add_rect(text_ci, ts_caret.t_caret, theme_cache.caret_color);
 										}
+										if (c == drag_caret_index && !drag_preview_text.is_empty()) {
+											Color ghost_color = theme_cache.font_color;
+											ghost_color.a *= 0.45;
+											String display_text = drag_preview_text;
+											int nl = display_text.find("\n");
+											if (nl != -1) {
+												display_text = display_text.substr(0, nl) + " ...";
+											}
+											Point2 text_pos = Point2(get_caret_draw_pos(c).x + caret_width + 2, ofs_y + std::ceil(TS->shaped_text_get_ascent(rid)));
+											theme_cache.font->draw_string(text_ci, text_pos, display_text, HORIZONTAL_ALIGNMENT_LEFT, -1, theme_cache.font_size, ghost_color);
+										}
 									}
 								}
 							}
@@ -2125,8 +2136,7 @@ void TextEdit::_notification(int p_what) {
 
 		case NOTIFICATION_MOUSE_EXIT_SELF: {
 			if (drag_caret_force_displayed) {
-				drag_caret_force_displayed = false;
-				queue_redraw();
+				remove_drag_caret();
 			}
 			if (hovered_gutter != Vector2i(-1, -1)) {
 				hovered_gutter = Vector2i(-1, -1);
@@ -3636,7 +3646,13 @@ bool TextEdit::can_drop_data(const Point2 &p_point, const Variant &p_data) const
 		return drop_override;
 	}
 
-	return is_editable() && p_data.is_string();
+	if (is_editable() && p_data.is_string()) {
+		const_cast<TextEdit *>(this)->set_drag_caret(p_point);
+		const_cast<TextEdit *>(this)->set_drag_preview_text(p_data);
+		return true;
+	}
+
+	return false;
 }
 
 void TextEdit::drop_data(const Point2 &p_point, const Variant &p_data) {
@@ -5502,6 +5518,32 @@ void TextEdit::remove_drag_caret() {
 		}
 		drag_caret_index = -1;
 	}
+	drag_caret_force_displayed = false;
+	drag_preview_text = String();
+	queue_redraw();
+}
+
+void TextEdit::set_drag_caret(const Point2 &p_point) {
+	Point2i pos = get_line_column_at_pos(p_point);
+	if (drag_caret_index == -1) {
+		carets.push_back(Caret());
+		drag_caret_index = carets.size() - 1;
+	}
+	drag_caret_force_displayed = true;
+	set_caret_line(pos.y, false, true, -1, drag_caret_index);
+	set_caret_column(pos.x, true, drag_caret_index);
+	queue_redraw();
+}
+
+void TextEdit::set_drag_preview_text(const String &p_text) {
+	if (drag_preview_text != p_text) {
+		drag_preview_text = p_text;
+		queue_redraw();
+	}
+}
+
+String TextEdit::get_drag_preview_text() const {
+	return drag_preview_text;
 }
 
 void TextEdit::remove_secondary_carets() {
