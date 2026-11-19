@@ -957,6 +957,13 @@ Rect2 EditorPane::get_compass_target_rect(DropZone p_zone) const {
 		case DROP_BOTTOM:
 			offset.y = size + gap;
 			break;
+		case DROP_WINDOW:
+			if (!EditorNode::get_singleton() || !EditorNode::get_singleton()->is_multi_window_enabled()) {
+				return Rect2();
+			}
+			offset.x = size + gap;
+			offset.y = -(size + gap);
+			break;
 		default:
 			return Rect2();
 	}
@@ -964,7 +971,7 @@ Rect2 EditorPane::get_compass_target_rect(DropZone p_zone) const {
 }
 
 EditorPane::DropZone EditorPane::get_compass_zone_at(const Point2 &p_point) const {
-	const DropZone zones[] = { DROP_INTO, DROP_LEFT, DROP_RIGHT, DROP_TOP, DROP_BOTTOM };
+	const DropZone zones[] = { DROP_INTO, DROP_LEFT, DROP_RIGHT, DROP_TOP, DROP_BOTTOM, DROP_WINDOW };
 	for (const DropZone zone : zones) {
 		const Rect2 rect = get_compass_target_rect(zone);
 		if (rect.has_area() && rect.has_point(p_point)) {
@@ -1006,9 +1013,13 @@ bool EditorPane::accept_drop(const Point2 &p_point, const Variant &p_data, DropZ
 	}
 
 	if (is_point_on_header(p_point)) {
+		const Point2 in_header = p_point - header_panel->get_position() - header->get_position();
+		if (float_button && float_button->is_visible() && float_button->get_rect().has_point(in_header)) {
+			return _accept_drop(drop, DROP_WINDOW, -1);
+		}
 		// Where along the bar it was let go, so a tab can be put in order
 		// rather than only appended.
-		const Point2 in_bar = p_point - header_panel->get_position() - header->get_position() - tab_bar->get_position();
+		const Point2 in_bar = in_header - tab_bar->get_position();
 		return _accept_drop(drop, DROP_INTO, _tab_insert_index_at(in_bar));
 	}
 	return _accept_drop(drop, p_zone != DROP_NONE ? p_zone : get_drop_zone_at(p_point), -1);
@@ -1170,6 +1181,25 @@ bool EditorPane::_accept_drop(const PanelDrop &p_drop, DropZone p_zone, int p_ta
 	}
 	EditorPaneTree *tree = _get_pane_tree();
 
+	if (p_zone == DROP_WINDOW) {
+		if (!EditorNode::get_singleton() || !EditorNode::get_singleton()->is_multi_window_enabled()) {
+			return false;
+		}
+		EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+		if (!main_screen) {
+			return false;
+		}
+		if (p_drop.source) {
+			return main_screen->open_panel_in_window(p_drop.source, p_drop.source_index) != nullptr;
+		} else {
+			const int index = add_panel(p_drop.type, p_drop.subject);
+			if (index >= 0) {
+				return main_screen->open_panel_in_window(this, index) != nullptr;
+			}
+			return false;
+		}
+	}
+
 	if (p_zone == DROP_INTO) {
 		if (!p_drop.source) {
 			return add_panel(p_drop.type, p_drop.subject) >= 0;
@@ -1327,6 +1357,15 @@ void EditorPaneDropHint::_draw_target(const Rect2 &p_rect, EditorPane::DropZone 
 	target_box->set_bg_color(Color(0, 0, 0, (p_hot ? 0.75 : 0.55) * shown_alpha));
 	draw_style_box(target_box, p_rect);
 
+	if (p_zone == EditorPane::DROP_WINDOW) {
+		Ref<Texture2D> icon = get_editor_theme_icon(SNAME("MakeFloating"));
+		if (icon.is_valid()) {
+			const Rect2 icon_rect(p_rect.get_center() - icon->get_size() * 0.5, icon->get_size());
+			draw_texture_rect(icon, icon_rect, false, accent * Color(1, 1, 1, (p_hot ? 1.0 : 0.6) * shown_alpha));
+		}
+		return;
+	}
+
 	const Rect2 inner = p_rect.grow(-7 * EDSCALE);
 	const Color line = accent * Color(1, 1, 1, 0.9 * shown_alpha);
 	draw_rect(inner, line, false, Math::round(1 * EDSCALE));
@@ -1412,6 +1451,10 @@ void EditorPaneDropHint::_aim() {
 			landing_rect.position.y += landing_rect.size.y * 0.5;
 			landing_rect.size.y *= 0.5;
 			break;
+		case EditorPane::DROP_WINDOW: {
+			const Size2 win_size = (wanted_outline.size * 0.6).max(Size2(200, 150) * EDSCALE);
+			landing_rect = Rect2(wanted_outline.get_center() - win_size * 0.5, win_size);
+		} break;
 		default:
 			// Joining this pane is about the whole of it, tabs included.
 			landing_rect = wanted_outline;
@@ -1624,7 +1667,7 @@ void EditorPaneDropHint::_notification(int p_what) {
 			}
 			if (target && !on_header && !at_edge) {
 				const Transform2D pane_to_here = get_global_transform().affine_inverse() * target->get_global_transform();
-				const EditorPane::DropZone zones[] = { EditorPane::DROP_INTO, EditorPane::DROP_LEFT, EditorPane::DROP_RIGHT, EditorPane::DROP_TOP, EditorPane::DROP_BOTTOM };
+				const EditorPane::DropZone zones[] = { EditorPane::DROP_INTO, EditorPane::DROP_LEFT, EditorPane::DROP_RIGHT, EditorPane::DROP_TOP, EditorPane::DROP_BOTTOM, EditorPane::DROP_WINDOW };
 				for (const EditorPane::DropZone target_zone : zones) {
 					const Rect2 rect = target->get_compass_target_rect(target_zone);
 					if (rect.has_area()) {
