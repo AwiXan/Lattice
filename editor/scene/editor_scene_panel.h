@@ -36,7 +36,9 @@
 class Button;
 class EditorDebuggerTree;
 class LineEdit;
+class MarginContainer;
 class OptionButton;
+class PanelContainer;
 class SceneTreeEditor;
 class ScrollContainer;
 
