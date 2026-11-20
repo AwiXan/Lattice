@@ -10,6 +10,10 @@
 
 #include "core/object/script_language.h"
 
+#ifdef TOOLS_ENABLED
+#include "core/doc_data.h"
+#endif
+
 class RustLanguage;
 
 class RustScript : public Script {
@@ -19,6 +23,11 @@ class RustScript : public Script {
 	String path;
 	StringName class_name;
 	StringName base_type = "Node";
+
+#ifdef TOOLS_ENABLED
+	Vector<DocData::ClassDoc> docs;
+	void _update_doc_data();
+#endif
 
 protected:
 	static void _bind_methods();
@@ -36,12 +45,13 @@ public:
 
 	virtual bool has_source_code() const override { return !source_code.is_empty(); }
 	virtual String get_source_code() const override { return source_code; }
-	virtual void set_source_code(const String &p_code) override { source_code = p_code; }
+	virtual void set_source_code(const String &p_code) override;
+	virtual void set_path(const String &p_path, bool p_take_over = false) override;
 	virtual Error reload(bool p_keep_state = false) override;
 
 #ifdef TOOLS_ENABLED
 	virtual StringName get_doc_class_name() const override { return class_name; }
-	virtual Vector<DocData::ClassDoc> get_documentation() const override { return Vector<DocData::ClassDoc>(); }
+	virtual Vector<DocData::ClassDoc> get_documentation() const override { return docs; }
 	virtual String get_class_icon_path() const override { return ""; }
 #endif
 

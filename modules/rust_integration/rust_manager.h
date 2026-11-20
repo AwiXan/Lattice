@@ -41,6 +41,8 @@ public:
 
 	String find_project_crate_dir() const;
 	bool has_rust_project() const;
+	Vector<String> scan_rust_source_files() const;
+	Error update_auto_modules();
 
 	Error generate_scaffolding(const String &p_target_dir = "res://rust");
 	Error build_crate(bool p_release = false, String *r_output = nullptr, int *r_exit_code = nullptr);
