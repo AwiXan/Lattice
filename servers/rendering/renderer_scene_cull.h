@@ -48,6 +48,11 @@
 #include "servers/rendering/rendering_server_types.h"
 #include "servers/rendering/storage/utilities.h"
 
+#if !defined(REAL_T_IS_DOUBLE) && (defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86))
+#include <immintrin.h>
+#define SIMD_FRUSTUM_CULLING_ENABLED 1
+#endif
+
 class RenderingLightCuller;
 
 class RendererSceneCull : public RenderingMethod {
@@ -166,7 +171,43 @@ public:
 		const PlaneSign *plane_signs_ptr;
 		uint32_t plane_count;
 
-		_ALWAYS_INLINE_ FrustumSign() {}
+#if defined(SIMD_FRUSTUM_CULLING_ENABLED)
+		alignas(16) float plane_nx[8] = { 0 };
+		alignas(16) float plane_ny[8] = { 0 };
+		alignas(16) float plane_nz[8] = { 0 };
+		alignas(16) float plane_d[8] = { 0 };
+		alignas(16) float abs_nx[8] = { 0 };
+		alignas(16) float abs_ny[8] = { 0 };
+		alignas(16) float abs_nz[8] = { 0 };
+
+		_ALWAYS_INLINE_ void _update_simd_planes() {
+			for (int i = 0; i < 8; i++) {
+				if (i < (int)plane_count) {
+					plane_nx[i] = planes[i].normal.x;
+					plane_ny[i] = planes[i].normal.y;
+					plane_nz[i] = planes[i].normal.z;
+					plane_d[i] = planes[i].d;
+					abs_nx[i] = Math::abs(planes[i].normal.x);
+					abs_ny[i] = Math::abs(planes[i].normal.y);
+					abs_nz[i] = Math::abs(planes[i].normal.z);
+				} else {
+					plane_nx[i] = 0.0f;
+					plane_ny[i] = 0.0f;
+					plane_nz[i] = 0.0f;
+					plane_d[i] = 1e20f;
+					abs_nx[i] = 0.0f;
+					abs_ny[i] = 0.0f;
+					abs_nz[i] = 0.0f;
+				}
+			}
+		}
+#endif
+
+		_ALWAYS_INLINE_ FrustumSign() {
+#if defined(SIMD_FRUSTUM_CULLING_ENABLED)
+			_update_simd_planes();
+#endif
+		}
 		_ALWAYS_INLINE_ FrustumSign(const FrustumSign &p_frustum) {
 			planes = p_frustum.planes;
 			plane_signs = p_frustum.plane_signs;
@@ -174,6 +215,15 @@ public:
 			planes_ptr = planes.ptr();
 			plane_signs_ptr = plane_signs.ptr();
 			plane_count = p_frustum.plane_count;
+#if defined(SIMD_FRUSTUM_CULLING_ENABLED)
+			memcpy(plane_nx, p_frustum.plane_nx, sizeof(plane_nx));
+			memcpy(plane_ny, p_frustum.plane_ny, sizeof(plane_ny));
+			memcpy(plane_nz, p_frustum.plane_nz, sizeof(plane_nz));
+			memcpy(plane_d, p_frustum.plane_d, sizeof(plane_d));
+			memcpy(abs_nx, p_frustum.abs_nx, sizeof(abs_nx));
+			memcpy(abs_ny, p_frustum.abs_ny, sizeof(abs_ny));
+			memcpy(abs_nz, p_frustum.abs_nz, sizeof(abs_nz));
+#endif
 		}
 		_ALWAYS_INLINE_ void operator=(const FrustumSign &p_frustum) {
 			planes = p_frustum.planes;
@@ -182,6 +232,15 @@ public:
 			planes_ptr = planes.ptr();
 			plane_signs_ptr = plane_signs.ptr();
 			plane_count = p_frustum.plane_count;
+#if defined(SIMD_FRUSTUM_CULLING_ENABLED)
+			memcpy(plane_nx, p_frustum.plane_nx, sizeof(plane_nx));
+			memcpy(plane_ny, p_frustum.plane_ny, sizeof(plane_ny));
+			memcpy(plane_nz, p_frustum.plane_nz, sizeof(plane_nz));
+			memcpy(plane_d, p_frustum.plane_d, sizeof(plane_d));
+			memcpy(abs_nx, p_frustum.abs_nx, sizeof(abs_nx));
+			memcpy(abs_ny, p_frustum.abs_ny, sizeof(abs_ny));
+			memcpy(abs_nz, p_frustum.abs_nz, sizeof(abs_nz));
+#endif
 		}
 		_ALWAYS_INLINE_ FrustumSign(const Vector<Plane> &p_planes) {
 			planes = p_planes;
@@ -193,6 +252,9 @@ public:
 			}
 
 			plane_signs_ptr = plane_signs.ptr();
+#if defined(SIMD_FRUSTUM_CULLING_ENABLED)
+			_update_simd_planes();
+#endif
 		}
 		_ALWAYS_INLINE_ FrustumSign(const Frustum &p_frustum) {
 			plane_count = 6;
@@ -204,6 +266,9 @@ public:
 
 			planes_ptr = planes.ptrw();
 			plane_signs_ptr = plane_signs.ptr();
+#if defined(SIMD_FRUSTUM_CULLING_ENABLED)
+			_update_simd_planes();
+#endif
 		}
 	};
 
@@ -223,10 +288,87 @@ public:
 			bounds[4] = p_aabb.position.y + p_aabb.size.y;
 			bounds[5] = p_aabb.position.z + p_aabb.size.z;
 		}
-		_ALWAYS_INLINE_ bool in_frustum(const FrustumSign &p_frustum) const {
-			// This is not a full SAT check and the possibility of false positives exist,
-			// but the tradeoff vs performance is still very good.
 
+#if defined(SIMD_FRUSTUM_CULLING_ENABLED)
+		_ALWAYS_INLINE_ bool in_frustum(const FrustumSign &p_frustum) const {
+			float cx = (bounds[0] + bounds[3]) * 0.5f;
+			float cy = (bounds[1] + bounds[4]) * 0.5f;
+			float cz = (bounds[2] + bounds[5]) * 0.5f;
+			float ex = (bounds[3] - bounds[0]) * 0.5f;
+			float ey = (bounds[4] - bounds[1]) * 0.5f;
+			float ez = (bounds[5] - bounds[2]) * 0.5f;
+
+#if defined(__AVX2__)
+			__m256 v_cx = _mm256_set1_ps(cx);
+			__m256 v_cy = _mm256_set1_ps(cy);
+			__m256 v_cz = _mm256_set1_ps(cz);
+			__m256 v_ex = _mm256_set1_ps(ex);
+			__m256 v_ey = _mm256_set1_ps(ey);
+			__m256 v_ez = _mm256_set1_ps(ez);
+
+			__m256 nx = _mm256_loadu_ps(p_frustum.plane_nx);
+			__m256 ny = _mm256_loadu_ps(p_frustum.plane_ny);
+			__m256 nz = _mm256_loadu_ps(p_frustum.plane_nz);
+			__m256 d = _mm256_loadu_ps(p_frustum.plane_d);
+
+			__m256 anx = _mm256_loadu_ps(p_frustum.abs_nx);
+			__m256 any = _mm256_loadu_ps(p_frustum.abs_ny);
+			__m256 anz = _mm256_loadu_ps(p_frustum.abs_nz);
+
+			__m256 dot_c = _mm256_sub_ps(_mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(v_cx, nx), _mm256_mul_ps(v_cy, ny)), _mm256_mul_ps(v_cz, nz)), d);
+			__m256 rad = _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(v_ex, anx), _mm256_mul_ps(v_ey, any)), _mm256_mul_ps(v_ez, anz));
+
+			__m256 outside = _mm256_cmp_ps(dot_c, rad, _CMP_GE_OQ);
+			return (_mm256_movemask_ps(outside) == 0);
+#else
+			__m128 v_cx = _mm_set1_ps(cx);
+			__m128 v_cy = _mm_set1_ps(cy);
+			__m128 v_cz = _mm_set1_ps(cz);
+			__m128 v_ex = _mm_set1_ps(ex);
+			__m128 v_ey = _mm_set1_ps(ey);
+			__m128 v_ez = _mm_set1_ps(ez);
+
+			// Test planes 0..3
+			__m128 nx0 = _mm_loadu_ps(&p_frustum.plane_nx[0]);
+			__m128 ny0 = _mm_loadu_ps(&p_frustum.plane_ny[0]);
+			__m128 nz0 = _mm_loadu_ps(&p_frustum.plane_nz[0]);
+			__m128 d0 = _mm_loadu_ps(&p_frustum.plane_d[0]);
+
+			__m128 anx0 = _mm_loadu_ps(&p_frustum.abs_nx[0]);
+			__m128 any0 = _mm_loadu_ps(&p_frustum.abs_ny[0]);
+			__m128 anz0 = _mm_loadu_ps(&p_frustum.abs_nz[0]);
+
+			__m128 dot_c0 = _mm_sub_ps(_mm_add_ps(_mm_add_ps(_mm_mul_ps(v_cx, nx0), _mm_mul_ps(v_cy, ny0)), _mm_mul_ps(v_cz, nz0)), d0);
+			__m128 rad0 = _mm_add_ps(_mm_add_ps(_mm_mul_ps(v_ex, anx0), _mm_mul_ps(v_ey, any0)), _mm_mul_ps(v_ez, anz0));
+
+			if (_mm_movemask_ps(_mm_cmpge_ps(dot_c0, rad0)) != 0) {
+				return false;
+			}
+
+			// Test planes 4..7
+			if (p_frustum.plane_count > 4) {
+				__m128 nx1 = _mm_loadu_ps(&p_frustum.plane_nx[4]);
+				__m128 ny1 = _mm_loadu_ps(&p_frustum.plane_ny[4]);
+				__m128 nz1 = _mm_loadu_ps(&p_frustum.plane_nz[4]);
+				__m128 d1 = _mm_loadu_ps(&p_frustum.plane_d[4]);
+
+				__m128 anx1 = _mm_loadu_ps(&p_frustum.abs_nx[4]);
+				__m128 any1 = _mm_loadu_ps(&p_frustum.abs_ny[4]);
+				__m128 anz1 = _mm_loadu_ps(&p_frustum.abs_nz[4]);
+
+				__m128 dot_c1 = _mm_sub_ps(_mm_add_ps(_mm_add_ps(_mm_mul_ps(v_cx, nx1), _mm_mul_ps(v_cy, ny1)), _mm_mul_ps(v_cz, nz1)), d1);
+				__m128 rad1 = _mm_add_ps(_mm_add_ps(_mm_mul_ps(v_ex, anx1), _mm_mul_ps(v_ey, any1)), _mm_mul_ps(v_ez, anz1));
+
+				if (_mm_movemask_ps(_mm_cmpge_ps(dot_c1, rad1)) != 0) {
+					return false;
+				}
+			}
+
+			return true;
+#endif
+		}
+#else
+		_ALWAYS_INLINE_ bool in_frustum(const FrustumSign &p_frustum) const {
 			for (uint32_t i = 0; i < p_frustum.plane_count; i++) {
 				Vector3 min(
 						bounds[p_frustum.plane_signs_ptr[i].signs[0]],
@@ -240,6 +382,25 @@ public:
 
 			return true;
 		}
+#endif
+
+#if defined(SIMD_FRUSTUM_CULLING_ENABLED)
+		_ALWAYS_INLINE_ bool in_aabb(const AABB &p_aabb) const {
+			Vector3 end = p_aabb.position + p_aabb.size;
+
+			__m128 b_min = _mm_set_ps(0.0f, bounds[2], bounds[1], bounds[0]);
+			__m128 b_max = _mm_set_ps(0.0f, bounds[5], bounds[4], bounds[3]);
+			__m128 a_min = _mm_set_ps(0.0f, p_aabb.position.z, p_aabb.position.y, p_aabb.position.x);
+			__m128 a_max = _mm_set_ps(0.0f, end.z, end.y, end.x);
+
+			__m128 cmp1 = _mm_cmpge_ps(b_min, a_max);
+			__m128 cmp2 = _mm_cmple_ps(b_max, a_min);
+			if ((_mm_movemask_ps(_mm_or_ps(cmp1, cmp2)) & 0x7) != 0) {
+				return false;
+			}
+			return true;
+		}
+#else
 		_ALWAYS_INLINE_ bool in_aabb(const AABB &p_aabb) const {
 			Vector3 end = p_aabb.position + p_aabb.size;
 
@@ -264,6 +425,7 @@ public:
 
 			return true;
 		}
+#endif
 	};
 
 	struct InstanceVisibilityNotifierData;
