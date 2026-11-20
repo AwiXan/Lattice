@@ -66,6 +66,13 @@ void RustManager::_check_cargo() {
 }
 
 String RustManager::find_project_crate_dir() const {
+	if (ProjectSettings::get_singleton() && ProjectSettings::get_singleton()->has_setting("rust/general/crate_dir")) {
+		String custom_dir = GLOBAL_GET("rust/general/crate_dir");
+		if (!custom_dir.is_empty() && FileAccess::exists(custom_dir.path_join("Cargo.toml"))) {
+			return custom_dir;
+		}
+	}
+
 	String path1 = "res://rust/Cargo.toml";
 	if (FileAccess::exists(path1)) {
 		return "res://rust";
@@ -74,6 +81,34 @@ String RustManager::find_project_crate_dir() const {
 	if (FileAccess::exists(path2)) {
 		return "res://";
 	}
+
+	// Auto-discover Cargo.toml in any subfolder (e.g. fist-of-goal/core/...)
+	Vector<String> queue;
+	queue.push_back("res://");
+	int visited = 0;
+	while (!queue.is_empty() && visited < 60) {
+		String current = queue[0];
+		queue.remove_at(0);
+		visited++;
+
+		if (current != "res://" && FileAccess::exists(current.path_join("Cargo.toml"))) {
+			return current;
+		}
+
+		Ref<DirAccess> da = DirAccess::open(current);
+		if (da.is_valid()) {
+			da->list_dir_begin();
+			String item = da->get_next();
+			while (!item.is_empty()) {
+				if (da->current_is_dir() && !item.begins_with(".") && item != "target" && item != ".godot") {
+					queue.push_back(current.path_join(item));
+				}
+				item = da->get_next();
+			}
+			da->list_dir_end();
+		}
+	}
+
 	return String();
 }
 
