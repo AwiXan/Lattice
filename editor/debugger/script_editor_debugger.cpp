@@ -625,6 +625,9 @@ void ScriptEditorDebugger::_msg_visual_profile_frame(uint64_t p_thread_id, const
 		}
 	}
 	visual_profiler->add_frame_metric(metric);
+	if (performance_profiler) {
+		performance_profiler->add_visual_profile_frame(frame.areas);
+	}
 }
 
 void ScriptEditorDebugger::_msg_error(uint64_t p_thread_id, const Array &p_data) {

@@ -41,6 +41,7 @@
 #include "scene/main/scene_tree.h"
 #include "servers/audio/audio_server.h"
 #include "servers/rendering/rendering_server.h"
+#include "servers/rendering/rendering_server_types.h"
 #include "servers/rendering/rendering_shader_stats.h"
 
 #ifndef NAVIGATION_2D_DISABLED
@@ -81,6 +82,10 @@ void Performance::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_hitch_threshold_msec"), &Performance::get_hitch_threshold_msec);
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "hitch_threshold_msec", PROPERTY_HINT_RANGE, "0,1000,1,or_greater,suffix:ms"), "set_hitch_threshold_msec", "get_hitch_threshold_msec");
 	ADD_SIGNAL(MethodInfo("hitch_detected", PropertyInfo(Variant::DICTIONARY, "hitch")));
+
+	ClassDB::bind_method(D_METHOD("get_frame_breakdown"), &Performance::get_frame_breakdown);
+	ClassDB::bind_method(D_METHOD("get_frame_breakdown_text"), &Performance::get_frame_breakdown_text);
+	ClassDB::bind_method(D_METHOD("print_frame_breakdown"), &Performance::print_frame_breakdown);
 	ClassDB::bind_method(D_METHOD("get_custom_monitor_names"), &Performance::get_custom_monitor_names);
 	ClassDB::bind_method(D_METHOD("get_custom_monitor_types"), &Performance::get_custom_monitor_types);
 
@@ -701,6 +706,201 @@ Array Performance::get_hitch_log() const {
 
 void Performance::clear_hitch_log() {
 	hitch_log.clear();
+}
+
+Dictionary Performance::get_frame_breakdown() const {
+	Dictionary d;
+	const double fps = get_monitor(TIME_FPS);
+	const double process_time_sec = get_monitor(TIME_PROCESS);
+	const double physics_time_sec = get_monitor(TIME_PHYSICS_PROCESS);
+	const double nav_time_sec = get_monitor(TIME_NAVIGATION_PROCESS);
+
+	const double process_ms = process_time_sec * 1000.0;
+	const double physics_ms = physics_time_sec * 1000.0;
+	const double nav_ms = nav_time_sec * 1000.0;
+	const double render_cpu_ms = double(frame_render_usec) / 1000.0;
+	const double shader_wait_ms = double(last_shader_wait_usec) / 1000.0;
+
+	// Total CPU time spent on main thread:
+	double total_cpu_ms = process_ms;
+	if (total_cpu_ms <= 0.0) {
+		total_cpu_ms = double(frame_process_usec + frame_render_usec) / 1000.0;
+	}
+
+	// Fetch GPU profile areas from RenderingServer if available:
+	Vector<RenderingServerTypes::FrameProfileArea> gpu_areas;
+	double total_gpu_ms = 0.0;
+	if (RS::get_singleton()) {
+		gpu_areas = RS::get_singleton()->get_frame_profile();
+		for (int i = 0; i < gpu_areas.size(); i++) {
+			if (gpu_areas[i].name.begins_with(">") || gpu_areas[i].name.begins_with("<")) {
+				continue; // Skip group wrappers to avoid double-counting
+			}
+			total_gpu_ms += gpu_areas[i].gpu_msec;
+		}
+	}
+
+	// Determine total frame duration:
+	double frame_duration_ms = MAX(total_cpu_ms, total_gpu_ms);
+	if (frame_duration_ms <= 0.0 && fps > 0.0) {
+		frame_duration_ms = 1000.0 / fps;
+	}
+
+	// Bottleneck determination:
+	String bottleneck = "BALANCED";
+	if (total_gpu_ms > total_cpu_ms * 1.15 && total_gpu_ms > 1.0) {
+		bottleneck = "GPU";
+	} else if (total_cpu_ms > total_gpu_ms * 1.15 && total_cpu_ms > 1.0) {
+		bottleneck = "CPU";
+	}
+
+	d["fps"] = fps;
+	d["frame_duration_ms"] = frame_duration_ms;
+	d["total_cpu_ms"] = total_cpu_ms;
+	d["total_gpu_ms"] = total_gpu_ms;
+	d["bottleneck"] = bottleneck;
+	d["process_ms"] = process_ms;
+	d["physics_ms"] = physics_ms;
+	d["navigation_ms"] = nav_ms;
+	d["render_cpu_ms"] = render_cpu_ms;
+	d["shader_wait_ms"] = shader_wait_ms;
+
+	// Build sorted hotspots:
+	struct HotspotItem {
+		String name;
+		String category; // "GPU" or "CPU"
+		double duration_ms = 0.0;
+		double percent = 0.0;
+	};
+	LocalVector<HotspotItem> hotspots;
+
+	// Add CPU stages:
+	if (process_ms > 0.05) {
+		HotspotItem item;
+		item.name = "Scripts & Logic (_process)";
+		item.category = "CPU";
+		item.duration_ms = process_ms;
+		hotspots.push_back(item);
+	}
+	if (physics_ms > 0.05) {
+		HotspotItem item;
+		item.name = "Physics Step (_physics_process)";
+		item.category = "CPU";
+		item.duration_ms = physics_ms;
+		hotspots.push_back(item);
+	}
+	if (render_cpu_ms > 0.05) {
+		HotspotItem item;
+		item.name = "Render Prep & Culling (CPU)";
+		item.category = "CPU";
+		item.duration_ms = render_cpu_ms;
+		hotspots.push_back(item);
+	}
+	if (nav_ms > 0.05) {
+		HotspotItem item;
+		item.name = "Navigation Server";
+		item.category = "CPU";
+		item.duration_ms = nav_ms;
+		hotspots.push_back(item);
+	}
+	if (shader_wait_ms > 0.1) {
+		HotspotItem item;
+		item.name = "Shader Compilation Stall";
+		item.category = "CPU";
+		item.duration_ms = shader_wait_ms;
+		hotspots.push_back(item);
+	}
+
+	// Add GPU stages:
+	for (int i = 0; i < gpu_areas.size(); i++) {
+		if (gpu_areas[i].name.begins_with(">") || gpu_areas[i].name.begins_with("<")) {
+			continue;
+		}
+		if (gpu_areas[i].gpu_msec > 0.02) {
+			HotspotItem item;
+			item.name = gpu_areas[i].name;
+			item.category = "GPU";
+			item.duration_ms = gpu_areas[i].gpu_msec;
+			hotspots.push_back(item);
+		}
+	}
+
+	// Calculate percentages & sort descending by duration:
+	const double denom = frame_duration_ms > 0.001 ? frame_duration_ms : 1.0;
+	for (uint32_t i = 0; i < hotspots.size(); i++) {
+		hotspots[i].percent = (hotspots[i].duration_ms / denom) * 100.0;
+	}
+	for (uint32_t i = 1; i < hotspots.size(); i++) {
+		for (uint32_t j = i; j > 0 && hotspots[j - 1].duration_ms < hotspots[j].duration_ms; j--) {
+			SWAP(hotspots[j - 1], hotspots[j]);
+		}
+	}
+
+	Array hotspots_array;
+	for (uint32_t i = 0; i < hotspots.size(); i++) {
+		Dictionary hd;
+		hd["name"] = hotspots[i].name;
+		hd["category"] = hotspots[i].category;
+		hd["duration_ms"] = hotspots[i].duration_ms;
+		hd["percent"] = hotspots[i].percent;
+		hotspots_array.push_back(hd);
+	}
+	d["hotspots"] = hotspots_array;
+
+	// Summary counters:
+	d["draw_calls"] = get_monitor(RENDER_TOTAL_DRAW_CALLS_IN_FRAME);
+	d["primitives"] = get_monitor(RENDER_TOTAL_PRIMITIVES_IN_FRAME);
+	d["objects"] = get_monitor(RENDER_TOTAL_OBJECTS_IN_FRAME);
+	d["video_mem_bytes"] = get_monitor(RENDER_VIDEO_MEM_USED);
+	d["texture_mem_bytes"] = get_monitor(RENDER_TEXTURE_MEM_USED);
+	d["buffer_mem_bytes"] = get_monitor(RENDER_BUFFER_MEM_USED);
+
+	return d;
+}
+
+String Performance::get_frame_breakdown_text() const {
+	Dictionary d = get_frame_breakdown();
+	double fps = d["fps"];
+	double duration = d["frame_duration_ms"];
+	double cpu_ms = d["total_cpu_ms"];
+	double gpu_ms = d["total_gpu_ms"];
+	String bottleneck = d["bottleneck"];
+
+	String text;
+	text += "======================= FRAME PERFORMANCE REPORT =======================\n";
+	String verdict_str = bottleneck == "BALANCED" ? "[BALANCED]" : vformat("[%s-BOUND]", bottleneck);
+	text += vformat("FPS: %d | Frame Time: %s ms | Verdict: %s\n\n", int(Math::round(fps)), rtos(duration).pad_decimals(2), verdict_str);
+	text += "--- SUMMARY ---\n";
+	double cpu_pct = duration > 0.0 ? (cpu_ms / duration) * 100.0 : 0.0;
+	double gpu_pct = duration > 0.0 ? (gpu_ms / duration) * 100.0 : 0.0;
+	text += vformat("CPU Time: %6s ms (%4s%%)\n", rtos(cpu_ms).pad_decimals(2), rtos(cpu_pct).pad_decimals(1));
+	text += vformat("GPU Time: %6s ms (%4s%%)\n", rtos(gpu_ms).pad_decimals(2), rtos(gpu_pct).pad_decimals(1));
+
+	int draw_calls = d["draw_calls"];
+	int primitives = d["primitives"];
+	uint64_t vram = d["video_mem_bytes"];
+	text += vformat("Draw Calls: %d | Primitives: %s | VRAM: %s\n\n", draw_calls, String::num_real(primitives / 1000.0).pad_decimals(1) + "k", String::humanize_size(vram));
+
+	Array hotspots = d["hotspots"];
+	if (hotspots.size() > 0) {
+		text += "--- TOP BOTTLENECKS (Sorted by duration) ---\n";
+		int limit = MIN(15, hotspots.size());
+		for (int i = 0; i < limit; i++) {
+			Dictionary h = hotspots[i];
+			String cat = h["category"];
+			String name = h["name"];
+			double ms = h["duration_ms"];
+			double pct = h["percent"];
+			String hotspot_tag = (i == 0 && pct > 25.0) ? " [HOTSPOT]" : "";
+			text += vformat(" %2d. [%s] %-38s : %6s ms (%4s%%)%s\n", i + 1, cat, name, rtos(ms).pad_decimals(2), rtos(pct).pad_decimals(1), hotspot_tag);
+		}
+	}
+	text += "========================================================================\n";
+	return text;
+}
+
+void Performance::print_frame_breakdown() {
+	print_line(get_frame_breakdown_text());
 }
 
 void Performance::set_process_time(double p_pt) {

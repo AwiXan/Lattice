@@ -292,6 +292,7 @@ static int fixed_fps = -1;
 static MovieWriter *movie_writer = nullptr;
 static bool disable_vsync = false;
 static bool print_fps = false;
+static bool print_fps_breakdown = false;
 #ifdef TOOLS_ENABLED
 static bool editor_pseudolocalization = false;
 static bool dump_gdextension_interface = false;
@@ -693,6 +694,7 @@ void Main::print_help(const char *p_binary) {
 	print_help_option("--fixed-fps <fps>", "Force a fixed number of frames per second. This setting disables real-time synchronization.\n");
 	print_help_option("--delta-smoothing <enable>", "Enable or disable frame delta smoothing [\"enable\", \"disable\"].\n");
 	print_help_option("--print-fps", "Print the frames per second to the stdout.\n");
+	print_help_option("--print-fps-breakdown", "Print the detailed frame budget and bottleneck breakdown to the stdout.\n");
 #ifdef TOOLS_ENABLED
 	print_help_option("--editor-pseudolocalization", "Enable pseudolocalization for the editor and the project manager.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 #endif
@@ -1986,6 +1988,9 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			disable_vsync = true;
 		} else if (arg == "--print-fps") {
 			print_fps = true;
+		} else if (arg == "--print-fps-breakdown") {
+			print_fps_breakdown = true;
+			profile_gpu = true;
 #ifdef TOOLS_ENABLED
 		} else if (arg == "--editor-pseudolocalization") {
 			editor_pseudolocalization = true;
@@ -2289,6 +2294,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	}
 
 	GLOBAL_DEF("debug/settings/stdout/print_fps", false);
+	GLOBAL_DEF("debug/settings/stdout/print_fps_breakdown", false);
 	GLOBAL_DEF("debug/settings/stdout/print_gpu_profile", false);
 	GLOBAL_DEF("debug/settings/stdout/verbose_stdout", false);
 	GLOBAL_DEF("debug/settings/physics_interpolation/enable_warnings", true);
@@ -3620,8 +3626,11 @@ Error Main::setup2(bool p_show_boot_logo) {
 		//rendering_server->call_set_use_vsync(OS::get_singleton()->_use_vsync);
 		rendering_server->set_render_loop_enabled(!disable_render_loop);
 
-		if (profile_gpu || (!editor && bool(GLOBAL_GET("debug/settings/stdout/print_gpu_profile")))) {
-			rendering_server->set_print_gpu_profile(true);
+		if (profile_gpu || print_fps_breakdown || (!editor && (bool(GLOBAL_GET("debug/settings/stdout/print_gpu_profile")) || bool(GLOBAL_GET("debug/settings/stdout/print_fps_breakdown"))))) {
+			rendering_server->set_frame_profiling_enabled(true);
+			if (profile_gpu || (!editor && bool(GLOBAL_GET("debug/settings/stdout/print_gpu_profile")))) {
+				rendering_server->set_print_gpu_profile(true);
+			}
 		}
 
 		OS::get_singleton()->benchmark_end_measure("Servers", "Rendering");
@@ -5248,6 +5257,9 @@ bool Main::iteration() {
 				}
 			} else if (print_fps || GLOBAL_GET("debug/settings/stdout/print_fps")) {
 				print_line(vformat("Project FPS: %d (%s mspf)", frames, rtos(1000.0 / frames).pad_decimals(2)));
+			}
+			if (print_fps_breakdown || (!editor && !project_manager && GLOBAL_GET("debug/settings/stdout/print_fps_breakdown"))) {
+				Performance::get_singleton()->print_frame_breakdown();
 			}
 		} else {
 			hide_print_fps_attempts--;

@@ -173,6 +173,12 @@ public:
 	void set_hitch_threshold_msec(double p_msec);
 	double get_hitch_threshold_msec();
 
+	Dictionary get_frame_breakdown() const;
+	String get_frame_breakdown_text() const;
+	void print_frame_breakdown();
+	uint64_t get_frame_render_usec() const { return frame_render_usec; }
+	uint64_t get_last_shader_wait_usec() const { return last_shader_wait_usec; }
+
 	void add_custom_monitor(const StringName &p_id, const Callable &p_callable, const Vector<Variant> &p_args, MonitorType p_type = MONITOR_TYPE_QUANTITY);
 	void remove_custom_monitor(const StringName &p_id);
 	bool has_custom_monitor(const StringName &p_id);
