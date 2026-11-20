@@ -8108,8 +8108,6 @@ void RenderingDevice::_free_pending_resources(ResourcesToDisposeOf &p_resources_
 		driver->shader_free(shader);
 	}
 	p_resources_to_dispose_of.shaders.clear();
-	}
-	p_resources_to_dispose_of.shaders.clear();
 
 	for (RDD::AccelerationStructureID acceleration_structure : p_resources_to_dispose_of.acceleration_structures) {
 		driver->acceleration_structure_free(acceleration_structure);
