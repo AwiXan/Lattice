@@ -30,6 +30,7 @@
 
 #include "mesh_instance_3d.h"
 
+#include "core/config/project_settings.h"
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "scene/3d/skeleton_3d.h"
@@ -359,6 +360,7 @@ void MeshInstance3D::_notification(int p_what) {
 			}
 #endif
 			_resolve_skeleton_path();
+			_prewarm_pipelines();
 		} break;
 		case NOTIFICATION_TRANSLATION_CHANGED: {
 			if (mesh.is_valid()) {
@@ -436,6 +438,27 @@ void MeshInstance3D::_mesh_changed() {
 	}
 
 	update_gizmos();
+	_prewarm_pipelines();
+}
+
+void MeshInstance3D::_prewarm_pipelines() {
+	if (mesh.is_null()) {
+		return;
+	}
+	if (!GLOBAL_GET("rendering/shader_compiler/prewarm_pipelines_automatically")) {
+		return;
+	}
+
+	Vector<RID> materials;
+	for (int i = 0; i < surface_override_materials.size(); i++) {
+		if (surface_override_materials[i].is_valid()) {
+			materials.push_back(surface_override_materials[i]->get_rid());
+		}
+	}
+	if (get_material_override().is_valid()) {
+		materials.push_back(get_material_override()->get_rid());
+	}
+	RS::get_singleton()->mesh_precompile_pipelines(mesh->get_rid(), materials);
 }
 
 MeshInstance3D *MeshInstance3D::create_debug_tangents_node() {

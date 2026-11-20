@@ -3834,6 +3834,7 @@ void RenderingServer::init() {
 	GLOBAL_DEF("rendering/shader_compiler/shader_cache/use_zstd_compression", true);
 	GLOBAL_DEF("rendering/shader_compiler/shader_cache/strip_debug", false);
 	GLOBAL_DEF("rendering/shader_compiler/shader_cache/strip_debug.release", true);
+	GLOBAL_DEF_RST(PropertyInfo(Variant::BOOL, "rendering/shader_compiler/prewarm_pipelines_automatically"), true);
 
 	GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "rendering/reflections/sky_reflections/roughness_layers", PROPERTY_HINT_RANGE, "1,32,1"), 8);
 	GLOBAL_DEF_RST("rendering/reflections/sky_reflections/texture_array_reflections", true);
