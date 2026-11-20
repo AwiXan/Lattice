@@ -1050,34 +1050,7 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 
 	//fill list
 
-	Vector<bool> gpu_visibility;
-	if (gpu_culling && gpu_culling->is_enabled() && p_render_list == RENDER_LIST_OPAQUE && p_render_data->instances && p_render_data->instances->size() > 0) {
-		uint32_t count = p_render_data->instances->size();
-		LocalVector<AABB> aabbs;
-		aabbs.resize(count);
-		for (uint32_t i = 0; i < count; i++) {
-			GeometryInstanceForwardClustered *inst = static_cast<GeometryInstanceForwardClustered *>((*p_render_data->instances)[i]);
-			aabbs[i] = inst->transformed_aabb;
-		}
-
-		Vector<Plane> frustum_planes = p_render_data->scene_data->cam_projection.get_projection_planes(p_render_data->scene_data->cam_transform);
-
-		gpu_culling->cull_instances(
-				p_render_data->render_buffers,
-				aabbs,
-				p_render_data->scene_data->view_projection[0],
-				p_render_data->scene_data->prev_view_projection[0],
-				p_render_data->scene_data->cam_transform,
-				frustum_planes,
-				gpu_visibility,
-				true);
-	}
-
 	for (int i = 0; i < (int)p_render_data->instances->size(); i++) {
-		if (gpu_visibility.size() > i && !gpu_visibility[i]) {
-			continue;
-		}
-
 		GeometryInstanceForwardClustered *inst = static_cast<GeometryInstanceForwardClustered *>((*p_render_data->instances)[i]);
 
 		Vector3 center = inst->transform.origin;
@@ -2440,10 +2413,6 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 			}
 			RD::get_singleton()->draw_command_end_label();
 		}
-
-		if (gpu_culling && gpu_culling->is_enabled() && rb.is_valid()) {
-			gpu_culling->build_hiz_pyramid(rb, rb->get_depth_texture(), rb->get_internal_size());
-		}
 	}
 
 	{
@@ -2614,10 +2583,6 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 			for (uint32_t v = 0; v < rb->get_view_count(); v++) {
 				resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
 			}
-		}
-
-		if (gpu_culling && gpu_culling->is_enabled() && rb.is_valid()) {
-			gpu_culling->build_hiz_pyramid(rb, rb->get_depth_texture(), rb->get_internal_size());
 		}
 	}
 

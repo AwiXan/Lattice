@@ -2009,9 +2009,6 @@ void RendererSceneRenderRD::init() {
 	mfx_spatial = memnew(RendererRD::MFXSpatialEffect);
 #endif
 	resolve_effects = memnew(RendererRD::Resolve(!can_use_storage));
-	if (can_use_storage) {
-		gpu_culling = memnew(RendererRD::GPUCulling);
-	}
 }
 
 RendererSceneRenderRD::~RendererSceneRenderRD() {
@@ -2059,10 +2056,6 @@ RendererSceneRenderRD::~RendererSceneRenderRD() {
 
 	if (resolve_effects) {
 		memdelete(resolve_effects);
-	}
-
-	if (gpu_culling) {
-		memdelete(gpu_culling);
 	}
 
 	if (sky.sky_scene_state.uniform_set.is_valid() && RD::get_singleton()->uniform_set_is_valid(sky.sky_scene_state.uniform_set)) {

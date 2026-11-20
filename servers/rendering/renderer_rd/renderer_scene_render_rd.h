@@ -36,7 +36,6 @@
 #include "servers/rendering/renderer_rd/effects/debug_effects.h"
 #include "servers/rendering/renderer_rd/effects/fsr.h"
 #include "servers/rendering/renderer_rd/effects/fog_blur.h"
-#include "servers/rendering/renderer_rd/effects/gpu_culling.h"
 #include "servers/rendering/renderer_rd/effects/luminance.h"
 #include "servers/rendering/renderer_rd/effects/motion_blur.h"
 #include "servers/rendering/renderer_rd/effects/resolve.h"
@@ -73,7 +72,6 @@ protected:
 	RendererRD::FSR *fsr = nullptr;
 	RendererRD::VRS *vrs = nullptr;
 	RendererRD::Resolve *resolve_effects = nullptr;
-	RendererRD::GPUCulling *gpu_culling = nullptr;
 #ifdef METAL_ENABLED
 	RendererRD::MFXSpatialEffect *mfx_spatial = nullptr;
 #endif
