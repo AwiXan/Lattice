@@ -721,19 +721,18 @@ vec4 voxel_cone_trace(texture3D probe, vec3 cell_size, vec3 pos, vec3 direction,
 	float dist = p_bias;
 	vec4 color = vec4(0.0);
 
-	const int MAX_SPECULAR_STEPS = 20;
-	for (int step = 0; step < MAX_SPECULAR_STEPS && dist < max_distance && color.a < 0.95; step++) {
+	while (dist < max_distance && color.a < 0.95) { // The forward path stops at 0.95 too: the last 5% of opacity is not worth the steps.
 		float diameter = max(1.0, 2.0 * tan_half_angle * dist);
 		vec3 uvw_pos = (pos + dist * direction) * cell_size;
-		float step_size = max(1.0, diameter * 0.5);
+		float half_diameter = diameter * 0.5;
 		//check if outside, then break
-		if (any(greaterThan(abs(uvw_pos - 0.5), vec3(0.5f + step_size * cell_size)))) {
+		if (any(greaterThan(abs(uvw_pos - 0.5), vec3(0.5f + half_diameter * cell_size)))) {
 			break;
 		}
 		vec4 scolor = textureLod(sampler3D(probe, linear_sampler_with_mipmaps), uvw_pos, log2(diameter));
 		float a = (1.0 - color.a);
 		color += a * scolor;
-		dist += step_size;
+		dist += half_diameter;
 	}
 
 	return color;
@@ -742,11 +741,10 @@ vec4 voxel_cone_trace(texture3D probe, vec3 cell_size, vec3 pos, vec3 direction,
 vec4 voxel_cone_trace_45_degrees(texture3D probe, vec3 cell_size, vec3 pos, vec3 direction, float max_distance, float p_bias) {
 	float dist = p_bias;
 	vec4 color = vec4(0.0);
-	float radius = max(1.0, dist);
+	float radius = max(0.5, dist);
 	float lod_level = log2(radius * 2.0);
 
-	const int MAX_DIFFUSE_STEPS = 7;
-	for (int step = 0; step < MAX_DIFFUSE_STEPS && dist < max_distance && color.a < 0.95; step++) {
+	while (dist < max_distance && color.a < 0.95) { // The forward path stops at 0.95 too: the last 5% of opacity is not worth the steps.
 		vec3 uvw_pos = (pos + dist * direction) * cell_size;
 
 		//check if outside, then break
@@ -760,7 +758,7 @@ vec4 voxel_cone_trace_45_degrees(texture3D probe, vec3 cell_size, vec3 pos, vec3
 		scolor *= a;
 		color += scolor;
 		dist += radius;
-		radius = max(1.0, dist);
+		radius = max(0.5, dist);
 	}
 	return color;
 }
@@ -781,9 +779,7 @@ void voxel_gi_compute(uint index, vec3 position, vec3 normal, vec3 ref_vec, mat3
 
 	vec3 blendv = abs(position / voxel_gi_instances.data[index].bounds * 2.0 - 1.0);
 	float blend = clamp(1.0 - max(blendv.x, max(blendv.y, blendv.z)), 0.0, 1.0);
-	if (blend <= 0.001) {
-		return;
-	}
+	//float blend=1.0;
 
 	float max_distance = length(voxel_gi_instances.data[index].bounds);
 	vec3 cell_size = 1.0 / voxel_gi_instances.data[index].bounds;
@@ -810,10 +806,18 @@ void voxel_gi_compute(uint index, vec3 position, vec3 normal, vec3 ref_vec, mat3
 			light += cone_weights[i] * voxel_cone_trace(voxel_gi_textures[index], cell_size, position, dir, cone_angle_tan, max_distance, voxel_gi_instances.data[index].bias);
 		}
 	} else {
-		// Ultra-Fast Hemispherical 1-Cone Mode (Valve/Source 2 style 1-tap irradiance)
-		// Traces a single wide 90-degree aperture cone directly along the surface normal N into the hemisphere.
-		// Sweeps the entire positive hemisphere (z >= 0) in 5-7 steps instead of 28 steps!
-		light = voxel_cone_trace_45_degrees(voxel_gi_textures[index], cell_size, position, normal, max_distance, voxel_gi_instances.data[index].bias);
+		const uint cone_dir_count = 4;
+		vec3 cone_dirs[cone_dir_count] = vec3[](
+				vec3(0.707107, 0.0, 0.707107),
+				vec3(0.0, 0.707107, 0.707107),
+				vec3(-0.707107, 0.0, 0.707107),
+				vec3(0.0, -0.707107, 0.707107));
+
+		float cone_weights[cone_dir_count] = float[](0.25, 0.25, 0.25, 0.25);
+		for (int i = 0; i < cone_dir_count; i++) {
+			vec3 dir = normalize(dir_xform * cone_dirs[i]);
+			light += cone_weights[i] * voxel_cone_trace_45_degrees(voxel_gi_textures[index], cell_size, position, dir, max_distance, voxel_gi_instances.data[index].bias);
+		}
 	}
 
 	light.rgb *= voxel_gi_instances.data[index].dynamic_range * voxel_gi_instances.data[index].exposure_normalization;
@@ -824,17 +828,10 @@ void voxel_gi_compute(uint index, vec3 position, vec3 normal, vec3 ref_vec, mat3
 	out_diff += light * blend;
 
 	//radiance
-	vec4 irr_light;
-	if (roughness > 0.85) {
-		// Fully rough surfaces have isotropic diffuse-like reflections; reuse diffuse light directly, avoiding a redundant specular cone trace!
-		irr_light = light;
-	} else {
-		float tan_angle = max(0.03, tan(roughness * 0.5 * M_PI * 0.99));
-		irr_light = voxel_cone_trace(voxel_gi_textures[index], cell_size, position, ref_vec, tan_angle, max_distance, voxel_gi_instances.data[index].bias);
-		irr_light.rgb *= voxel_gi_instances.data[index].dynamic_range * voxel_gi_instances.data[index].exposure_normalization;
-		if (!voxel_gi_instances.data[index].blend_ambient) {
-			irr_light.a = 1.0;
-		}
+	vec4 irr_light = voxel_cone_trace(voxel_gi_textures[index], cell_size, position, ref_vec, tan(roughness * 0.5 * M_PI * 0.99), max_distance, voxel_gi_instances.data[index].bias);
+	irr_light.rgb *= voxel_gi_instances.data[index].dynamic_range * voxel_gi_instances.data[index].exposure_normalization;
+	if (!voxel_gi_instances.data[index].blend_ambient) {
+		irr_light.a = 1.0;
 	}
 
 	out_spec += irr_light * blend;

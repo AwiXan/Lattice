@@ -2246,14 +2246,13 @@ void fragment_shader(in SceneData scene_data) {
 
 		if (amb_accum.a > 0.0) {
 			amb_accum.rgb /= amb_accum.a;
+			ambient_light = amb_accum.rgb;
 		}
 
 		if (spec_accum.a > 0.0) {
 			spec_accum.rgb /= spec_accum.a;
+			indirect_specular_light = spec_accum.rgb;
 		}
-
-		indirect_specular_light = spec_accum.rgb;
-		ambient_light = amb_accum.rgb;
 	}
 
 	if (!sc_use_forward_gi() && bool(instances.data[instance_index].flags & INSTANCE_FLAGS_USE_GI_BUFFERS)) { //use GI buffers
