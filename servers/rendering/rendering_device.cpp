@@ -1782,7 +1782,7 @@ RID RenderingDevice::texture_create(const TextureFormat &p_format, const Texture
 		_texture_make_mutable(&texture, RID());
 	}
 
-	texture_memory += driver->texture_get_allocation_size(texture.driver_id);
+	texture_memory.add(driver->texture_get_allocation_size(texture.driver_id));
 
 	RID id = texture_owner.make_rid(texture);
 #ifdef DEV_ENABLED
@@ -1856,7 +1856,7 @@ RID RenderingDevice::texture_create_shared(const TextureView &p_view, RID p_with
 
 		texture.shared_fallback->texture = driver->texture_create(alias_format, tv);
 		texture.shared_fallback->raw_reinterpretation = raw_reintepretation;
-		texture_memory += driver->texture_get_allocation_size(texture.shared_fallback->texture);
+		texture_memory.add(driver->texture_get_allocation_size(texture.shared_fallback->texture));
 
 		RDG::ResourceTracker *tracker = RDG::resource_tracker_create();
 		tracker->texture_driver_id = texture.shared_fallback->texture;
@@ -2036,7 +2036,7 @@ RID RenderingDevice::texture_create_shared_from_slice(const TextureView &p_view,
 
 		texture.shared_fallback->texture = driver->texture_create(slice_format, tv);
 		texture.shared_fallback->raw_reinterpretation = raw_reintepretation;
-		texture_memory += driver->texture_get_allocation_size(texture.shared_fallback->texture);
+		texture_memory.add(driver->texture_get_allocation_size(texture.shared_fallback->texture));
 
 		RDG::ResourceTracker *tracker = RDG::resource_tracker_create();
 		tracker->texture_driver_id = texture.shared_fallback->texture;
@@ -2611,7 +2611,7 @@ void RenderingDevice::_texture_create_reinterpret_buffer(Texture *p_texture) {
 	uint32_t row_pitch = STEPIFY(p_texture->width * pixel_bytes, row_pitch_step);
 	uint64_t buffer_size = STEPIFY(pixel_bytes * row_pitch * p_texture->height * p_texture->depth, transfer_alignment);
 	p_texture->shared_fallback->buffer = driver->buffer_create(buffer_size, RDD::BUFFER_USAGE_TRANSFER_FROM_BIT | RDD::BUFFER_USAGE_TRANSFER_TO_BIT, RDD::MEMORY_ALLOCATION_TYPE_GPU, frames_drawn);
-	buffer_memory += driver->buffer_get_allocation_size(p_texture->shared_fallback->buffer);
+	buffer_memory.add(driver->buffer_get_allocation_size(p_texture->shared_fallback->buffer));
 
 	RDG::ResourceTracker *tracker = RDG::resource_tracker_create();
 	tracker->buffer_driver_id = p_texture->shared_fallback->buffer;
@@ -8190,10 +8190,10 @@ uint32_t RenderingDevice::get_frame_delay() const {
 uint64_t RenderingDevice::get_memory_usage(MemoryType p_type) const {
 	switch (p_type) {
 		case MEMORY_BUFFERS: {
-			return buffer_memory;
+			return buffer_memory.get();
 		}
 		case MEMORY_TEXTURES: {
-			return texture_memory;
+			return texture_memory.get();
 		}
 		case MEMORY_TOTAL: {
 			return driver->get_total_memory_used();
