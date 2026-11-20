@@ -43,6 +43,14 @@ int32_t godot_rust_node3d_set_transform(uint64_t p_instance_id, const float p_ba
 int32_t godot_rust_node3d_get_position(uint64_t p_instance_id, float r_pos[3]);
 int32_t godot_rust_node3d_set_position(uint64_t p_instance_id, float p_x, float p_y, float p_z);
 
+// Direct raw Node2D lifecycle & transform
+uint64_t godot_rust_node2d_create();
+void godot_rust_node_add_child(uint64_t p_parent_id, uint64_t p_child_id);
+void godot_rust_node_remove_child(uint64_t p_parent_id, uint64_t p_child_id);
+void godot_rust_node_free(uint64_t p_instance_id);
+int32_t godot_rust_node2d_get_position(uint64_t p_instance_id, float r_pos[2]);
+int32_t godot_rust_node2d_set_position(uint64_t p_instance_id, float p_x, float p_y);
+
 // Direct multi-threading dispatch via WorkerThreadPool
 int64_t godot_rust_thread_pool_add_task(void (*p_task_func)(void *), void *p_userdata, bool p_high_priority);
 

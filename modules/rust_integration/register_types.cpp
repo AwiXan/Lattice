@@ -46,6 +46,7 @@ void initialize_rust_integration_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
 		GDREGISTER_CLASS(RustScript);
 		GDREGISTER_CLASS(RustManager);
+		Engine::get_singleton()->add_singleton(Engine::Singleton("RustManager", rust_manager));
 
 		script_language_rust = memnew(RustLanguage);
 		script_language_rust->set_language_index(ScriptServer::get_language_count());

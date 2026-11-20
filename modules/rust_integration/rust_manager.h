@@ -11,6 +11,8 @@
 #include "core/object/class_db.h"
 #include "core/os/os.h"
 
+class Node;
+
 class RustManager : public Object {
 	GDCLASS(RustManager, Object);
 
@@ -51,6 +53,14 @@ public:
 	bool is_library_loaded() const { return library_handle != nullptr; }
 	String get_loaded_library_path() const { return loaded_library_path; }
 	void *get_symbol(const String &p_name);
+
+	Dictionary run_rust_math(int64_t p_iterations = 100);
+	Dictionary run_rust_spawn(int64_t p_count = 5000, Node *p_parent = nullptr);
+	Dictionary run_rust_pathfinding(int64_t p_grid_size = 128, int64_t p_runs = 50);
+
+	Dictionary run_cpp_math(int64_t p_iterations = 100);
+	Dictionary run_cpp_spawn(int64_t p_count = 5000, Node *p_parent = nullptr);
+	Dictionary run_cpp_pathfinding(int64_t p_grid_size = 128, int64_t p_runs = 50);
 
 	RustManager();
 	~RustManager();

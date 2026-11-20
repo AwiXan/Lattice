@@ -9,6 +9,7 @@
 #include "rust_ffi.h"
 
 #include "core/object/worker_thread_pool.h"
+#include "scene/2d/node_2d.h"
 #include "scene/3d/node_3d.h"
 
 uint32_t godot_rust_api_version() {
@@ -173,4 +174,58 @@ int64_t godot_rust_thread_pool_add_task(void (*p_task_func)(void *), void *p_use
 		return -1;
 	}
 	return (int64_t)WorkerThreadPool::get_singleton()->add_native_task(p_task_func, p_userdata, p_high_priority, SNAME("RustWorkerTask"));
+}
+
+uint64_t godot_rust_node2d_create() {
+	Node2D *n = memnew(Node2D);
+	return n ? (uint64_t)n->get_instance_id() : (uint64_t)0;
+}
+
+void godot_rust_node_add_child(uint64_t p_parent_id, uint64_t p_child_id) {
+	Object *p_obj = ObjectDB::get_instance(ObjectID(p_parent_id));
+	Object *c_obj = ObjectDB::get_instance(ObjectID(p_child_id));
+	Node *parent = Object::cast_to<Node>(p_obj);
+	Node *child = Object::cast_to<Node>(c_obj);
+	if (parent && child) {
+		parent->add_child(child);
+	}
+}
+
+void godot_rust_node_remove_child(uint64_t p_parent_id, uint64_t p_child_id) {
+	Object *p_obj = ObjectDB::get_instance(ObjectID(p_parent_id));
+	Object *c_obj = ObjectDB::get_instance(ObjectID(p_child_id));
+	Node *parent = Object::cast_to<Node>(p_obj);
+	Node *child = Object::cast_to<Node>(c_obj);
+	if (parent && child && child->get_parent() == parent) {
+		parent->remove_child(child);
+	}
+}
+
+void godot_rust_node_free(uint64_t p_instance_id) {
+	Object *obj = ObjectDB::get_instance(ObjectID(p_instance_id));
+	if (obj) {
+		memdelete(obj);
+	}
+}
+
+int32_t godot_rust_node2d_set_position(uint64_t p_instance_id, float p_x, float p_y) {
+	Object *obj = ObjectDB::get_instance(ObjectID(p_instance_id));
+	Node2D *node = Object::cast_to<Node2D>(obj);
+	if (!node) {
+		return -1;
+	}
+	node->set_position(Point2(p_x, p_y));
+	return 0;
+}
+
+int32_t godot_rust_node2d_get_position(uint64_t p_instance_id, float r_pos[2]) {
+	Object *obj = ObjectDB::get_instance(ObjectID(p_instance_id));
+	Node2D *node = Object::cast_to<Node2D>(obj);
+	if (!node) {
+		return -1;
+	}
+	Point2 pos = node->get_position();
+	r_pos[0] = pos.x;
+	r_pos[1] = pos.y;
+	return 0;
 }
