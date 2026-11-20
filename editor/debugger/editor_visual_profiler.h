@@ -81,6 +81,7 @@ private:
 	LineEdit *search_box = nullptr;
 	Button *btn_copy = nullptr;
 	PanelContainer *hotspot_panel = nullptr;
+	TextureRect *hotspot_icon = nullptr;
 	Label *hotspot_label = nullptr;
 	String search_filter;
 

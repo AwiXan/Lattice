@@ -378,12 +378,21 @@ void EditorVisualProfiler::_update_frame(bool p_focus_selected) {
 		if (max_gpu_pass_time > 0.05f && total_gpu_frame > 0) {
 			float pct = (max_gpu_pass_time / total_gpu_frame) * 100.0f;
 			if (pct >= 20.0f) {
-				hotspot_label->set_text(vformat(TTR("🔥 Top GPU Pass: %s (%.2f ms / %.1f%% of GPU time)"), top_gpu_pass_name, max_gpu_pass_time, pct));
+				if (hotspot_icon) {
+					hotspot_icon->set_texture(get_editor_theme_icon(SNAME("StatusError")));
+				}
+				hotspot_label->set_text(vformat(TTR("Top GPU Pass: %s (%.2f ms / %.1f%% of GPU time)"), top_gpu_pass_name, max_gpu_pass_time, pct));
 			} else {
-				hotspot_label->set_text(vformat(TTR("⚡ Top GPU Pass: %s (%.2f ms / %.1f%%) - Balanced GPU load"), top_gpu_pass_name, max_gpu_pass_time, pct));
+				if (hotspot_icon) {
+					hotspot_icon->set_texture(get_editor_theme_icon(SNAME("StatusWarning")));
+				}
+				hotspot_label->set_text(vformat(TTR("Top GPU Pass: %s (%.2f ms / %.1f%%) - Balanced GPU load"), top_gpu_pass_name, max_gpu_pass_time, pct));
 			}
 		} else {
-			hotspot_label->set_text(TTR("✨ Visual profiler: GPU load is minimal"));
+			if (hotspot_icon) {
+				hotspot_icon->set_texture(get_editor_theme_icon(SNAME("StatusSuccess")));
+			}
+			hotspot_label->set_text(TTR("Visual profiler: GPU load is minimal"));
 		}
 	}
 
@@ -462,16 +471,20 @@ void EditorVisualProfiler::_update_frame(bool p_focus_selected) {
 			if (pct >= 20.0f) {
 				category->set_text(3, vformat("CRITICAL (%.1f%%)", pct));
 				category->set_custom_color(3, Color(0.95f, 0.3f, 0.3f));
+				category->set_icon(3, get_editor_theme_icon(SNAME("StatusError")));
 			} else if (pct >= 10.0f) {
 				category->set_text(3, vformat("HEAVY (%.1f%%)", pct));
 				category->set_custom_color(3, Color(0.95f, 0.75f, 0.2f));
+				category->set_icon(3, get_editor_theme_icon(SNAME("StatusWarning")));
 			} else {
 				category->set_text(3, "OK");
 				category->set_custom_color(3, Color(0.4f, 0.85f, 0.4f));
+				category->set_icon(3, get_editor_theme_icon(SNAME("StatusSuccess")));
 			}
 		} else {
 			category->set_text(3, "OK");
 			category->set_custom_color(3, Color(0.4f, 0.85f, 0.4f));
+			category->set_icon(3, get_editor_theme_icon(SNAME("StatusSuccess")));
 		}
 
 		if (selected_area == m.areas[i].fullpath_cache) {
@@ -495,16 +508,20 @@ void EditorVisualProfiler::_update_frame(bool p_focus_selected) {
 			if (pct >= 20.0f) {
 				E->set_text(3, vformat("CRITICAL (%.1f%%)", pct));
 				E->set_custom_color(3, Color(0.95f, 0.3f, 0.3f));
+				E->set_icon(3, get_editor_theme_icon(SNAME("StatusError")));
 			} else if (pct >= 10.0f) {
 				E->set_text(3, vformat("HEAVY (%.1f%%)", pct));
 				E->set_custom_color(3, Color(0.95f, 0.75f, 0.2f));
+				E->set_icon(3, get_editor_theme_icon(SNAME("StatusWarning")));
 			} else {
 				E->set_text(3, "OK");
 				E->set_custom_color(3, Color(0.4f, 0.85f, 0.4f));
+				E->set_icon(3, get_editor_theme_icon(SNAME("StatusSuccess")));
 			}
 		} else {
 			E->set_text(3, "OK");
 			E->set_custom_color(3, Color(0.4f, 0.85f, 0.4f));
+			E->set_icon(3, get_editor_theme_icon(SNAME("StatusSuccess")));
 		}
 	}
 
@@ -997,10 +1014,21 @@ EditorVisualProfiler::EditorVisualProfiler() {
 	hotspot_panel->add_theme_style_override(SceneStringName(panel), hp_sb);
 	left_vbox->add_child(hotspot_panel);
 
+	HBoxContainer *hotspot_hb = memnew(HBoxContainer);
+	hotspot_hb->add_theme_constant_override(SNAME("separation"), 6 * EDSCALE);
+	hotspot_panel->add_child(hotspot_hb);
+
+	hotspot_icon = memnew(TextureRect);
+	hotspot_icon->set_stretch_mode(TextureRect::STRETCH_KEEP_CENTERED);
+	hotspot_icon->set_v_size_flags(SIZE_SHRINK_CENTER);
+	hotspot_icon->set_texture(get_editor_theme_icon(SNAME("StatusSuccess")));
+	hotspot_hb->add_child(hotspot_icon);
+
 	hotspot_label = memnew(Label);
 	hotspot_label->set_text(TTR("Waiting for visual profile data..."));
 	hotspot_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
-	hotspot_panel->add_child(hotspot_label);
+	hotspot_label->set_h_size_flags(SIZE_EXPAND_FILL);
+	hotspot_hb->add_child(hotspot_label);
 
 	filter_bar = memnew(HBoxContainer);
 	left_vbox->add_child(filter_bar);

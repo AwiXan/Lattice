@@ -495,12 +495,15 @@ void EditorProfiler::_update_frame() {
 				if (pct > 20.0f) {
 					item->set_text(3, "CRITICAL (>20%)");
 					item->set_custom_color(3, Color(1.0f, 0.35f, 0.35f));
+					item->set_icon(3, get_editor_theme_icon(SNAME("StatusError")));
 				} else if (pct > 10.0f) {
 					item->set_text(3, "HEAVY (>10%)");
 					item->set_custom_color(3, Color(1.0f, 0.75f, 0.2f));
+					item->set_icon(3, get_editor_theme_icon(SNAME("StatusWarning")));
 				} else {
 					item->set_text(3, "OK");
 					item->set_custom_color(3, Color(0.4f, 0.85f, 0.4f));
+					item->set_icon(3, get_editor_theme_icon(SNAME("StatusSuccess")));
 				}
 
 				if (plot_sigs.has(it.signature)) {
@@ -563,12 +566,15 @@ void EditorProfiler::_update_frame() {
 			if (npct > 20.0f) {
 				node_item->set_text(3, "HOTSPOT (>20%)");
 				node_item->set_custom_color(3, Color(1.0f, 0.35f, 0.35f));
+				node_item->set_icon(3, get_editor_theme_icon(SNAME("StatusError")));
 			} else if (npct > 10.0f) {
 				node_item->set_text(3, "HEAVY (>10%)");
 				node_item->set_custom_color(3, Color(1.0f, 0.75f, 0.2f));
+				node_item->set_icon(3, get_editor_theme_icon(SNAME("StatusWarning")));
 			} else {
 				node_item->set_text(3, "OK");
 				node_item->set_custom_color(3, Color(0.4f, 0.85f, 0.4f));
+				node_item->set_icon(3, get_editor_theme_icon(SNAME("StatusSuccess")));
 			}
 
 			if (plot_sigs.has(sig)) {
