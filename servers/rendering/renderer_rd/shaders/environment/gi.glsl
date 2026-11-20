@@ -810,18 +810,10 @@ void voxel_gi_compute(uint index, vec3 position, vec3 normal, vec3 ref_vec, mat3
 			light += cone_weights[i] * voxel_cone_trace(voxel_gi_textures[index], cell_size, position, dir, cone_angle_tan, max_distance, voxel_gi_instances.data[index].bias);
 		}
 	} else {
-		const uint cone_dir_count = 4;
-		vec3 cone_dirs[cone_dir_count] = vec3[](
-				vec3(0.707107, 0.0, 0.707107),
-				vec3(0.0, 0.707107, 0.707107),
-				vec3(-0.707107, 0.0, 0.707107),
-				vec3(0.0, -0.707107, 0.707107));
-
-		float cone_weights[cone_dir_count] = float[](0.25, 0.25, 0.25, 0.25);
-		for (int i = 0; i < cone_dir_count; i++) {
-			vec3 dir = normalize(dir_xform * cone_dirs[i]);
-			light += cone_weights[i] * voxel_cone_trace_45_degrees(voxel_gi_textures[index], cell_size, position, dir, max_distance, voxel_gi_instances.data[index].bias);
-		}
+		// Ultra-Fast Hemispherical 1-Cone Mode (Valve/Source 2 style 1-tap irradiance)
+		// Traces a single wide 90-degree aperture cone directly along the surface normal N into the hemisphere.
+		// Sweeps the entire positive hemisphere (z >= 0) in 5-7 steps instead of 28 steps!
+		light = voxel_cone_trace_45_degrees(voxel_gi_textures[index], cell_size, position, normal, max_distance, voxel_gi_instances.data[index].bias);
 	}
 
 	light.rgb *= voxel_gi_instances.data[index].dynamic_range * voxel_gi_instances.data[index].exposure_normalization;

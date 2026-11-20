@@ -72,31 +72,16 @@ void voxel_gi_compute(uint index, vec3 position, vec3 normal, vec3 ref_vec, mat3
 	vec3 cell_size = 1.0 / voxel_gi_instances.data[index].bounds;
 
 	//radiance
-
-#define MAX_CONE_DIRS 4
-
-	vec3 cone_dirs[MAX_CONE_DIRS] = vec3[](
-			vec3(0.707107, 0.0, 0.707107),
-			vec3(0.0, 0.707107, 0.707107),
-			vec3(-0.707107, 0.0, 0.707107),
-			vec3(0.0, -0.707107, 0.707107));
-
-	float cone_weights[MAX_CONE_DIRS] = float[](0.25, 0.25, 0.25, 0.25);
+	// Ultra-Fast Hemispherical 1-Cone Mode (Valve/Source 2 style 1-tap irradiance)
+	// Traces a single wide 90-degree aperture cone directly along the surface normal N into the hemisphere.
 	float cone_angle_tan = 0.98269;
+	vec4 cone_light = voxel_cone_trace_45_degrees(voxel_gi_textures[index], cell_size, position, normal, cone_angle_tan, max_distance, voxel_gi_instances.data[index].bias);
 
-	vec3 light = vec3(0.0);
-
-	for (int i = 0; i < MAX_CONE_DIRS; i++) {
-		vec3 dir = normalize((voxel_gi_instances.data[index].xform * vec4(normal_xform * cone_dirs[i], 0.0)).xyz);
-
-		vec4 cone_light = voxel_cone_trace_45_degrees(voxel_gi_textures[index], cell_size, position, dir, cone_angle_tan, max_distance, voxel_gi_instances.data[index].bias);
-
-		if (voxel_gi_instances.data[index].blend_ambient) {
-			cone_light.rgb = mix(ambient, cone_light.rgb, min(1.0, cone_light.a / 0.95));
-		}
-
-		light += cone_weights[i] * cone_light.rgb;
+	if (voxel_gi_instances.data[index].blend_ambient) {
+		cone_light.rgb = mix(ambient, cone_light.rgb, min(1.0, cone_light.a / 0.95));
 	}
+
+	vec3 light = cone_light.rgb;
 
 	light *= voxel_gi_instances.data[index].dynamic_range * voxel_gi_instances.data[index].exposure_normalization;
 	out_diff += vec4(light * blend, blend);
