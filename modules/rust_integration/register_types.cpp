@@ -35,6 +35,10 @@ static void _editor_init_rust() {
 	if (ScriptEditor::get_singleton()) {
 		ScriptEditor::get_singleton()->register_syntax_highlighter(rust_syntax_highlighter);
 	}
+
+	if (rust_manager && rust_manager->has_rust_project()) {
+		rust_manager->update_auto_modules();
+	}
 }
 #endif
 
