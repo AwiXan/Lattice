@@ -30,10 +30,13 @@
 
 #pragma once
 
+#include "core/object/object_id.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/check_button.h"
+#include "scene/gui/line_edit.h"
 #include "scene/gui/option_button.h"
+#include "scene/gui/panel_container.h"
 #include "scene/gui/spin_box.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/texture_rect.h"
@@ -45,6 +48,17 @@ class EditorProfiler : public VBoxContainer {
 	GDCLASS(EditorProfiler, VBoxContainer);
 
 public:
+	struct NodeMetric {
+		ObjectID id;
+		NodePath path;
+		StringName class_name;
+		float process_time = 0.0f;
+		float physics_time = 0.0f;
+		float total_time = 0.0f;
+		int process_calls = 0;
+		int physics_calls = 0;
+	};
+
 	struct Metric {
 		bool valid = false;
 
@@ -74,6 +88,7 @@ public:
 		};
 
 		Vector<Category> categories;
+		Vector<NodeMetric> nodes;
 
 		HashMap<StringName, Category *> category_ptrs;
 		HashMap<StringName, Category::Item *> item_ptrs;
@@ -89,6 +104,12 @@ public:
 	enum DisplayTime {
 		DISPLAY_TOTAL_TIME,
 		DISPLAY_SELF_TIME,
+	};
+
+	enum ProfileTarget {
+		TARGET_FUNCTIONS = 0,
+		TARGET_NODES = 1,
+		TARGET_ALL = 2,
 	};
 
 private:
@@ -107,6 +128,13 @@ private:
 	float pan_accumulator = 0.0f;
 	int zoom_center = -1;
 
+	VBoxContainer *left_vbox = nullptr;
+	HBoxContainer *filter_bar = nullptr;
+	LineEdit *search_box = nullptr;
+	OptionButton *profile_target = nullptr;
+	Button *btn_copy = nullptr;
+	String search_filter;
+
 	Tree *variables = nullptr;
 	HSplitContainer *h_split = nullptr;
 
@@ -120,6 +148,7 @@ private:
 	SpinBox *cursor_metric_edit = nullptr;
 
 	Vector<Metric> frame_metrics;
+	Vector<NodeMetric> last_node_frame;
 	int total_metrics = 0;
 	int last_metric = -1;
 
@@ -147,6 +176,11 @@ private:
 
 	void _make_metric_ptrs(Metric &m);
 	void _item_edited();
+	void _item_activated();
+
+	void _on_search_changed(const String &p_text);
+	void _on_target_changed(int p_target);
+	void _on_copy_pressed();
 
 	void _update_plot();
 
@@ -170,6 +204,7 @@ protected:
 
 public:
 	void add_frame_metric(const Metric &p_metric, bool p_final = false);
+	void add_node_frame_metric(const Vector<NodeMetric> &p_nodes);
 	void set_enabled(bool p_enable, bool p_clear = true);
 	void set_profiling(bool p_pressed);
 	bool is_profiling();

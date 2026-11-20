@@ -37,6 +37,7 @@
 #include "core/io/resource_loader.h"
 #include "core/object/script_language.h"
 #include "core/os/os.h"
+#include "scene/main/node_profiler.h"
 #include "servers/display/display_server.h"
 #include "servers/rendering/rendering_server.h"
 
@@ -321,6 +322,7 @@ public:
 			_send_frame_data(true); // Send final frame.
 		}
 		scripts_profiler.toggle(p_enable, p_opts);
+		NodeProfiler::set_profiling_enabled(p_enable);
 	}
 
 	void add(const Array &p_data) {

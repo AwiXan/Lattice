@@ -902,6 +902,31 @@ void ScriptEditorDebugger::_msg_servers_profile_common(const Array &p_data, cons
 void ScriptEditorDebugger::_msg_servers_profile_frame(uint64_t p_thread_id, const Array &p_data) {
 	_msg_servers_profile_common(p_data, false);
 }
+
+void ScriptEditorDebugger::_msg_servers_node_profile_frame(uint64_t p_thread_id, const Array &p_data) {
+	if (!profiler) {
+		return;
+	}
+	Vector<EditorProfiler::NodeMetric> node_metrics;
+	node_metrics.resize(p_data.size());
+	for (int i = 0; i < p_data.size(); i++) {
+		Array item = p_data[i];
+		if (item.size() >= 7) {
+			EditorProfiler::NodeMetric nm;
+			nm.path = NodePath(String(item[0]));
+			nm.class_name = item[1];
+			nm.process_time = double(item[2]);
+			nm.physics_time = double(item[3]);
+			nm.total_time = nm.process_time + nm.physics_time;
+			nm.process_calls = item[4];
+			nm.physics_calls = item[5];
+			nm.id = ObjectID(uint64_t(item[6]));
+			node_metrics.write[i] = nm;
+		}
+	}
+	profiler->add_node_frame_metric(node_metrics);
+}
+
 void ScriptEditorDebugger::_msg_servers_profile_total(uint64_t p_thread_id, const Array &p_data) {
 	_msg_servers_profile_common(p_data, true);
 }
@@ -1025,6 +1050,7 @@ void ScriptEditorDebugger::_init_parse_message_handlers() {
 	parse_message_handlers["error"] = &ScriptEditorDebugger::_msg_error;
 	parse_message_handlers["servers:function_signature"] = &ScriptEditorDebugger::_msg_servers_function_signature;
 	parse_message_handlers["servers:profile_frame"] = &ScriptEditorDebugger::_msg_servers_profile_frame;
+	parse_message_handlers["servers:node_profile_frame"] = &ScriptEditorDebugger::_msg_servers_node_profile_frame;
 	parse_message_handlers["servers:profile_total"] = &ScriptEditorDebugger::_msg_servers_profile_total;
 	parse_message_handlers["request_quit"] = &ScriptEditorDebugger::_msg_request_quit;
 	parse_message_handlers["remote_objects_selected"] = &ScriptEditorDebugger::_msg_remote_objects_selected;
@@ -1397,6 +1423,13 @@ void ScriptEditorDebugger::_profiler_seeked() {
 		return;
 	}
 	debug_break();
+}
+
+void ScriptEditorDebugger::_profiler_inspect_node(uint64_t p_id) {
+	TypedArray<uint64_t> ids;
+	ids.push_back(p_id);
+	request_remote_objects(ids, true);
+	emit_signal(SNAME("remote_objects_requested"), ids);
 }
 
 void ScriptEditorDebugger::_stack_dump_frame_selected() {
@@ -2356,6 +2389,7 @@ ScriptEditorDebugger::ScriptEditorDebugger() {
 		tabs->add_child(profiler);
 		profiler->connect("enable_profiling", callable_mp(this, &ScriptEditorDebugger::_profiler_activate).bind(PROFILER_SCRIPTS_SERVERS));
 		profiler->connect("break_request", callable_mp(this, &ScriptEditorDebugger::_profiler_seeked));
+		profiler->connect("inspect_node", callable_mp(this, &ScriptEditorDebugger::_profiler_inspect_node));
 	}
 
 	{ //frame profiler

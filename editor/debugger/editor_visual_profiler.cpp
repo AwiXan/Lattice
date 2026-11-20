@@ -40,6 +40,8 @@
 #include "scene/gui/flow_container.h"
 #include "scene/gui/label.h"
 #include "scene/resources/image_texture.h"
+#include "scene/resources/style_box_flat.h"
+#include "servers/display/display_server.h"
 
 void EditorVisualProfiler::set_hardware_info(const String &p_cpu_name, const String &p_gpu_name) {
 	cpu_name = p_cpu_name;
@@ -350,6 +352,41 @@ void EditorVisualProfiler::_update_frame(bool p_focus_selected) {
 	TreeItem *root = variables->create_item();
 	const Metric &m = frame_metrics[cursor_metric];
 
+	// Compute total GPU time and find hotspot pass
+	float total_gpu_frame = 0;
+	float max_gpu_pass_time = 0;
+	String top_gpu_pass_name;
+
+	for (int i = 1; i < m.areas.size() - 1; i++) {
+		if (m.areas[i].name.begins_with(">") || m.areas[i].name.begins_with("<")) {
+			continue;
+		}
+		float gpu_time = m.areas[i].gpu_time;
+		if (i < m.areas.size() - 1) {
+			gpu_time = m.areas[i + 1].gpu_time - gpu_time;
+		}
+		if (gpu_time > 0) {
+			total_gpu_frame += gpu_time;
+			if (gpu_time > max_gpu_pass_time) {
+				max_gpu_pass_time = gpu_time;
+				top_gpu_pass_name = m.areas[i].name;
+			}
+		}
+	}
+
+	if (hotspot_label) {
+		if (max_gpu_pass_time > 0.05f && total_gpu_frame > 0) {
+			float pct = (max_gpu_pass_time / total_gpu_frame) * 100.0f;
+			if (pct >= 20.0f) {
+				hotspot_label->set_text(vformat(TTR("🔥 Top GPU Pass: %s (%.2f ms / %.1f%% of GPU time)"), top_gpu_pass_name, max_gpu_pass_time, pct));
+			} else {
+				hotspot_label->set_text(vformat(TTR("⚡ Top GPU Pass: %s (%.2f ms / %.1f%%) - Balanced GPU load"), top_gpu_pass_name, max_gpu_pass_time, pct));
+			}
+		} else {
+			hotspot_label->set_text(TTR("✨ Visual profiler: GPU load is minimal"));
+		}
+	}
+
 	List<TreeItem *> stack;
 	List<TreeItem *> categories;
 
@@ -390,6 +427,13 @@ void EditorVisualProfiler::_update_frame(bool p_focus_selected) {
 			stack.pop_back();
 			continue;
 		}
+
+		if (!search_filter.is_empty()) {
+			if (!name.to_lower().contains(search_filter)) {
+				continue;
+			}
+		}
+
 		TreeItem *category = variables->create_item(parent);
 
 		for (TreeItem *E : stack) {
@@ -408,8 +452,27 @@ void EditorVisualProfiler::_update_frame(bool p_focus_selected) {
 		category->set_text(0, m.areas[i].name);
 		category->set_text(1, _get_time_as_text(cpu_time));
 		category->set_metadata(1, m.areas[i].cpu_time);
+		category->set_text_alignment(1, HORIZONTAL_ALIGNMENT_RIGHT);
 		category->set_text(2, _get_time_as_text(gpu_time));
 		category->set_metadata(2, m.areas[i].gpu_time);
+		category->set_text_alignment(2, HORIZONTAL_ALIGNMENT_RIGHT);
+
+		if (total_gpu_frame > 0 && gpu_time > 0) {
+			float pct = (gpu_time / total_gpu_frame) * 100.0f;
+			if (pct >= 20.0f) {
+				category->set_text(3, vformat("CRITICAL (%.1f%%)", pct));
+				category->set_custom_color(3, Color(0.95f, 0.3f, 0.3f));
+			} else if (pct >= 10.0f) {
+				category->set_text(3, vformat("HEAVY (%.1f%%)", pct));
+				category->set_custom_color(3, Color(0.95f, 0.75f, 0.2f));
+			} else {
+				category->set_text(3, "OK");
+				category->set_custom_color(3, Color(0.4f, 0.85f, 0.4f));
+			}
+		} else {
+			category->set_text(3, "OK");
+			category->set_custom_color(3, Color(0.4f, 0.85f, 0.4f));
+		}
 
 		if (selected_area == m.areas[i].fullpath_cache) {
 			category->select(0);
@@ -424,6 +487,34 @@ void EditorVisualProfiler::_update_frame(bool p_focus_selected) {
 		float total_gpu = E->get_metadata(2);
 		E->set_text(1, _get_time_as_text(total_cpu));
 		E->set_text(2, _get_time_as_text(total_gpu));
+		E->set_text_alignment(1, HORIZONTAL_ALIGNMENT_RIGHT);
+		E->set_text_alignment(2, HORIZONTAL_ALIGNMENT_RIGHT);
+
+		if (total_gpu_frame > 0 && total_gpu > 0) {
+			float pct = (total_gpu / total_gpu_frame) * 100.0f;
+			if (pct >= 20.0f) {
+				E->set_text(3, vformat("CRITICAL (%.1f%%)", pct));
+				E->set_custom_color(3, Color(0.95f, 0.3f, 0.3f));
+			} else if (pct >= 10.0f) {
+				E->set_text(3, vformat("HEAVY (%.1f%%)", pct));
+				E->set_custom_color(3, Color(0.95f, 0.75f, 0.2f));
+			} else {
+				E->set_text(3, "OK");
+				E->set_custom_color(3, Color(0.4f, 0.85f, 0.4f));
+			}
+		} else {
+			E->set_text(3, "OK");
+			E->set_custom_color(3, Color(0.4f, 0.85f, 0.4f));
+		}
+	}
+
+	if (!search_filter.is_empty()) {
+		for (List<TreeItem *>::Element *E = categories.back(); E; E = E->prev()) {
+			TreeItem *cat = E->get();
+			if (cat->get_first_child() == nullptr) {
+				memdelete(cat);
+			}
+		}
 	}
 
 	if (ensure_selected) {
@@ -437,6 +528,38 @@ void EditorVisualProfiler::_update_frame(bool p_focus_selected) {
 		variables->ensure_cursor_is_visible();
 	}
 	updating_frame = false;
+}
+
+void EditorVisualProfiler::_on_search_changed(const String &p_text) {
+	search_filter = p_text.strip_edges().to_lower();
+	_update_frame();
+}
+
+void EditorVisualProfiler::_on_copy_pressed() {
+	int cursor_metric = _get_cursor_index();
+	if (cursor_metric < 0 || cursor_metric >= frame_metrics.size() || !frame_metrics[cursor_metric].valid) {
+		return;
+	}
+	const Metric &m = frame_metrics[cursor_metric];
+	String report = vformat("=== Visual / GPU Profiler Report (Frame #%d) ===\n", m.frame_number);
+	report += vformat("Hardware: CPU: %s | GPU: %s\n", cpu_name, gpu_name);
+	report += "--------------------------------------------------------------------------------\n";
+	report += String("Pass / Area").rpad(45) + String("CPU Time").rpad(16) + String("GPU Time\n");
+	report += "--------------------------------------------------------------------------------\n";
+	for (int i = 0; i < m.areas.size(); i++) {
+		if (m.areas[i].name.begins_with("<") || m.areas[i].name.begins_with(">")) {
+			continue;
+		}
+		float cpu_t = m.areas[i].cpu_time;
+		float gpu_t = m.areas[i].gpu_time;
+		if (i < m.areas.size() - 1) {
+			cpu_t = m.areas[i + 1].cpu_time - cpu_t;
+			gpu_t = m.areas[i + 1].gpu_time - gpu_t;
+		}
+		report += m.areas[i].name.rpad(45) + _get_time_as_text(cpu_t).rpad(16) + _get_time_as_text(gpu_t) + "\n";
+	}
+	report += "================================================================================\n";
+	DisplayServer::get_singleton()->clipboard_set(report);
 }
 
 void EditorVisualProfiler::_activate_pressed() {
@@ -529,6 +652,21 @@ void EditorVisualProfiler::_graph_tex_draw() {
 
 		const String limit_str = String::num(graph_limit, 2) + " ms";
 		graph->draw_string(font, Vector2(half_width * 2 - font->get_string_size(limit_str, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x - 2, frame_y - 2), limit_str, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color * Color(1, 1, 1, 0.75));
+
+		// Reference budget lines on GPU half: 60 FPS (16.7 ms) & 30 FPS (33.3 ms)
+		const float fps_targets[] = { 16.666f, 33.333f };
+		const Color fps_colors[] = { Color(0.3f, 0.85f, 0.4f, 0.45f), Color(0.95f, 0.65f, 0.2f, 0.45f) };
+		const char *fps_labels[] = { "60 FPS (16.7 ms)", "30 FPS (33.3 ms)" };
+
+		for (int t = 0; t < 2; t++) {
+			if (graph_height_gpu >= fps_targets[t]) {
+				int y = graph_size.y - int(fps_targets[t] * graph_size.y / graph_height_gpu) - 1;
+				if (y > 15 && y < graph_size.y - 15) {
+					graph->draw_line(Vector2(half_width, y), Vector2(graph_size.x, y), fps_colors[t]);
+					graph->draw_string(font, Vector2(half_width + 6, y - 2), fps_labels[t], HORIZONTAL_ALIGNMENT_LEFT, -1, font_size * 0.9, fps_colors[t]);
+				}
+			}
+		}
 	}
 
 	graph->draw_string(font, Vector2(font->get_string_size("X", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x, font->get_ascent(font_size) + 2), "CPU: " + cpu_name, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color * Color(1, 1, 1, 0.75));
@@ -845,16 +983,51 @@ EditorVisualProfiler::EditorVisualProfiler() {
 	add_child(h_split);
 	h_split->set_v_size_flags(SIZE_EXPAND_FILL);
 
+	left_vbox = memnew(VBoxContainer);
+	left_vbox->set_custom_minimum_size(Size2(340, 0) * EDSCALE);
+	left_vbox->set_v_size_flags(SIZE_EXPAND_FILL);
+	h_split->add_child(left_vbox);
+
+	hotspot_panel = memnew(PanelContainer);
+	hotspot_panel->set_h_size_flags(SIZE_EXPAND_FILL);
+	Ref<StyleBoxFlat> hp_sb = memnew(StyleBoxFlat);
+	hp_sb->set_bg_color(Color(0.12f, 0.15f, 0.22f, 0.9f));
+	hp_sb->set_corner_radius_all(4 * EDSCALE);
+	hp_sb->set_content_margin_all(6 * EDSCALE);
+	hotspot_panel->add_theme_style_override(SceneStringName(panel), hp_sb);
+	left_vbox->add_child(hotspot_panel);
+
+	hotspot_label = memnew(Label);
+	hotspot_label->set_text(TTR("Waiting for visual profile data..."));
+	hotspot_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	hotspot_panel->add_child(hotspot_label);
+
+	filter_bar = memnew(HBoxContainer);
+	left_vbox->add_child(filter_bar);
+
+	search_box = memnew(LineEdit);
+	search_box->set_placeholder(TTR("Filter visual passes..."));
+	search_box->set_clear_button_enabled(true);
+	search_box->set_h_size_flags(SIZE_EXPAND_FILL);
+	search_box->connect(SceneStringName(text_changed), callable_mp(this, &EditorVisualProfiler::_on_search_changed));
+	filter_bar->add_child(search_box);
+
+	btn_copy = memnew(Button);
+	btn_copy->set_text(TTR("Copy"));
+	btn_copy->set_tooltip_text(TTR("Copy frame GPU breakdown to clipboard"));
+	btn_copy->connect(SceneStringName(pressed), callable_mp(this, &EditorVisualProfiler::_on_copy_pressed));
+	filter_bar->add_child(btn_copy);
+
 	variables = memnew(Tree);
-	variables->set_custom_minimum_size(Size2(300, 0) * EDSCALE);
-	h_split->add_child(variables);
+	variables->set_v_size_flags(SIZE_EXPAND_FILL);
+	left_vbox->add_child(variables);
 	variables->set_hide_root(true);
-	variables->set_columns(3);
+	variables->set_columns(4);
 	variables->set_column_titles_visible(true);
-	variables->set_column_title(0, TTRC("Name"));
+	variables->set_column_title(0, TTRC("Pass / Area"));
 	variables->set_column_expand(0, true);
 	variables->set_column_clip_content(0, true);
-	variables->set_column_custom_minimum_width(0, 60);
+	variables->set_column_custom_minimum_width(0, 80 * EDSCALE);
 	variables->set_column_title(1, TTRC("CPU"));
 	variables->set_column_expand(1, false);
 	variables->set_column_clip_content(1, true);
@@ -863,6 +1036,14 @@ EditorVisualProfiler::EditorVisualProfiler() {
 	variables->set_column_expand(2, false);
 	variables->set_column_clip_content(2, true);
 	variables->set_column_custom_minimum_width(2, 75 * EDSCALE);
+	variables->set_column_title(3, TTRC("Status / Hotspot"));
+	variables->set_column_expand(3, false);
+	variables->set_column_clip_content(3, true);
+	variables->set_column_custom_minimum_width(3, 110 * EDSCALE);
+	variables->set_column_title_alignment(0, HORIZONTAL_ALIGNMENT_LEFT);
+	variables->set_column_title_alignment(1, HORIZONTAL_ALIGNMENT_RIGHT);
+	variables->set_column_title_alignment(2, HORIZONTAL_ALIGNMENT_RIGHT);
+	variables->set_column_title_alignment(3, HORIZONTAL_ALIGNMENT_LEFT);
 	variables->set_theme_type_variation("TreeSecondary");
 	variables->connect("cell_selected", callable_mp(this, &EditorVisualProfiler::_item_selected));
 	variables->connect("item_collapsed", callable_mp(this, &EditorVisualProfiler::_item_collapsed));

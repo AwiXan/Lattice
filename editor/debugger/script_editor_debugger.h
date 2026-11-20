@@ -231,6 +231,7 @@ private:
 	void _msg_servers_function_signature(uint64_t p_thread_id, const Array &p_data);
 	void _msg_servers_profile_common(const Array &p_data, const bool p_final);
 	void _msg_servers_profile_frame(uint64_t p_thread_id, const Array &p_data);
+	void _msg_servers_node_profile_frame(uint64_t p_thread_id, const Array &p_data);
 	void _msg_servers_profile_total(uint64_t p_thread_id, const Array &p_data);
 	void _msg_request_quit(uint64_t p_thread_id, const Array &p_data);
 	void _msg_remote_objects_selected(uint64_t p_thread_id, const Array &p_data);
@@ -279,6 +280,7 @@ private:
 
 	void _profiler_activate(bool p_enable, int p_profiler);
 	void _profiler_seeked();
+	void _profiler_inspect_node(uint64_t p_id);
 
 	void _clear_errors_list();
 

@@ -33,7 +33,9 @@
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/check_box.h"
+#include "scene/gui/line_edit.h"
 #include "scene/gui/option_button.h"
+#include "scene/gui/panel_container.h"
 #include "scene/gui/spin_box.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/texture_rect.h"
@@ -73,6 +75,15 @@ private:
 	TextureRect *graph = nullptr;
 	Ref<ImageTexture> graph_texture;
 	Vector<uint8_t> graph_image;
+
+	VBoxContainer *left_vbox = nullptr;
+	HBoxContainer *filter_bar = nullptr;
+	LineEdit *search_box = nullptr;
+	Button *btn_copy = nullptr;
+	PanelContainer *hotspot_panel = nullptr;
+	Label *hotspot_label = nullptr;
+	String search_filter;
+
 	Tree *variables = nullptr;
 	HSplitContainer *h_split = nullptr;
 	CheckBox *frame_relative = nullptr;
@@ -113,9 +124,11 @@ private:
 	void _clear_pressed();
 	void _autostart_toggled(bool p_toggled_on);
 
+	void _on_search_changed(const String &p_text);
+	void _on_copy_pressed();
+
 	String _get_time_as_text(float p_time);
 
-	//void _make_metric_ptrs(Metric &m);
 	void _item_selected();
 	void _item_collapsed(TreeItem *p_item);
 

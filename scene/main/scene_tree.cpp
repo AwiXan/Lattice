@@ -40,6 +40,7 @@ STATIC_ASSERT_INCOMPLETE_TYPE(class, RenderingServer);
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "core/object/worker_thread_pool.h"
+#include "core/debugger/engine_debugger.h"
 #include "core/os/os.h"
 #include "core/profiling/profiling.h"
 #include "scene/animation/tween.h"
@@ -47,6 +48,7 @@ STATIC_ASSERT_INCOMPLETE_TYPE(class, RenderingServer);
 #include "scene/gui/control.h"
 #include "scene/main/multiplayer_api.h"
 #include "scene/main/node.h"
+#include "scene/main/node_profiler.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
 #include "scene/resources/environment.h"
@@ -787,6 +789,13 @@ bool SceneTree::process(double p_time) {
 		RenderingServer::get_singleton()->pre_draw(true);
 	}
 
+	if (unlikely(NodeProfiler::is_profiling_enabled())) {
+		Array nodes_arr = NodeProfiler::finish_frame();
+		if (nodes_arr.size() > 0 && EngineDebugger::is_active()) {
+			EngineDebugger::get_singleton()->send_message("servers:node_profile_frame", nodes_arr);
+		}
+	}
+
 	return _quit;
 }
 
@@ -1223,18 +1232,40 @@ void SceneTree::_process_group(ProcessGroup *p_group, bool p_physics) {
 		}
 
 		if (p_physics) {
-			if (n->is_physics_processing_internal()) {
-				n->notification(Node::NOTIFICATION_INTERNAL_PHYSICS_PROCESS);
-			}
-			if (n->is_physics_processing()) {
-				n->notification(Node::NOTIFICATION_PHYSICS_PROCESS);
+			if (unlikely(NodeProfiler::is_profiling_enabled())) {
+				uint64_t t0 = OS::get_singleton()->get_ticks_usec();
+				if (n->is_physics_processing_internal()) {
+					n->notification(Node::NOTIFICATION_INTERNAL_PHYSICS_PROCESS);
+				}
+				if (n->is_physics_processing()) {
+					n->notification(Node::NOTIFICATION_PHYSICS_PROCESS);
+				}
+				NodeProfiler::record_physics_process(n, OS::get_singleton()->get_ticks_usec() - t0);
+			} else {
+				if (n->is_physics_processing_internal()) {
+					n->notification(Node::NOTIFICATION_INTERNAL_PHYSICS_PROCESS);
+				}
+				if (n->is_physics_processing()) {
+					n->notification(Node::NOTIFICATION_PHYSICS_PROCESS);
+				}
 			}
 		} else {
-			if (n->is_processing_internal()) {
-				n->notification(Node::NOTIFICATION_INTERNAL_PROCESS);
-			}
-			if (n->is_processing()) {
-				n->notification(Node::NOTIFICATION_PROCESS);
+			if (unlikely(NodeProfiler::is_profiling_enabled())) {
+				uint64_t t0 = OS::get_singleton()->get_ticks_usec();
+				if (n->is_processing_internal()) {
+					n->notification(Node::NOTIFICATION_INTERNAL_PROCESS);
+				}
+				if (n->is_processing()) {
+					n->notification(Node::NOTIFICATION_PROCESS);
+				}
+				NodeProfiler::record_process(n, OS::get_singleton()->get_ticks_usec() - t0);
+			} else {
+				if (n->is_processing_internal()) {
+					n->notification(Node::NOTIFICATION_INTERNAL_PROCESS);
+				}
+				if (n->is_processing()) {
+					n->notification(Node::NOTIFICATION_PROCESS);
+				}
 			}
 		}
 	}
