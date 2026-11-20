@@ -721,18 +721,19 @@ vec4 voxel_cone_trace(texture3D probe, vec3 cell_size, vec3 pos, vec3 direction,
 	float dist = p_bias;
 	vec4 color = vec4(0.0);
 
-	while (dist < max_distance && color.a < 0.95) { // The forward path stops at 0.95 too: the last 5% of opacity is not worth the steps.
+	const int MAX_SPECULAR_STEPS = 32;
+	for (int step = 0; step < MAX_SPECULAR_STEPS && dist < max_distance && color.a < 0.95; step++) {
 		float diameter = max(1.0, 2.0 * tan_half_angle * dist);
 		vec3 uvw_pos = (pos + dist * direction) * cell_size;
-		float half_diameter = diameter * 0.5;
+		float step_size = max(1.0, diameter * 0.5);
 		//check if outside, then break
-		if (any(greaterThan(abs(uvw_pos - 0.5), vec3(0.5f + half_diameter * cell_size)))) {
+		if (any(greaterThan(abs(uvw_pos - 0.5), vec3(0.5f + step_size * cell_size)))) {
 			break;
 		}
 		vec4 scolor = textureLod(sampler3D(probe, linear_sampler_with_mipmaps), uvw_pos, log2(diameter));
 		float a = (1.0 - color.a);
 		color += a * scolor;
-		dist += half_diameter;
+		dist += step_size;
 	}
 
 	return color;
@@ -741,24 +742,23 @@ vec4 voxel_cone_trace(texture3D probe, vec3 cell_size, vec3 pos, vec3 direction,
 vec4 voxel_cone_trace_45_degrees(texture3D probe, vec3 cell_size, vec3 pos, vec3 direction, float max_distance, float p_bias) {
 	float dist = p_bias;
 	vec4 color = vec4(0.0);
-	float radius = max(0.5, dist);
-	float lod_level = log2(radius * 2.0);
+	float radius = max(1.0, dist);
 
-	while (dist < max_distance && color.a < 0.95) { // The forward path stops at 0.95 too: the last 5% of opacity is not worth the steps.
+	while (dist < max_distance && color.a < 0.95) {
 		vec3 uvw_pos = (pos + dist * direction) * cell_size;
 
 		//check if outside, then break
 		if (any(greaterThan(abs(uvw_pos - 0.5), vec3(0.5f + radius * cell_size)))) {
 			break;
 		}
+		float lod_level = log2(radius * 2.0);
 		vec4 scolor = textureLod(sampler3D(probe, linear_sampler_with_mipmaps), uvw_pos, lod_level);
-		lod_level += 1.0;
 
 		float a = (1.0 - color.a);
 		scolor *= a;
 		color += scolor;
 		dist += radius;
-		radius = max(0.5, dist);
+		radius = max(1.0, dist);
 	}
 	return color;
 }
@@ -828,10 +828,17 @@ void voxel_gi_compute(uint index, vec3 position, vec3 normal, vec3 ref_vec, mat3
 	out_diff += light * blend;
 
 	//radiance
-	vec4 irr_light = voxel_cone_trace(voxel_gi_textures[index], cell_size, position, ref_vec, tan(roughness * 0.5 * M_PI * 0.99), max_distance, voxel_gi_instances.data[index].bias);
-	irr_light.rgb *= voxel_gi_instances.data[index].dynamic_range * voxel_gi_instances.data[index].exposure_normalization;
-	if (!voxel_gi_instances.data[index].blend_ambient) {
-		irr_light.a = 1.0;
+	vec4 irr_light;
+	if (roughness > 0.85) {
+		// Fully rough surfaces have isotropic diffuse reflections; reuse diffuse light directly, avoiding a redundant specular cone trace!
+		irr_light = light;
+	} else {
+		float tan_angle = max(0.03, tan(roughness * 0.5 * M_PI * 0.99));
+		irr_light = voxel_cone_trace(voxel_gi_textures[index], cell_size, position, ref_vec, tan_angle, max_distance, voxel_gi_instances.data[index].bias);
+		irr_light.rgb *= voxel_gi_instances.data[index].dynamic_range * voxel_gi_instances.data[index].exposure_normalization;
+		if (!voxel_gi_instances.data[index].blend_ambient) {
+			irr_light.a = 1.0;
+		}
 	}
 
 	out_spec += irr_light * blend;

@@ -81,28 +81,30 @@ float get_fog_amount(vec3 p_view_position, vec2 p_uv) {
 	return clamp(fog_amount, 0.0, 1.0);
 }
 
-vec3 sample_gaussian_blur(vec2 p_uv, float p_lod) {
+vec3 sample_vogel_blur(vec2 p_uv, float p_lod) {
 	float radius = 0.5 * (exp2(p_lod) - 1.0);
-	vec2 offset = radius / vec2(textureSize(screen_sampler, 0));
+	if (radius < 0.25) {
+		return textureLod(screen_sampler, p_uv, 0.0).rgb;
+	}
 
-	vec3 a = textureLod(screen_sampler, p_uv + offset * vec2(-1.0, -1.0), 0.0).rgb;
-	vec3 b = textureLod(screen_sampler, p_uv + offset * vec2(0.0, -1.0), 0.0).rgb;
-	vec3 c = textureLod(screen_sampler, p_uv + offset * vec2(1.0, -1.0), 0.0).rgb;
-	vec3 d = textureLod(screen_sampler, p_uv + offset * vec2(-0.5, -0.5), 0.0).rgb;
-	vec3 e = textureLod(screen_sampler, p_uv + offset * vec2(0.5, -0.5), 0.0).rgb;
-	vec3 f = textureLod(screen_sampler, p_uv + offset * vec2(-1.0, 0.0), 0.0).rgb;
-	vec3 g = textureLod(screen_sampler, p_uv, 0.0).rgb;
-	vec3 h = textureLod(screen_sampler, p_uv + offset * vec2(1.0, 0.0), 0.0).rgb;
-	vec3 i = textureLod(screen_sampler, p_uv + offset * vec2(-0.5, 0.5), 0.0).rgb;
-	vec3 j = textureLod(screen_sampler, p_uv + offset * vec2(0.5, 0.5), 0.0).rgb;
-	vec3 k = textureLod(screen_sampler, p_uv + offset * vec2(-1.0, 1.0), 0.0).rgb;
-	vec3 l = textureLod(screen_sampler, p_uv + offset * vec2(0.0, 1.0), 0.0).rgb;
-	vec3 m = textureLod(screen_sampler, p_uv + offset * vec2(1.0, 1.0), 0.0).rgb;
+	const float GOLDEN_ANGLE = 2.39996323;
+	vec2 pixel_size = 1.0 / vec2(textureSize(screen_sampler, 0));
+	vec3 color = vec3(0.0);
+	float total_weight = 0.0;
+	const int SAMPLE_COUNT = 16;
+	const float inv_samples = 1.0 / float(SAMPLE_COUNT);
 
-	return (d + e + i + j) * 0.125 +
-			(a + c + k + m) * 0.03125 +
-			(b + f + h + l) * 0.0625 +
-			g * 0.125;
+	for (int i = 0; i < SAMPLE_COUNT; i++) {
+		float r_norm = sqrt((float(i) + 0.5) * inv_samples);
+		float theta = float(i) * GOLDEN_ANGLE;
+		vec2 offset = vec2(cos(theta), sin(theta)) * (r_norm * radius) * pixel_size;
+		float weight = exp(-2.0 * r_norm * r_norm);
+
+		color += textureLod(screen_sampler, p_uv + offset, 0.0).rgb * weight;
+		total_weight += weight;
+	}
+
+	return color / total_weight;
 }
 
 void main() {
@@ -119,6 +121,6 @@ void main() {
 	float fog_amount = get_fog_amount(view_position, uv);
 	float lod = min(fog_amount * params.intensity * params.max_blur_lod, min(params.max_blur_lod, float(params.max_lod)));
 
-	vec3 blurred = params.gaussian_filter_enabled != 0 ? sample_gaussian_blur(uv, lod) : textureLod(screen_sampler, uv, lod).rgb;
+	vec3 blurred = params.gaussian_filter_enabled != 0 ? sample_vogel_blur(uv, lod) : textureLod(screen_sampler, uv, lod).rgb;
 	imageStore(output_image, pixel, vec4(blurred, original.a));
 }
