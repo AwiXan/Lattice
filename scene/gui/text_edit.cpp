@@ -1996,7 +1996,11 @@ void TextEdit::_notification(int p_what) {
 											if (nl != -1) {
 												display_text = display_text.substr(0, nl) + " ...";
 											}
-											Point2 text_pos = Point2(get_caret_draw_pos(c).x + caret_width + 2, ofs_y + std::ceil(TS->shaped_text_get_ascent(rid)));
+											float baseline_y = ofs_y;
+											if (str.is_empty()) {
+												baseline_y = ofs_y - (row_height / 2) + (row_height - theme_cache.font->get_height(theme_cache.font_size)) / 2.0f + theme_cache.font->get_ascent(theme_cache.font_size);
+											}
+											Point2 text_pos = Point2(get_caret_draw_pos(c).x + caret_width + 2, baseline_y);
 											theme_cache.font->draw_string(text_ci, text_pos, display_text, HORIZONTAL_ALIGNMENT_LEFT, -1, theme_cache.font_size, ghost_color);
 										}
 									}

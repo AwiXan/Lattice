@@ -14,8 +14,11 @@
 #include "rust_script.h"
 
 #ifdef TOOLS_ENABLED
+#include "editor/cargo_manager_dock.h"
 #include "editor/editor_node.h"
 #include "editor/rust_editor_plugin.h"
+#include "editor/rust_syntax_highlighter.h"
+#include "editor/script/script_editor_plugin.h"
 #endif
 
 RustLanguage *script_language_rust = nullptr;
@@ -26,6 +29,12 @@ Ref<ResourceFormatSaverRustScript> resource_saver_rust;
 #ifdef TOOLS_ENABLED
 static void _editor_init_rust() {
 	EditorNode::add_editor_plugin(memnew(RustEditorPlugin));
+
+	Ref<RustSyntaxHighlighter> rust_syntax_highlighter;
+	rust_syntax_highlighter.instantiate();
+	if (ScriptEditor::get_singleton()) {
+		ScriptEditor::get_singleton()->register_syntax_highlighter(rust_syntax_highlighter);
+	}
 }
 #endif
 
@@ -50,12 +59,15 @@ void initialize_rust_integration_module(ModuleInitializationLevel p_level) {
 
 #ifdef TOOLS_ENABLED
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
+		GDREGISTER_INTERNAL_CLASS(CargoManagerDock);
+		GDREGISTER_CLASS(RustSyntaxHighlighter);
 		EditorNode::add_init_callback(&_editor_init_rust);
 	}
 #endif
 }
 
 void uninitialize_rust_integration_module(ModuleInitializationLevel p_level) {
+
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
 		if (script_language_rust) {
 			ScriptServer::unregister_language(script_language_rust);

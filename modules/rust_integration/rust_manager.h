@@ -24,6 +24,10 @@ class RustManager : public Object {
 
 	void _check_cargo();
 
+	Error _clean_crate_bind() { return clean_crate(); }
+	Error _check_crate_bind() { return check_crate(); }
+	Error _add_dependency_bind(const String &p_crate_name, const String &p_version = "") { return add_dependency(p_crate_name, p_version); }
+
 protected:
 	static void _bind_methods();
 
@@ -38,9 +42,14 @@ public:
 
 	Error generate_scaffolding(const String &p_target_dir = "res://rust");
 	Error build_crate(bool p_release = false, String *r_output = nullptr, int *r_exit_code = nullptr);
+	Error clean_crate(String *r_output = nullptr, int *r_exit_code = nullptr);
+	Error check_crate(String *r_output = nullptr, int *r_exit_code = nullptr);
+	Error add_dependency(const String &p_crate_name, const String &p_version = "", String *r_output = nullptr, int *r_exit_code = nullptr);
+	PackedStringArray get_dependencies() const;
 	Error reload_library();
 
 	bool is_library_loaded() const { return library_handle != nullptr; }
+	String get_loaded_library_path() const { return loaded_library_path; }
 	void *get_symbol(const String &p_name);
 
 	RustManager();

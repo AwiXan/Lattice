@@ -21,17 +21,13 @@ void RustLanguage::finish() {
 
 Vector<String> RustLanguage::get_reserved_words() const {
 	static const char *_reserved_words[] = {
-		"as", "break", "const", "continue", "crate", "else", "enum", "extern",
-		"false", "fn", "for", "if", "impl", "in", "let", "loop", "match",
-		"mod", "move", "mut", "pub", "ref", "return", "self", "Self",
-		"static", "struct", "super", "trait", "true", "type", "unsafe",
-		"use", "where", "while", "async", "await", "dyn", "abstract",
-		"become", "box", "do", "final", "macro", "override", "priv",
-		"typeof", "unsized", "virtual", "yield", "try",
-		// Types
-		"i8", "i16", "i32", "i64", "i128", "isize",
-		"u8", "u16", "u32", "u64", "u128", "usize",
-		"f32", "f64", "bool", "char", "str", "String", "Option", "Result", "Vec", "Box",
+		"as", "async", "await", "break", "const", "continue", "crate", "dyn",
+		"else", "enum", "extern", "false", "fn", "for", "if", "impl", "in",
+		"let", "loop", "macro_rules", "match", "mod", "move", "mut", "pub",
+		"ref", "return", "self", "Self", "static", "struct", "super", "trait",
+		"true", "try", "type", "union", "unsafe", "use", "where", "while",
+		"yield", "abstract", "become", "box", "do", "final", "macro",
+		"override", "priv", "typeof", "unsized", "virtual",
 		nullptr
 	};
 

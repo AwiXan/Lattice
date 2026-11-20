@@ -2222,7 +2222,14 @@ void ScriptTextEditor::drop_data_fw(const Point2 &p_point, const Variant &p_data
 	Dictionary d = p_data;
 
 	CodeEdit *te = code_editor->get_text_editor();
-	Point2i pos = (p_point == Vector2(Math::INF, Math::INF)) ? Point2i(te->get_caret_line(0), te->get_caret_column(0)) : te->get_line_column_at_pos(p_point);
+	Point2i pos;
+	if (te->get_drag_caret_index() >= 0) {
+		pos = Point2i(te->get_caret_column(te->get_drag_caret_index()), te->get_caret_line(te->get_drag_caret_index()));
+	} else if (p_point == Vector2(Math::INF, Math::INF)) {
+		pos = Point2i(te->get_caret_column(0), te->get_caret_line(0));
+	} else {
+		pos = te->get_line_column_at_pos(p_point);
+	}
 	int drop_at_line = pos.y;
 	int drop_at_column = pos.x;
 	int selection_index = te->get_selection_at_line_column(drop_at_line, drop_at_column);

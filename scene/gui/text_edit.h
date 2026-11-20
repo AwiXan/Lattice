@@ -1008,6 +1008,7 @@ public:
 	void remove_caret(int p_caret);
 	void remove_drag_caret();
 	void set_drag_caret(const Point2 &p_point);
+	int get_drag_caret_index() const { return drag_caret_index; }
 	void set_drag_preview_text(const String &p_text);
 	String get_drag_preview_text() const;
 	void remove_secondary_carets();

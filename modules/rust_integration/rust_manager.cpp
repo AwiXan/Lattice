@@ -19,8 +19,13 @@ void RustManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_cargo_version"), &RustManager::get_cargo_version);
 	ClassDB::bind_method(D_METHOD("has_rust_project"), &RustManager::has_rust_project);
 	ClassDB::bind_method(D_METHOD("generate_scaffolding", "target_dir"), &RustManager::generate_scaffolding, DEFVAL("res://rust"));
+	ClassDB::bind_method(D_METHOD("clean_crate"), &RustManager::_clean_crate_bind);
+	ClassDB::bind_method(D_METHOD("check_crate"), &RustManager::_check_crate_bind);
+	ClassDB::bind_method(D_METHOD("add_dependency", "crate_name", "version"), &RustManager::_add_dependency_bind, DEFVAL(""));
+	ClassDB::bind_method(D_METHOD("get_dependencies"), &RustManager::get_dependencies);
 	ClassDB::bind_method(D_METHOD("reload_library"), &RustManager::reload_library);
 	ClassDB::bind_method(D_METHOD("is_library_loaded"), &RustManager::is_library_loaded);
+	ClassDB::bind_method(D_METHOD("get_loaded_library_path"), &RustManager::get_loaded_library_path);
 }
 
 void RustManager::_check_cargo() {
@@ -181,6 +186,174 @@ Error RustManager::build_crate(bool p_release, String *r_output, int *r_exit_cod
 	}
 
 	return FAILED;
+}
+
+Error RustManager::clean_crate(String *r_output, int *r_exit_code) {
+	if (!cargo_available) {
+		_check_cargo();
+		if (!cargo_available) {
+			if (r_output) {
+				*r_output = "Error: Cargo was not found on system PATH.";
+			}
+			if (r_exit_code) {
+				*r_exit_code = -1;
+			}
+			return ERR_CANT_CREATE;
+		}
+	}
+
+	String crate_dir = find_project_crate_dir();
+	if (crate_dir.is_empty()) {
+		return ERR_FILE_NOT_FOUND;
+	}
+
+	String global_crate_dir = ProjectSettings::get_singleton()->globalize_path(crate_dir);
+	List<String> args;
+	args.push_back("clean");
+	args.push_back("--manifest-path");
+	args.push_back(global_crate_dir.path_join("Cargo.toml"));
+
+	String output;
+	int exit_code = -1;
+	Error err = OS::get_singleton()->execute(cargo_path, args, &output, &exit_code, true);
+	if (r_output) {
+		*r_output = output;
+	}
+	if (r_exit_code) {
+		*r_exit_code = exit_code;
+	}
+	return (err == OK && exit_code == 0) ? OK : FAILED;
+}
+
+Error RustManager::check_crate(String *r_output, int *r_exit_code) {
+	if (!cargo_available) {
+		_check_cargo();
+		if (!cargo_available) {
+			if (r_output) {
+				*r_output = "Error: Cargo was not found on system PATH.";
+			}
+			if (r_exit_code) {
+				*r_exit_code = -1;
+			}
+			return ERR_CANT_CREATE;
+		}
+	}
+
+	String crate_dir = find_project_crate_dir();
+	if (crate_dir.is_empty()) {
+		return ERR_FILE_NOT_FOUND;
+	}
+
+	String global_crate_dir = ProjectSettings::get_singleton()->globalize_path(crate_dir);
+	List<String> args;
+	args.push_back("check");
+	args.push_back("--manifest-path");
+	args.push_back(global_crate_dir.path_join("Cargo.toml"));
+
+	String output;
+	int exit_code = -1;
+	Error err = OS::get_singleton()->execute(cargo_path, args, &output, &exit_code, true);
+	if (r_output) {
+		*r_output = output;
+	}
+	if (r_exit_code) {
+		*r_exit_code = exit_code;
+	}
+	return (err == OK && exit_code == 0) ? OK : FAILED;
+}
+
+Error RustManager::add_dependency(const String &p_crate_name, const String &p_version, String *r_output, int *r_exit_code) {
+	if (p_crate_name.is_empty()) {
+		return ERR_INVALID_PARAMETER;
+	}
+	String crate_dir = find_project_crate_dir();
+	if (crate_dir.is_empty()) {
+		generate_scaffolding("res://rust");
+		crate_dir = "res://rust";
+	}
+
+	String global_crate_dir = ProjectSettings::get_singleton()->globalize_path(crate_dir);
+	String toml_path = global_crate_dir.path_join("Cargo.toml");
+
+	// Try cargo add first if available
+	if (cargo_available) {
+		List<String> args;
+		args.push_back("add");
+		args.push_back("--manifest-path");
+		args.push_back(toml_path);
+		if (!p_version.is_empty()) {
+			args.push_back(p_crate_name + "@" + p_version);
+		} else {
+			args.push_back(p_crate_name);
+		}
+		String output;
+		int exit_code = -1;
+		Error err = OS::get_singleton()->execute(cargo_path, args, &output, &exit_code, true);
+		if (err == OK && exit_code == 0) {
+			if (r_output) {
+				*r_output = output;
+			}
+			if (r_exit_code) {
+				*r_exit_code = exit_code;
+			}
+			return OK;
+		}
+	}
+
+	// Fallback: directly append or insert into Cargo.toml
+	Error err;
+	String content = FileAccess::get_file_as_string(crate_dir.path_join("Cargo.toml"), &err);
+	if (err == OK) {
+		String dep_entry = p_version.is_empty() ? vformat("%s = \"*\"\n", p_crate_name) : vformat("%s = \"%s\"\n", p_crate_name, p_version);
+		int dep_idx = content.find("[dependencies]");
+		if (dep_idx != -1) {
+			int insert_pos = dep_idx + String("[dependencies]").length();
+			content = content.insert(insert_pos, "\n" + dep_entry);
+		} else {
+			content += "\n[dependencies]\n" + dep_entry;
+		}
+		Ref<FileAccess> f = FileAccess::open(crate_dir.path_join("Cargo.toml"), FileAccess::WRITE);
+		if (f.is_valid()) {
+			f->store_string(content);
+			if (r_output) {
+				*r_output = vformat("Added %s to Cargo.toml", p_crate_name);
+			}
+			if (r_exit_code) {
+				*r_exit_code = 0;
+			}
+			return OK;
+		}
+	}
+	return FAILED;
+}
+
+PackedStringArray RustManager::get_dependencies() const {
+	PackedStringArray deps;
+	String crate_dir = find_project_crate_dir();
+	if (crate_dir.is_empty()) {
+		return deps;
+	}
+	Error err;
+	String content = FileAccess::get_file_as_string(crate_dir.path_join("Cargo.toml"), &err);
+	if (err != OK) {
+		return deps;
+	}
+	Vector<String> lines = content.split("\n");
+	bool in_deps = false;
+	for (int i = 0; i < lines.size(); i++) {
+		String line = lines[i].strip_edges();
+		if (line.is_empty() || line.begins_with("#")) {
+			continue;
+		}
+		if (line.begins_with("[")) {
+			in_deps = (line == "[dependencies]");
+			continue;
+		}
+		if (in_deps) {
+			deps.push_back(line);
+		}
+	}
+	return deps;
 }
 
 Error RustManager::reload_library() {
