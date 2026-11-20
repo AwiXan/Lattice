@@ -1279,6 +1279,15 @@ void SceneTree::_process_groups_thread(uint32_t p_index, bool p_physics) {
 	Node::current_process_thread_group = nullptr;
 }
 
+void SceneTree::_process_group_async(ProcessGroup *p_group) {
+	if (!p_group || p_group->removed) {
+		return;
+	}
+	Node::current_process_thread_group = p_group->owner;
+	_process_group(p_group, false);
+	Node::current_process_thread_group = nullptr;
+}
+
 void SceneTree::_process(bool p_physics) {
 	if (process_groups_dirty) {
 		{
@@ -1289,6 +1298,11 @@ void SceneTree::_process(bool p_physics) {
 
 			for (uint32_t i = 0; i < pg_count; i++) {
 				if (pg_ptr[i]->removed) {
+					if (pg_ptr[i]->async_task_id != 0) {
+						WorkerThreadPool::get_singleton()->wait_for_task_completion(pg_ptr[i]->async_task_id);
+						pg_ptr[i]->async_task_id = 0;
+					}
+					memdelete(pg_ptr[i]);
 					// Replace removed with last.
 					pg_ptr[i] = pg_ptr[pg_count - 1];
 					// Retry
@@ -1339,7 +1353,18 @@ void SceneTree::_process(bool p_physics) {
 				}
 				for (uint32_t j = from; j < i; j++) {
 					if (process_groups[j]->last_pass == process_last_pass) {
-						if (using_threads) {
+						if (process_groups[j]->is_async && !p_physics) {
+							// Async group: run independently on worker pool without blocking the main frame!
+							if (process_groups[j]->async_task_id != 0) {
+								if (WorkerThreadPool::get_singleton()->is_task_completed(process_groups[j]->async_task_id)) {
+									WorkerThreadPool::get_singleton()->wait_for_task_completion(process_groups[j]->async_task_id);
+									process_groups[j]->async_task_id = 0;
+								}
+							}
+							if (process_groups[j]->async_task_id == 0) {
+								process_groups[j]->async_task_id = WorkerThreadPool::get_singleton()->add_template_task(this, &SceneTree::_process_group_async, process_groups[j], false, "SceneTreeAsyncGroupProcess");
+							}
+						} else if (using_threads) {
 							local_process_group_cache.push_back(process_groups[j]);
 						} else {
 							_process_group(process_groups[j], p_physics);
@@ -1347,7 +1372,7 @@ void SceneTree::_process(bool p_physics) {
 					}
 				}
 
-				if (using_threads) {
+				if (using_threads && !local_process_group_cache.is_empty()) {
 					WorkerThreadPool::GroupID id = WorkerThreadPool::get_singleton()->add_template_group_task(this, &SceneTree::_process_groups_thread, p_physics, local_process_group_cache.size(), -1, true);
 					WorkerThreadPool::get_singleton()->wait_for_group_task_completion(id);
 				}
@@ -1415,6 +1440,10 @@ void SceneTree::_remove_process_group(Node *p_node) {
 	ProcessGroup *pg = (ProcessGroup *)p_node->data.process_group;
 	ERR_FAIL_NULL(pg);
 	ERR_FAIL_COND(pg->removed);
+	if (pg->async_task_id != 0) {
+		WorkerThreadPool::get_singleton()->wait_for_task_completion(pg->async_task_id);
+		pg->async_task_id = 0;
+	}
 	pg->removed = true;
 	pg->owner = nullptr;
 	p_node->data.process_group = nullptr;
@@ -1428,11 +1457,23 @@ void SceneTree::_add_process_group(Node *p_node) {
 	ProcessGroup *pg = memnew(ProcessGroup);
 
 	pg->owner = p_node;
+	int group_id = p_node->get_thread_group_id();
+	if (group_id > 0 && group_id <= 32) {
+		int mode = GLOBAL_GET(vformat("threading/thread_groups/group_%d/mode", group_id));
+		pg->is_async = (mode == 2);
+	}
 	p_node->data.process_group = pg;
 
 	process_groups.push_back(pg);
 
 	process_groups_dirty = true;
+}
+
+void SceneTree::_set_process_group_async(void *p_group, bool p_async) {
+	if (p_group) {
+		ProcessGroup *pg = (ProcessGroup *)p_group;
+		pg->is_async = p_async;
+	}
 }
 
 void SceneTree::_remove_node_from_process_group(Node *p_node, Node *p_owner) {
@@ -1957,9 +1998,70 @@ bool SceneTree::is_multiplayer_poll_enabled() const {
 	return multiplayer_poll;
 }
 
+TypedArray<Node> SceneTree::get_nodes_in_thread_group(const Variant &p_group) const {
+	TypedArray<Node> result;
+	int target_id = -1;
+	StringName target_name;
+
+	if (p_group.get_type() == Variant::INT) {
+		target_id = p_group;
+	} else {
+		target_name = p_group;
+		target_id = get_thread_group_id_by_name(target_name);
+	}
+
+	List<Node *> open_list;
+	if (root) {
+		open_list.push_back(root);
+	}
+
+	while (!open_list.is_empty()) {
+		Node *n = open_list.front()->get();
+		open_list.pop_front();
+
+		if (target_id > 0 && n->get_thread_group_id() == target_id) {
+			result.push_back(n);
+		} else if (!target_name.is_empty() && n->get_thread_group() == target_name) {
+			result.push_back(n);
+		}
+
+		for (int i = 0; i < n->get_child_count(); i++) {
+			open_list.push_back(n->get_child(i));
+		}
+	}
+
+	return result;
+}
+
+int SceneTree::get_thread_group_id_by_name(const StringName &p_name) const {
+	String str = p_name;
+	for (int i = 1; i <= 32; i++) {
+		String name = GLOBAL_GET(vformat("threading/thread_groups/group_%d/name", i));
+		if (str.nocasecmp_to(name) == 0 || str.nocasecmp_to(vformat("Group %d", i)) == 0) {
+			return i;
+		}
+	}
+	return 0;
+}
+
+StringName SceneTree::get_thread_group_name_by_id(int p_id) const {
+	if (p_id >= 1 && p_id <= 32) {
+		String name = GLOBAL_GET(vformat("threading/thread_groups/group_%d/name", p_id));
+		if (!name.is_empty()) {
+			return name;
+		}
+		return vformat("Group %d", p_id);
+	}
+	return StringName();
+}
+
 void SceneTree::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_root"), &SceneTree::get_root);
 	ClassDB::bind_method(D_METHOD("has_group", "name"), &SceneTree::has_group);
+
+	ClassDB::bind_method(D_METHOD("get_nodes_in_thread_group", "group"), &SceneTree::get_nodes_in_thread_group);
+	ClassDB::bind_method(D_METHOD("get_thread_group_id_by_name", "name"), &SceneTree::get_thread_group_id_by_name);
+	ClassDB::bind_method(D_METHOD("get_thread_group_name_by_id", "id"), &SceneTree::get_thread_group_name_by_id);
 
 	ClassDB::bind_method(D_METHOD("is_accessibility_enabled"), &SceneTree::is_accessibility_enabled);
 	ClassDB::bind_method(D_METHOD("is_accessibility_supported"), &SceneTree::is_accessibility_supported);
@@ -2320,6 +2422,10 @@ SceneTree::~SceneTree() {
 	// Process groups are not deleted immediately, they may remain around. Delete them now.
 	for (uint32_t i = 0; i < process_groups.size(); i++) {
 		if (process_groups[i] != &default_process_group) {
+			if (process_groups[i]->async_task_id != 0) {
+				WorkerThreadPool::get_singleton()->wait_for_task_completion(process_groups[i]->async_task_id);
+				process_groups[i]->async_task_id = 0;
+			}
 			memdelete(process_groups[i]);
 		}
 	}

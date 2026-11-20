@@ -45,6 +45,7 @@ STATIC_ASSERT_INCOMPLETE_TYPE(class, Engine);
 #include "core/object/class_db.h"
 #include "core/object/message_queue.h"
 #include "core/object/script_language.h"
+#include "core/os/spin_lock.h"
 #include "core/string/print_string.h"
 #include "scene/animation/tween.h"
 #include "scene/main/instance_placeholder.h"
@@ -66,6 +67,10 @@ SafeNumeric<uint32_t> Node::time_scale_users{ 0 };
 SafeNumeric<uint32_t> Node::time_scale_version{ 1 };
 
 thread_local Node *Node::current_process_thread_group = nullptr;
+
+static SpinLock node_thread_group_lock;
+static HashMap<ObjectID, int> node_thread_group_ids;
+static HashMap<ObjectID, StringName> node_thread_group_names;
 
 void Node::_notification(int p_notification) {
 	switch (p_notification) {
@@ -1309,6 +1314,97 @@ void Node::set_process_thread_group(ProcessThreadGroup p_mode) {
 
 Node::ProcessThreadGroup Node::get_process_thread_group() const {
 	return data.process_thread_group;
+}
+
+void Node::set_thread_group_id(int p_id) {
+	if (p_id < 0 || p_id > 32) {
+		p_id = 0;
+	}
+	{
+		node_thread_group_lock.lock();
+		if (p_id == 0) {
+			node_thread_group_ids.erase(get_instance_id());
+			node_thread_group_names.erase(get_instance_id());
+		} else {
+			node_thread_group_ids[get_instance_id()] = p_id;
+			String group_name = GLOBAL_GET(vformat("threading/thread_groups/group_%d/name", p_id));
+			if (group_name.is_empty()) {
+				group_name = vformat("Group %d", p_id);
+			}
+			node_thread_group_names[get_instance_id()] = group_name;
+		}
+		node_thread_group_lock.unlock();
+	}
+
+	if (p_id == 0) {
+		set_process_thread_group(PROCESS_THREAD_GROUP_INHERIT);
+	} else {
+		int mode = GLOBAL_GET(vformat("threading/thread_groups/group_%d/mode", p_id));
+		int order = GLOBAL_GET(vformat("threading/thread_groups/group_%d/order", p_id));
+		if (mode == 0) {
+			set_process_thread_group(PROCESS_THREAD_GROUP_MAIN_THREAD);
+		} else {
+			set_process_thread_group(PROCESS_THREAD_GROUP_SUB_THREAD);
+		}
+		set_process_thread_group_order(order);
+		if (data.tree && data.process_group) {
+			data.tree->_set_process_group_async(data.process_group, mode == 2);
+		}
+	}
+}
+
+int Node::get_thread_group_id() const {
+	node_thread_group_lock.lock();
+	const int *id_ptr = node_thread_group_ids.getptr(get_instance_id());
+	int res = id_ptr ? *id_ptr : 0;
+	node_thread_group_lock.unlock();
+	return res;
+}
+
+void Node::set_thread_group(const StringName &p_name) {
+	String str = p_name;
+	if (str.is_empty() || str == "Inherit" || str == "None") {
+		set_thread_group_id(0);
+		return;
+	}
+
+	for (int i = 1; i <= 32; i++) {
+		String name = GLOBAL_GET(vformat("threading/thread_groups/group_%d/name", i));
+		if (str.nocasecmp_to(name) == 0 || str.nocasecmp_to(vformat("Group %d", i)) == 0) {
+			set_thread_group_id(i);
+			return;
+		}
+	}
+
+	{
+		node_thread_group_lock.lock();
+		node_thread_group_names[get_instance_id()] = p_name;
+		node_thread_group_ids[get_instance_id()] = 0;
+		node_thread_group_lock.unlock();
+	}
+	set_process_thread_group(PROCESS_THREAD_GROUP_SUB_THREAD);
+}
+
+StringName Node::get_thread_group() const {
+	node_thread_group_lock.lock();
+	const StringName *name_ptr = node_thread_group_names.getptr(get_instance_id());
+	if (name_ptr && !name_ptr->is_empty()) {
+		StringName res = *name_ptr;
+		node_thread_group_lock.unlock();
+		return res;
+	}
+	const int *id_ptr = node_thread_group_ids.getptr(get_instance_id());
+	if (id_ptr && *id_ptr > 0) {
+		int gid = *id_ptr;
+		node_thread_group_lock.unlock();
+		String group_name = GLOBAL_GET(vformat("threading/thread_groups/group_%d/name", gid));
+		if (!group_name.is_empty()) {
+			return group_name;
+		}
+		return vformat("Group %d", gid);
+	}
+	node_thread_group_lock.unlock();
+	return StringName();
 }
 
 void Node::set_process_thread_messages(BitField<ProcessThreadMessages> p_flags) {
@@ -3773,6 +3869,18 @@ void Node::_call_unhandled_key_input(const Ref<InputEvent> &p_event) {
 }
 
 void Node::_validate_property(PropertyInfo &p_property) const {
+	if (p_property.name == "thread_group") {
+		String hint = "Inherit";
+		for (int i = 1; i <= 32; i++) {
+			String name = GLOBAL_GET(vformat("threading/thread_groups/group_%d/name", i));
+			if (!name.is_empty()) {
+				hint += "," + name;
+			} else {
+				hint += ",Group " + itos(i);
+			}
+		}
+		p_property.hint_string = hint;
+	}
 	if ((p_property.name == "process_thread_group_order" || p_property.name == "process_thread_messages") && data.process_thread_group == PROCESS_THREAD_GROUP_INHERIT) {
 		p_property.usage = PROPERTY_USAGE_NONE;
 	}
@@ -3999,6 +4107,11 @@ void Node::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_process_thread_group", "mode"), &Node::set_process_thread_group);
 	ClassDB::bind_method(D_METHOD("get_process_thread_group"), &Node::get_process_thread_group);
+
+	ClassDB::bind_method(D_METHOD("set_thread_group", "name"), &Node::set_thread_group);
+	ClassDB::bind_method(D_METHOD("get_thread_group"), &Node::get_thread_group);
+	ClassDB::bind_method(D_METHOD("set_thread_group_id", "id"), &Node::set_thread_group_id);
+	ClassDB::bind_method(D_METHOD("get_thread_group_id"), &Node::get_thread_group_id);
 
 	ClassDB::bind_method(D_METHOD("set_process_thread_messages", "flags"), &Node::set_process_thread_messages);
 	ClassDB::bind_method(D_METHOD("get_process_thread_messages"), &Node::get_process_thread_messages);
@@ -4234,6 +4347,8 @@ void Node::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "process_physics_priority"), "set_physics_process_priority", "get_physics_process_priority");
 
 	ADD_SUBGROUP("Thread Group", "process_thread");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "thread_group", PROPERTY_HINT_ENUM, "Inherit"), "set_thread_group", "get_thread_group");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "thread_group_id", PROPERTY_HINT_RANGE, "0,32,1"), "set_thread_group_id", "get_thread_group_id");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "process_thread_group", PROPERTY_HINT_ENUM, "Inherit,Main Thread,Sub Thread"), "set_process_thread_group", "get_process_thread_group");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "process_thread_group_order"), "set_process_thread_group_order", "get_process_thread_group_order");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "process_thread_messages", PROPERTY_HINT_FLAGS, "Process,Physics Process"), "set_process_thread_messages", "get_process_thread_messages");
@@ -4323,6 +4438,13 @@ Node::Node() {
 }
 
 Node::~Node() {
+	{
+		node_thread_group_lock.lock();
+		node_thread_group_ids.erase(get_instance_id());
+		node_thread_group_names.erase(get_instance_id());
+		node_thread_group_lock.unlock();
+	}
+
 	data.grouped.clear();
 	data.owned.clear();
 	data.children.clear();

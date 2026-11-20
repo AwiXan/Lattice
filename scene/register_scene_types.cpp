@@ -1325,6 +1325,13 @@ void register_scene_types() {
 		GLOBAL_DEF_BASIC(vformat("%s/layer_%d", PNAME("layer_names/avoidance"), i + 1), "");
 	}
 
+	for (int i = 0; i < 32; i++) {
+		String default_name = (i == 0) ? "Main" : ((i == 1) ? "Game" : ((i == 2) ? "UI" : ""));
+		GLOBAL_DEF_BASIC(vformat("%s/group_%d/name", PNAME("threading/thread_groups"), i + 1), default_name);
+		GLOBAL_DEF(PropertyInfo(Variant::INT, vformat("%s/group_%d/mode", PNAME("threading/thread_groups"), i + 1), PROPERTY_HINT_ENUM, "Main Thread,Sub Thread,Async (Non-blocking)"), (i == 1) ? 1 : 0);
+		GLOBAL_DEF(PropertyInfo(Variant::INT, vformat("%s/group_%d/order", PNAME("threading/thread_groups"), i + 1)), (i + 1) * 10);
+	}
+
 	if (RenderingServer::get_singleton()) {
 		// RenderingServer needs to exist for this to succeed.
 		ColorPickerShape::init_shaders();

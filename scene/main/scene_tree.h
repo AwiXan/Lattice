@@ -32,6 +32,7 @@
 
 #include "core/object/message_queue.h"
 #include "core/object/ref_counted.h"
+#include "core/object/worker_thread_pool.h"
 #include "core/os/main_loop.h"
 #include "core/os/thread_safe.h"
 #include "core/templates/paged_allocator.h"
@@ -106,6 +107,8 @@ private:
 		bool removed = false;
 		Node *owner = nullptr;
 		uint64_t last_pass = 0;
+		bool is_async = false;
+		WorkerThreadPool::TaskID async_task_id = 0;
 	};
 
 	struct ProcessGroupSort {
@@ -246,10 +249,12 @@ private:
 
 	void _process_group(ProcessGroup *p_group, bool p_physics);
 	void _process_groups_thread(uint32_t p_index, bool p_physics);
+	void _process_group_async(ProcessGroup *p_group);
 	void _process(bool p_physics);
 
 	void _remove_process_group(Node *p_node);
 	void _add_process_group(Node *p_node);
+	void _set_process_group_async(void *p_group, bool p_async);
 	void _remove_node_from_process_group(Node *p_node, Node *p_owner);
 	void _add_node_to_process_group(Node *p_node, Node *p_owner);
 
@@ -445,6 +450,10 @@ public:
 	RequiredResult<Tween> create_tween();
 	void remove_tween(const Ref<Tween> &p_tween);
 	TypedArray<Tween> get_processed_tweens();
+
+	TypedArray<Node> get_nodes_in_thread_group(const Variant &p_group) const;
+	int get_thread_group_id_by_name(const StringName &p_name) const;
+	StringName get_thread_group_name_by_id(int p_id) const;
 
 	//used by Main::start, don't use otherwise
 	void add_current_scene(Node *p_current);

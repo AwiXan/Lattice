@@ -812,6 +812,12 @@ public:
 	void set_process_thread_group(ProcessThreadGroup p_mode);
 	ProcessThreadGroup get_process_thread_group() const;
 
+	void set_thread_group(const StringName &p_name);
+	StringName get_thread_group() const;
+
+	void set_thread_group_id(int p_id);
+	int get_thread_group_id() const;
+
 	static void print_orphan_nodes();
 	static TypedArray<int> get_orphan_node_ids();
 
