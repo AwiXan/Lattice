@@ -1,118 +1,114 @@
 // Functions related to gi/hddagi for our forward renderer
 
-//standard voxel cone trace
-vec4 voxel_cone_trace(texture3D probe, vec3 cell_size, vec3 pos, vec3 direction, float tan_half_angle, float max_distance, float p_bias) {
+mat3 voxel_gi_create_basis(vec3 normal) {
+	vec3 v0 = abs(normal.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+	vec3 tangent = normalize(cross(v0, normal));
+	vec3 bitangent = cross(normal, tangent);
+	return mat3(tangent, bitangent, normal);
+}
+
+float voxel_gi_ray_exit(vec3 uvw_origin, vec3 uvw_dir) {
+	vec3 is_pos = step(vec3(0.0), uvw_dir);
+	vec3 sign_dir = is_pos * 2.0 - 1.0;
+	vec3 safe_dir = sign_dir * max(abs(uvw_dir), vec3(1e-8));
+	vec3 t = (is_pos - uvw_origin) / safe_dir;
+	return min(t.x, min(t.y, t.z));
+}
+
+vec4 voxel_cone_trace(texture3D probe, vec3 uvw_origin, vec3 uvw_dir, float tan_half_angle, float p_bias) {
+	float max_distance = voxel_gi_ray_exit(uvw_origin, uvw_dir);
 	float dist = p_bias;
 	vec4 color = vec4(0.0);
+	float two_tan = 2.0 * tan_half_angle;
 
 	const int MAX_SPECULAR_STEPS = 32;
-	for (int step = 0; step < MAX_SPECULAR_STEPS && dist < max_distance && color.a < 0.95; step++) {
-		float diameter = max(1.0, 2.0 * tan_half_angle * dist);
-		vec3 uvw_pos = (pos + dist * direction) * cell_size;
-		float step_size = max(1.0, diameter * 0.5);
-		//check if outside, then break
-		if (any(greaterThan(abs(uvw_pos - 0.5), vec3(0.5f + step_size * cell_size)))) {
-			break;
-		}
+	for (int step = 0; step < MAX_SPECULAR_STEPS && dist < max_distance && color.a < 0.92; step++) {
+		float diameter = max(1.0, two_tan * dist);
+		vec3 uvw_pos = uvw_origin + dist * uvw_dir;
 		vec4 scolor = textureLod(sampler3D(probe, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP), uvw_pos, log2(diameter));
-		float a = (1.0 - color.a);
-		color += a * scolor;
-		dist += step_size;
+		color += (1.0 - color.a) * scolor;
+		dist += max(1.0, diameter * 0.5);
 	}
 
 	return color;
 }
 
-vec4 voxel_cone_trace_45_degrees(texture3D probe, vec3 cell_size, vec3 pos, vec3 direction, float tan_half_angle, float max_distance, float p_bias) {
+vec4 voxel_cone_trace_45_degrees(texture3D probe, vec3 uvw_origin, vec3 uvw_dir, float p_bias) {
+	float max_distance = voxel_gi_ray_exit(uvw_origin, uvw_dir);
 	float dist = p_bias;
 	vec4 color = vec4(0.0);
-	float radius = max(1.0, tan_half_angle * dist);
 
-	while (dist < max_distance && color.a < 0.95) {
-		vec3 uvw_pos = (pos + dist * direction) * cell_size;
-
-		//check if outside, then break
-		if (any(greaterThan(abs(uvw_pos - 0.5), vec3(0.5f + radius * cell_size)))) {
-			break;
-		}
-		float lod_level = log2(radius * 2.0);
-		vec4 scolor = textureLod(sampler3D(probe, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP), uvw_pos, lod_level);
-
-		float a = (1.0 - color.a);
-		scolor *= a;
-		color += scolor;
+	const int MAX_DIFFUSE_STEPS = 12;
+	for (int step = 0; step < MAX_DIFFUSE_STEPS && dist < max_distance && color.a < 0.92; step++) {
+		float radius = max(1.0, dist);
+		vec3 uvw_pos = uvw_origin + dist * uvw_dir;
+		vec4 scolor = textureLod(sampler3D(probe, SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP), uvw_pos, log2(radius) + 1.0);
+		color += (1.0 - color.a) * scolor;
 		dist += radius;
-		radius = max(1.0, tan_half_angle * dist);
 	}
 
 	return color;
 }
 
 void voxel_gi_compute(uint index, vec3 position, vec3 normal, vec3 ref_vec, mat3 normal_xform, float roughness, vec3 ambient, vec3 environment, inout vec4 out_spec, inout vec4 out_diff) {
-	position = (voxel_gi_instances.data[index].xform * vec4(position, 1.0)).xyz;
-	ref_vec = normalize((voxel_gi_instances.data[index].xform * vec4(ref_vec, 0.0)).xyz);
-	normal = normalize((voxel_gi_instances.data[index].xform * vec4(normal, 0.0)).xyz);
+	VoxelGIData gi = voxel_gi_instances.data[index];
+	mat3 xform3 = mat3(gi.xform);
 
-	position += normal * voxel_gi_instances.data[index].normal_bias;
+	position = (gi.xform * vec4(position, 1.0)).xyz;
+	normal = normalize(xform3 * normal);
+	position += normal * gi.normal_bias;
 
-	//this causes corrupted pixels, i have no idea why..
-	if (any(bvec2(any(lessThan(position, vec3(0.0))), any(greaterThan(position, voxel_gi_instances.data[index].bounds))))) {
+	vec3 cell_size = 1.0 / gi.bounds;
+	vec3 uvw_origin = position * cell_size;
+
+	vec3 blendv = abs(uvw_origin * 2.0 - 1.0);
+	float blend = 1.0 - max(blendv.x, max(blendv.y, blendv.z));
+	if (!(blend > 0.0)) {
 		return;
 	}
 
-	vec3 blendv = abs(position / voxel_gi_instances.data[index].bounds * 2.0 - 1.0);
-	float blend = clamp(1.0 - max(blendv.x, max(blendv.y, blendv.z)), 0.0, 1.0);
-	//float blend=1.0;
+	mat3 voxel_basis = voxel_gi_create_basis(normal);
+	float energy_scale = gi.dynamic_range * gi.exposure_normalization;
+	const float INV_ALPHA_NORM = 1.0 / 0.92;
 
-	float max_distance = length(voxel_gi_instances.data[index].bounds);
-	vec3 cell_size = 1.0 / voxel_gi_instances.data[index].bounds;
-
-	//radiance
-
-#define MAX_CONE_DIRS 4
-
-	vec3 cone_dirs[MAX_CONE_DIRS] = vec3[](
+	// Diffuse
+	const vec3 cone_dirs[4] = vec3[](
 			vec3(0.707107, 0.0, 0.707107),
 			vec3(0.0, 0.707107, 0.707107),
 			vec3(-0.707107, 0.0, 0.707107),
 			vec3(0.0, -0.707107, 0.707107));
 
-	float cone_weights[MAX_CONE_DIRS] = float[](0.25, 0.25, 0.25, 0.25);
-	float cone_angle_tan = 0.98269;
-
 	vec3 light = vec3(0.0);
 
-	for (int i = 0; i < MAX_CONE_DIRS; i++) {
-		vec3 dir = normalize((voxel_gi_instances.data[index].xform * vec4(normal_xform * cone_dirs[i], 0.0)).xyz);
+	for (int i = 0; i < 4; i++) {
+		vec3 uvw_dir = (voxel_basis * cone_dirs[i]) * cell_size;
+		vec4 cone_light = voxel_cone_trace_45_degrees(voxel_gi_textures[index], uvw_origin, uvw_dir, gi.bias);
 
-		vec4 cone_light = voxel_cone_trace_45_degrees(voxel_gi_textures[index], cell_size, position, dir, cone_angle_tan, max_distance, voxel_gi_instances.data[index].bias);
-
-		if (voxel_gi_instances.data[index].blend_ambient) {
-			cone_light.rgb = mix(ambient, cone_light.rgb, min(1.0, cone_light.a / 0.95));
+		if (gi.blend_ambient) {
+			cone_light.rgb = mix(ambient, cone_light.rgb, min(1.0, cone_light.a * INV_ALPHA_NORM));
 		}
 
-		light += cone_weights[i] * cone_light.rgb;
+		light += cone_light.rgb;
 	}
 
-	light *= voxel_gi_instances.data[index].dynamic_range * voxel_gi_instances.data[index].exposure_normalization;
+	light *= 0.25 * energy_scale;
 	out_diff += vec4(light * blend, blend);
 
-	//irradiance
-	vec4 irr_light;
-	if (roughness > 0.85) {
-		// Fully rough surfaces have isotropic diffuse reflections; reuse diffuse light directly, avoiding a redundant specular cone trace!
-		irr_light = vec4(light, 1.0);
+	// Specular
+	vec3 spec_light;
+	if (roughness > 0.70) {
+		spec_light = light;
 	} else {
-		float tan_angle = max(0.03, tan(roughness * 0.5 * M_PI * 0.99));
-		irr_light = voxel_cone_trace(voxel_gi_textures[index], cell_size, position, ref_vec, tan_angle, max_distance, voxel_gi_instances.data[index].bias);
-		if (voxel_gi_instances.data[index].blend_ambient) {
-			irr_light.rgb = mix(environment, irr_light.rgb, min(1.0, irr_light.a / 0.95));
+		vec3 voxel_ref = normalize(xform3 * ref_vec);
+		float tan_angle = max(0.03, tan(roughness * 1.555088));
+		vec4 irr_light = voxel_cone_trace(voxel_gi_textures[index], uvw_origin, voxel_ref * cell_size, tan_angle, gi.bias);
+		if (gi.blend_ambient) {
+			irr_light.rgb = mix(environment, irr_light.rgb, min(1.0, irr_light.a * INV_ALPHA_NORM));
 		}
-		irr_light.rgb *= voxel_gi_instances.data[index].dynamic_range * voxel_gi_instances.data[index].exposure_normalization;
+		spec_light = irr_light.rgb * energy_scale;
 	}
-	//irr_light=vec3(0.0);
 
-	out_spec += vec4(irr_light.rgb * blend, blend);
+	out_spec += vec4(spec_light * blend, blend);
 }
 
 vec2 octahedron_wrap(vec2 v) {

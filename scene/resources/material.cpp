@@ -866,6 +866,9 @@ void BaseMaterial3D::_update_shader() {
 	if (flags[FLAG_USE_SHADOW_TO_OPACITY]) {
 		code += ", shadow_to_opacity";
 	}
+	if (flags[FLAG_TRANSPARENCY_CAST_COLORED_SHADOWS]) {
+		code += ", cast_colored_shadows";
+	}
 	if (shadow_catcher != SHADOW_CATCHER_DISABLED) {
 		code += ", shadow_catcher";
 		if (shadow_catcher == SHADOW_CATCHER_SHADOWS_AND_REFLECTIONS) {
@@ -2807,6 +2810,10 @@ void BaseMaterial3D::_validate_property(PropertyInfo &p_property) const {
 	// alpha anti aliasiasing is only enabled when you can select aa
 	const bool alpha_aa_enabled = (alpha_antialiasing_mode != ALPHA_ANTIALIASING_OFF) && can_select_aa;
 
+	if (p_property.name == "transparency_cast_colored_shadows" && transparency == TRANSPARENCY_DISABLED) {
+		p_property.usage = PROPERTY_USAGE_NONE;
+	}
+
 	// alpha scissor slider isn't needed when alpha antialiasing is enabled
 	if (p_property.name == "alpha_scissor_threshold" && transparency != TRANSPARENCY_ALPHA_SCISSOR) {
 		p_property.usage = PROPERTY_USAGE_NONE;
@@ -3855,6 +3862,7 @@ void BaseMaterial3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "alpha_hash_scale", PROPERTY_HINT_RANGE, "0,2,0.01"), "set_alpha_hash_scale", "get_alpha_hash_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "alpha_antialiasing_mode", PROPERTY_HINT_ENUM, "Disabled,Alpha Edge Blend,Alpha Edge Clip"), "set_alpha_antialiasing", "get_alpha_antialiasing");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "alpha_antialiasing_edge", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_alpha_antialiasing_edge", "get_alpha_antialiasing_edge");
+	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "transparency_cast_colored_shadows"), "set_flag", "get_flag", FLAG_TRANSPARENCY_CAST_COLORED_SHADOWS);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "blend_mode", PROPERTY_HINT_ENUM, "Mix,Add,Subtract,Multiply,Premultiplied Alpha,Order-Independent"), "set_blend_mode", "get_blend_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "cull_mode", PROPERTY_HINT_ENUM, "Back,Front,Disabled"), "set_cull_mode", "get_cull_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "depth_draw_mode", PROPERTY_HINT_ENUM, "Opaque Only,Always,Never"), "set_depth_draw_mode", "get_depth_draw_mode");
@@ -4162,6 +4170,7 @@ void BaseMaterial3D::_bind_methods() {
 	BIND_ENUM_CONSTANT(FLAG_USE_Z_CLIP_SCALE);
 	BIND_ENUM_CONSTANT(FLAG_USE_FOV_OVERRIDE);
 	BIND_ENUM_CONSTANT(FLAG_DISABLE_MICRO_SHADOWS);
+	BIND_ENUM_CONSTANT(FLAG_TRANSPARENCY_CAST_COLORED_SHADOWS);
 	BIND_ENUM_CONSTANT(FLAG_MAX);
 
 	BIND_ENUM_CONSTANT(DIFFUSE_BURLEY);

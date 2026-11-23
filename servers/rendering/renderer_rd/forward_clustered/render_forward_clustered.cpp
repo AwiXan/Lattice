@@ -462,7 +462,7 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 		if constexpr (p_pass_mode == PASS_MODE_DEPTH_MATERIAL || p_pass_mode == PASS_MODE_SDF) {
 			cull_variant = SceneShaderForwardClustered::ShaderData::CULL_VARIANT_DOUBLE_SIDED;
 		} else {
-			if constexpr (p_pass_mode == PASS_MODE_SHADOW || p_pass_mode == PASS_MODE_SHADOW_DP) {
+			if constexpr (p_pass_mode == PASS_MODE_SHADOW || p_pass_mode == PASS_MODE_SHADOW_DP || p_pass_mode == PASS_MODE_SHADOW_COLORED) {
 				if (surf->flags & GeometryInstanceSurfaceDataCache::FLAG_USES_DOUBLE_SIDED_SHADOWS) {
 					cull_variant = SceneShaderForwardClustered::ShaderData::CULL_VARIANT_DOUBLE_SIDED;
 				}
@@ -526,6 +526,7 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 
 				pipeline_key.version = SceneShaderForwardClustered::PIPELINE_VERSION_COLOR_PASS;
 			} break;
+			case PASS_MODE_SHADOW_COLORED:
 			case PASS_MODE_SHADOW:
 			case PASS_MODE_DEPTH: {
 				pipeline_key.version = p_params->view_count > 1 ? SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_MULTIVIEW : SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS;
@@ -731,6 +732,9 @@ void RenderForwardClustered::_render_list(RenderingDevice::DrawListID p_draw_lis
 		} break;
 		case PASS_MODE_SHADOW_DP: {
 			_render_list_template<PASS_MODE_SHADOW_DP>(p_draw_list, p_framebuffer_Format, p_params, p_from_element, p_to_element);
+		} break;
+		case PASS_MODE_SHADOW_COLORED: {
+			_render_list_template<PASS_MODE_SHADOW_COLORED>(p_draw_list, p_framebuffer_Format, p_params, p_from_element, p_to_element);
 		} break;
 		case PASS_MODE_DEPTH: {
 			_render_list_template<PASS_MODE_DEPTH>(p_draw_list, p_framebuffer_Format, p_params, p_from_element, p_to_element);
@@ -1290,6 +1294,10 @@ void RenderForwardClustered::_fill_render_list(RenderListType p_render_list, con
 				}
 			} else if (p_pass_mode == PASS_MODE_SHADOW || p_pass_mode == PASS_MODE_SHADOW_DP) {
 				if (surf->flags & GeometryInstanceSurfaceDataCache::FLAG_PASS_SHADOW) {
+					rl->add_element(surf);
+				}
+			} else if (p_pass_mode == PASS_MODE_SHADOW_COLORED) {
+				if (surf->flags & GeometryInstanceSurfaceDataCache::FLAG_PASS_SHADOW_COLORED) {
 					rl->add_element(surf);
 				}
 			} else if (p_pass_mode == PASS_MODE_DEPTH_MATERIAL) {
@@ -3237,6 +3245,10 @@ void RenderForwardClustered::_render_shadow_pass(RID p_light, RID p_shadow_atlas
 		}
 		//render shadow
 		_render_shadow_append(render_fb, p_instances, light_projection, light_transform, zfar, 0, 0, reverse_cull_face, using_dual_paraboloid, using_dual_paraboloid_flip, use_pancake, p_lod_distance_multiplier, p_screen_mesh_lod_threshold, atlas_rect, flip_y, clear_region, open_pass, p_close_pass, p_render_info, p_viewport_size, p_main_cam_transform);
+
+		if (light_type == RSE::LIGHT_DIRECTIONAL && light_storage->light_get_colored_shadows(base) && light_storage->directional_shadow_get_color_fb().is_valid()) {
+			_render_shadow_append(light_storage->directional_shadow_get_color_fb(), p_instances, light_projection, light_transform, zfar, 0, 0, reverse_cull_face, false, false, use_pancake, p_lod_distance_multiplier, p_screen_mesh_lod_threshold, atlas_rect, flip_y, false, false, false, p_render_info, p_viewport_size, p_main_cam_transform, PASS_MODE_SHADOW_COLORED);
+		}
 	}
 }
 
@@ -3406,12 +3418,17 @@ void RenderForwardClustered::_render_shadow_begin() {
 	RD::get_singleton()->draw_command_begin_label("Shadow Setup");
 	_update_render_base_uniform_set();
 
+	RID color_tex = RendererRD::LightStorage::get_singleton()->directional_shadow_get_color_texture();
+	if (color_tex.is_valid()) {
+		RD::get_singleton()->texture_clear(color_tex, Color(1.0, 1.0, 1.0, 1.0), 0, 1, 0, 1);
+	}
+
 	render_list[RENDER_LIST_SECONDARY].clear();
 	// No need to reset scene_state.curr_gpu_ptr or scene_state.instance_buffer[RENDER_LIST_SECONDARY]
 	// because _fill_instance_data will do that if it detects p_offset == 0u.
 }
 
-void RenderForwardClustered::_render_shadow_append(RID p_framebuffer, const PagedArray<RenderGeometryInstance *> &p_instances, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, float p_bias, float p_normal_bias, bool p_reverse_cull_face, bool p_use_dp, bool p_use_dp_flip, bool p_use_pancake, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, const Rect2i &p_rect, bool p_flip_y, bool p_clear_region, bool p_begin, bool p_end, RenderingServerTypes::RenderInfo *p_render_info, const Size2i &p_viewport_size, const Transform3D &p_main_cam_transform) {
+void RenderForwardClustered::_render_shadow_append(RID p_framebuffer, const PagedArray<RenderGeometryInstance *> &p_instances, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, float p_bias, float p_normal_bias, bool p_reverse_cull_face, bool p_use_dp, bool p_use_dp_flip, bool p_use_pancake, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, const Rect2i &p_rect, bool p_flip_y, bool p_clear_region, bool p_begin, bool p_end, RenderingServerTypes::RenderInfo *p_render_info, const Size2i &p_viewport_size, const Transform3D &p_main_cam_transform, PassMode p_pass_mode) {
 	SceneState::ShadowPass shadow_pass;
 
 	RenderSceneDataRD scene_data;
@@ -3450,11 +3467,14 @@ void RenderForwardClustered::_render_shadow_append(RID p_framebuffer, const Page
 		scene_data.screen_mesh_lod_threshold = p_screen_mesh_lod_threshold;
 	}
 
-	PassMode pass_mode = p_use_dp ? PASS_MODE_SHADOW_DP : PASS_MODE_SHADOW;
+	PassMode pass_mode = p_pass_mode != PASS_MODE_MAX ? p_pass_mode : (p_use_dp ? PASS_MODE_SHADOW_DP : PASS_MODE_SHADOW);
 
 	uint32_t render_list_from = render_list[RENDER_LIST_SECONDARY].elements.size();
 	_fill_render_list(RENDER_LIST_SECONDARY, &render_data, pass_mode, false, false, false, true);
 	uint32_t render_list_size = render_list[RENDER_LIST_SECONDARY].elements.size() - render_list_from;
+	if (pass_mode == PASS_MODE_SHADOW_COLORED && render_list_size == 0) {
+		return;
+	}
 	render_list[RENDER_LIST_SECONDARY].sort_by_key_range(render_list_from, render_list_size);
 	_fill_instance_data(RENDER_LIST_SECONDARY, p_render_info ? p_render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_SHADOW] : (int *)nullptr, render_list_from, render_list_size, false);
 
@@ -4479,6 +4499,18 @@ RID RenderForwardClustered::_setup_render_pass_uniform_set(RenderListType p_rend
 	}
 #endif // MODULE_TEXTURE_STREAMING_ENABLED
 
+	{
+		RD::Uniform u;
+		u.binding = 45;
+		u.uniform_type = RD::UNIFORM_TYPE_TEXTURE;
+		if (p_use_directional_shadow_atlas && RendererRD::LightStorage::get_singleton()->directional_shadow_get_color_texture().is_valid()) {
+			u.append_id(RendererRD::LightStorage::get_singleton()->directional_shadow_get_color_texture());
+		} else {
+			u.append_id(texture_storage->texture_rd_get_default(RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_WHITE));
+		}
+		uniforms.push_back(u);
+	}
+
 	return UniformSetCacheRD::get_singleton()->get_cache_vec(scene_shader.default_shader_rd, RENDER_PASS_UNIFORM_SET, uniforms);
 }
 
@@ -4931,6 +4963,10 @@ void RenderForwardClustered::_geometry_instance_add_surface_with_material(Geomet
 		flags |= GeometryInstanceSurfaceDataCache::FLAG_PASS_OPAQUE;
 		flags |= GeometryInstanceSurfaceDataCache::FLAG_PASS_DEPTH;
 		flags |= GeometryInstanceSurfaceDataCache::FLAG_PASS_SHADOW;
+	}
+
+	if (p_material->shader_data->casts_colored_shadows) {
+		flags |= GeometryInstanceSurfaceDataCache::FLAG_PASS_SHADOW_COLORED;
 	}
 
 	if (p_material->shader_data->uses_particle_trails) {
@@ -5578,7 +5614,7 @@ void RenderForwardClustered::_mesh_generate_all_pipelines_for_surface_cache(Geom
 	surface.instanced = p_surface_cache->owner->mesh_instance.is_valid();
 	surface.uses_opaque = !uses_alpha_pass;
 	surface.uses_transparent = uses_alpha_pass || uses_fade;
-	surface.uses_depth = (p_surface_cache->flags & (GeometryInstanceSurfaceDataCache::FLAG_PASS_DEPTH | GeometryInstanceSurfaceDataCache::FLAG_PASS_OPAQUE | GeometryInstanceSurfaceDataCache::FLAG_PASS_SHADOW)) != 0;
+	surface.uses_depth = (p_surface_cache->flags & (GeometryInstanceSurfaceDataCache::FLAG_PASS_DEPTH | GeometryInstanceSurfaceDataCache::FLAG_PASS_OPAQUE | GeometryInstanceSurfaceDataCache::FLAG_PASS_SHADOW | GeometryInstanceSurfaceDataCache::FLAG_PASS_SHADOW_COLORED)) != 0;
 	surface.can_use_lightmap = p_surface_cache->owner->lightmap_instance.is_valid() || p_surface_cache->owner->lightmap_sh;
 	_mesh_compile_pipelines_for_surface(surface, p_global, RSE::PIPELINE_SOURCE_SURFACE);
 }

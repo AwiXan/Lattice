@@ -716,145 +716,132 @@ void hddagi_process(vec3 vertex, vec3 normal, vec3 reflection, float roughness, 
 	}
 }
 
-//standard voxel cone trace
-vec4 voxel_cone_trace(texture3D probe, vec3 cell_size, vec3 pos, vec3 direction, float tan_half_angle, float max_distance, float p_bias) {
+float voxel_gi_ray_exit(vec3 uvw_origin, vec3 uvw_dir) {
+	vec3 is_pos = step(vec3(0.0), uvw_dir);
+	vec3 sign_dir = is_pos * 2.0 - 1.0;
+	vec3 safe_dir = sign_dir * max(abs(uvw_dir), vec3(1e-8));
+	vec3 t = (is_pos - uvw_origin) / safe_dir;
+	return min(t.x, min(t.y, t.z));
+}
+
+vec4 voxel_cone_trace(texture3D probe, vec3 uvw_origin, vec3 uvw_dir, float tan_half_angle, float step_mult, float p_bias) {
+	float max_distance = voxel_gi_ray_exit(uvw_origin, uvw_dir);
 	float dist = p_bias;
 	vec4 color = vec4(0.0);
+	float two_tan = 2.0 * tan_half_angle;
 
 	const int MAX_SPECULAR_STEPS = 32;
-	for (int step = 0; step < MAX_SPECULAR_STEPS && dist < max_distance && color.a < 0.95; step++) {
-		float diameter = max(1.0, 2.0 * tan_half_angle * dist);
-		vec3 uvw_pos = (pos + dist * direction) * cell_size;
-		float step_size = max(1.0, diameter * 0.5);
-		//check if outside, then break
-		if (any(greaterThan(abs(uvw_pos - 0.5), vec3(0.5f + step_size * cell_size)))) {
-			break;
-		}
+	for (int step = 0; step < MAX_SPECULAR_STEPS && dist < max_distance && color.a < 0.92; step++) {
+		float diameter = max(1.0, two_tan * dist);
+		vec3 uvw_pos = uvw_origin + dist * uvw_dir;
 		vec4 scolor = textureLod(sampler3D(probe, linear_sampler_with_mipmaps), uvw_pos, log2(diameter));
-		float a = (1.0 - color.a);
-		color += a * scolor;
-		dist += step_size;
+		color += (1.0 - color.a) * scolor;
+		dist += max(1.0, diameter * step_mult);
 	}
 
 	return color;
 }
 
-vec4 voxel_cone_trace_45_degrees(texture3D probe, vec3 cell_size, vec3 pos, vec3 direction, float max_distance, float p_bias) {
+vec4 voxel_cone_trace_45_degrees(texture3D probe, vec3 uvw_origin, vec3 uvw_dir, float p_bias) {
+	float max_distance = voxel_gi_ray_exit(uvw_origin, uvw_dir);
 	float dist = p_bias;
 	vec4 color = vec4(0.0);
-	float radius = max(1.0, dist);
 
-	while (dist < max_distance && color.a < 0.95) {
-		vec3 uvw_pos = (pos + dist * direction) * cell_size;
-
-		//check if outside, then break
-		if (any(greaterThan(abs(uvw_pos - 0.5), vec3(0.5f + radius * cell_size)))) {
-			break;
-		}
-		float lod_level = log2(radius * 2.0);
-		vec4 scolor = textureLod(sampler3D(probe, linear_sampler_with_mipmaps), uvw_pos, lod_level);
-
-		float a = (1.0 - color.a);
-		scolor *= a;
-		color += scolor;
+	const int MAX_DIFFUSE_STEPS = 12;
+	for (int step = 0; step < MAX_DIFFUSE_STEPS && dist < max_distance && color.a < 0.92; step++) {
+		float radius = max(1.0, dist);
+		vec3 uvw_pos = uvw_origin + dist * uvw_dir;
+		vec4 scolor = textureLod(sampler3D(probe, linear_sampler_with_mipmaps), uvw_pos, log2(radius) + 1.0);
+		color += (1.0 - color.a) * scolor;
 		dist += radius;
-		radius = max(1.0, dist);
 	}
+
 	return color;
 }
 
-void voxel_gi_compute(uint index, vec3 position, vec3 normal, vec3 ref_vec, mat3 normal_xform, float roughness, inout vec4 out_spec, inout vec4 out_diff, inout float out_blend) {
-	position = (voxel_gi_instances.data[index].xform * vec4(position, 1.0)).xyz;
-	ref_vec = normalize((voxel_gi_instances.data[index].xform * vec4(ref_vec, 0.0)).xyz);
-	normal = normalize((voxel_gi_instances.data[index].xform * vec4(normal, 0.0)).xyz);
+void voxel_gi_compute(uint index, vec3 position, vec3 normal, vec3 ref_vec, float roughness, inout vec4 out_spec, inout vec4 out_diff, inout float out_blend) {
+	VoxelGIData gi = voxel_gi_instances.data[index];
+	mat3 xform3 = mat3(gi.xform);
 
-	position += normal * voxel_gi_instances.data[index].normal_bias;
+	position = (gi.xform * vec4(position, 1.0)).xyz;
+	normal = normalize(xform3 * normal);
+	position += normal * gi.normal_bias;
 
-	//this causes corrupted pixels, i have no idea why..
-	if (any(bvec2(any(lessThan(position, vec3(0.0))), any(greaterThan(position, voxel_gi_instances.data[index].bounds))))) {
+	vec3 cell_size = 1.0 / gi.bounds;
+	vec3 uvw_origin = position * cell_size;
+
+	vec3 blendv = abs(uvw_origin * 2.0 - 1.0);
+	float blend = 1.0 - max(blendv.x, max(blendv.y, blendv.z));
+	if (!(blend > 0.0)) {
 		return;
 	}
 
-	mat3 dir_xform = mat3(voxel_gi_instances.data[index].xform) * normal_xform;
+	mat3 voxel_basis = create_basis_from_normal(normal);
+	float energy_scale = gi.dynamic_range * gi.exposure_normalization;
 
-	vec3 blendv = abs(position / voxel_gi_instances.data[index].bounds * 2.0 - 1.0);
-	float blend = clamp(1.0 - max(blendv.x, max(blendv.y, blendv.z)), 0.0, 1.0);
-	//float blend=1.0;
-
-	float max_distance = length(voxel_gi_instances.data[index].bounds);
-	vec3 cell_size = 1.0 / voxel_gi_instances.data[index].bounds;
-
-	//irradiance
-
+	// Irradiance (diffuse)
 	vec4 light = vec4(0.0);
 
 	if (params.high_quality_vct) {
 		const uint cone_dir_count = 6;
-		vec3 cone_dirs[cone_dir_count] = vec3[](
+		const vec3 cone_dirs[cone_dir_count] = vec3[](
 				vec3(0.0, 0.0, 1.0),
 				vec3(0.866025, 0.0, 0.5),
 				vec3(0.267617, 0.823639, 0.5),
 				vec3(-0.700629, 0.509037, 0.5),
 				vec3(-0.700629, -0.509037, 0.5),
 				vec3(0.267617, -0.823639, 0.5));
-
-		float cone_weights[cone_dir_count] = float[](0.25, 0.15, 0.15, 0.15, 0.15, 0.15);
-		float cone_angle_tan = 0.577;
+		const float cone_weights[cone_dir_count] = float[](0.25, 0.15, 0.15, 0.15, 0.15, 0.15);
 
 		for (uint i = 0; i < cone_dir_count; i++) {
-			vec3 dir = normalize(dir_xform * cone_dirs[i]);
-			light += cone_weights[i] * voxel_cone_trace(voxel_gi_textures[index], cell_size, position, dir, cone_angle_tan, max_distance, voxel_gi_instances.data[index].bias);
+			vec3 uvw_dir = (voxel_basis * cone_dirs[i]) * cell_size;
+			light += cone_weights[i] * voxel_cone_trace(voxel_gi_textures[index], uvw_origin, uvw_dir, 0.577, 0.65, gi.bias);
 		}
 	} else {
 		const uint cone_dir_count = 4;
-		vec3 cone_dirs[cone_dir_count] = vec3[](
+		const vec3 cone_dirs[cone_dir_count] = vec3[](
 				vec3(0.707107, 0.0, 0.707107),
 				vec3(0.0, 0.707107, 0.707107),
 				vec3(-0.707107, 0.0, 0.707107),
 				vec3(0.0, -0.707107, 0.707107));
 
-		float cone_weights[cone_dir_count] = float[](0.25, 0.25, 0.25, 0.25);
-		for (int i = 0; i < cone_dir_count; i++) {
-			vec3 dir = normalize(dir_xform * cone_dirs[i]);
-			light += cone_weights[i] * voxel_cone_trace_45_degrees(voxel_gi_textures[index], cell_size, position, dir, max_distance, voxel_gi_instances.data[index].bias);
+		for (uint i = 0; i < cone_dir_count; i++) {
+			vec3 uvw_dir = (voxel_basis * cone_dirs[i]) * cell_size;
+			light += voxel_cone_trace_45_degrees(voxel_gi_textures[index], uvw_origin, uvw_dir, gi.bias);
 		}
+		light *= 0.25;
 	}
 
-	light.rgb *= voxel_gi_instances.data[index].dynamic_range * voxel_gi_instances.data[index].exposure_normalization;
-	if (!voxel_gi_instances.data[index].blend_ambient) {
+	light.rgb *= energy_scale;
+	if (!gi.blend_ambient) {
 		light.a = 1.0;
 	}
 
-	out_diff += light * blend;
+	vec4 diff_contrib = light * blend;
+	out_diff += diff_contrib;
 
-	//radiance
-	vec4 irr_light;
-	if (roughness > 0.85) {
-		// Fully rough surfaces have isotropic diffuse reflections; reuse diffuse light directly, avoiding a redundant specular cone trace!
-		irr_light = light;
+	// Radiance (specular)
+	if (roughness > 0.70) {
+		out_spec += diff_contrib;
 	} else {
-		float tan_angle = max(0.03, tan(roughness * 0.5 * M_PI * 0.99));
-		irr_light = voxel_cone_trace(voxel_gi_textures[index], cell_size, position, ref_vec, tan_angle, max_distance, voxel_gi_instances.data[index].bias);
-		irr_light.rgb *= voxel_gi_instances.data[index].dynamic_range * voxel_gi_instances.data[index].exposure_normalization;
-		if (!voxel_gi_instances.data[index].blend_ambient) {
+		vec3 voxel_ref = normalize(xform3 * ref_vec);
+		float tan_angle = max(0.03, tan(roughness * 1.555088));
+		vec4 irr_light = voxel_cone_trace(voxel_gi_textures[index], uvw_origin, voxel_ref * cell_size, tan_angle, 0.5, gi.bias);
+		irr_light.rgb *= energy_scale;
+		if (!gi.blend_ambient) {
 			irr_light.a = 1.0;
 		}
+		out_spec += irr_light * blend;
 	}
-
-	out_spec += irr_light * blend;
 
 	out_blend += blend;
 }
 
 void process_gi(ivec2 pos, vec3 view_vertex, vec3 view_normal, float roughness, bool dynamic_object, inout vec4 ambient_light, inout vec4 reflection_light) {
-	//valid normal, can do GI
 	vec3 view = -normalize(mat3(scene_data.cam_transform) * (view_vertex - scene_data.eye_offset[gl_GlobalInvocationID.z].xyz));
 	vec3 vertex = mat3(scene_data.cam_transform) * view_vertex;
 	vec3 normal = normalize(mat3(scene_data.cam_transform) * view_normal);
 	vec3 reflection = normalize(reflect(-view, normal));
-#ifdef USE_HDDAGI
-	hddagi_process(vertex, normal, reflection, roughness, dynamic_object, ambient_light, reflection_light);
-#endif
 
 #ifdef USE_VOXEL_GI_INSTANCES
 	{
@@ -864,33 +851,40 @@ void process_gi(ivec2 pos, vec3 view_vertex, vec3 view_normal, float roughness, 
 		uvec2 voxel_gi_tex = texelFetch(usampler2D(voxel_gi_buffer, linear_sampler), pos, 0).rg;
 #endif
 		if (voxel_gi_tex.x < params.max_voxel_gi_instances || voxel_gi_tex.y < params.max_voxel_gi_instances) {
-			roughness *= roughness;
-			mat3 normal_mat = create_basis_from_normal(normal);
+			float vgi_roughness = roughness * roughness;
 
 			vec4 amb_accum = vec4(0.0);
 			vec4 spec_accum = vec4(0.0);
 			float blend_accum = 0.0;
 
 			if (voxel_gi_tex.x < params.max_voxel_gi_instances) {
-				voxel_gi_compute(voxel_gi_tex.x, vertex, normal, reflection, normal_mat, roughness, spec_accum, amb_accum, blend_accum);
+				voxel_gi_compute(voxel_gi_tex.x, vertex, normal, reflection, vgi_roughness, spec_accum, amb_accum, blend_accum);
 			}
 			if (voxel_gi_tex.y < params.max_voxel_gi_instances && voxel_gi_tex.y != voxel_gi_tex.x) {
-				voxel_gi_compute(voxel_gi_tex.y, vertex, normal, reflection, normal_mat, roughness, spec_accum, amb_accum, blend_accum);
+				voxel_gi_compute(voxel_gi_tex.y, vertex, normal, reflection, vgi_roughness, spec_accum, amb_accum, blend_accum);
 			}
 
 			if (blend_accum > 0.0) {
-				amb_accum /= blend_accum;
-				spec_accum /= blend_accum;
+				float inv_blend = 1.0 / blend_accum;
+				ambient_light = amb_accum * inv_blend;
+				reflection_light = spec_accum * inv_blend;
 			}
+		}
+	}
+#endif
 
 #ifdef USE_HDDAGI
-			reflection_light = blend_color(spec_accum, reflection_light);
-			ambient_light = blend_color(amb_accum, ambient_light);
+	if (ambient_light.a < 0.999 || reflection_light.a < 0.999) {
+		vec4 hddagi_ambient = vec4(0.0);
+		vec4 hddagi_reflection = vec4(0.0);
+		hddagi_process(vertex, normal, reflection, roughness, dynamic_object, hddagi_ambient, hddagi_reflection);
+#ifdef USE_VOXEL_GI_INSTANCES
+		ambient_light = ambient_light.a > 0.0 ? blend_color(ambient_light, hddagi_ambient) : hddagi_ambient;
+		reflection_light = reflection_light.a > 0.0 ? blend_color(reflection_light, hddagi_reflection) : hddagi_reflection;
 #else
-			reflection_light = spec_accum;
-			ambient_light = amb_accum;
+		ambient_light = hddagi_ambient;
+		reflection_light = hddagi_reflection;
 #endif
-		}
 	}
 #endif
 }

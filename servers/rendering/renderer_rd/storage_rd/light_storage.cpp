@@ -81,6 +81,15 @@ LightStorage::~LightStorage() {
 	free_reflection_data();
 	free_light_data();
 
+	if (directional_shadow.depth.is_valid()) {
+		RD::get_singleton()->free_rid(directional_shadow.depth);
+		directional_shadow.depth = RID();
+	}
+	if (directional_shadow.color_transmission.is_valid()) {
+		RD::get_singleton()->free_rid(directional_shadow.color_transmission);
+		directional_shadow.color_transmission = RID();
+	}
+
 	for (const KeyValue<int, ShadowCubemap> &E : shadow_cubemaps) {
 		RD::get_singleton()->free_rid(E.value.cubemap);
 	}
@@ -375,6 +384,20 @@ bool LightStorage::light_get_allow_contact_shadows(RID p_light) const {
 	ERR_FAIL_NULL_V(light, true);
 
 	return light->allow_contact_shadows;
+}
+
+void LightStorage::light_set_colored_shadows(RID p_light, bool p_enable) {
+	Light *light = light_owner.get_or_null(p_light);
+	ERR_FAIL_NULL(light);
+
+	light->colored_shadows = p_enable;
+}
+
+bool LightStorage::light_get_colored_shadows(RID p_light) const {
+	const Light *light = light_owner.get_or_null(p_light);
+	ERR_FAIL_NULL_V(light, false);
+
+	return light->colored_shadows;
 }
 
 void LightStorage::light_omni_set_shadow_mode(RID p_light, RSE::LightOmniShadowMode p_mode) {
@@ -928,7 +951,7 @@ void LightStorage::update_light_buffers(RenderDataRD *p_render_data, const Paged
 
 					int limit = smode == RSE::LIGHT_DIRECTIONAL_SHADOW_ORTHOGONAL ? 0 : (smode == RSE::LIGHT_DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS ? 1 : 3);
 					light_data.blend_splits = (smode != RSE::LIGHT_DIRECTIONAL_SHADOW_ORTHOGONAL) && light->directional_blend_splits;
-					light_data.flags = light->directional_shadow_clipmap ? DIRECTIONAL_LIGHT_FLAG_CLIPMAP : 0;
+					light_data.flags = (light->directional_shadow_clipmap ? DIRECTIONAL_LIGHT_FLAG_CLIPMAP : 0) | (light->colored_shadows ? DIRECTIONAL_LIGHT_FLAG_COLORED_SHADOWS : 0);
 					for (int j = 0; j < 4; j++) {
 						Rect2 atlas_rect = light_instance->shadow_transform[j].atlas_rect;
 						Projection correction;
@@ -2940,6 +2963,23 @@ void LightStorage::update_directional_shadow_atlas() {
 		fb_tex.push_back(directional_shadow.depth);
 		directional_shadow.fb = RD::get_singleton()->framebuffer_create(fb_tex);
 	}
+
+	bool colored_shadows_enabled = GLOBAL_GET_CACHED(bool, "rendering/lights_and_shadows/directional_shadow/colored_shadows_enabled");
+	if (colored_shadows_enabled && directional_shadow.color_transmission.is_null() && directional_shadow.depth.is_valid()) {
+		RD::TextureFormat ctf;
+		ctf.format = RD::DATA_FORMAT_R8G8B8A8_UNORM;
+		ctf.width = directional_shadow.size;
+		ctf.height = directional_shadow.size;
+		ctf.usage_bits = RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_COLOR_ATTACHMENT_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT;
+
+		directional_shadow.color_transmission = RD::get_singleton()->texture_create(ctf, RD::TextureView());
+		RD::get_singleton()->set_resource_name(directional_shadow.color_transmission, "Directional Transmission Shadow Atlas");
+
+		Vector<RID> color_fb_tex;
+		color_fb_tex.push_back(directional_shadow.color_transmission);
+		color_fb_tex.push_back(directional_shadow.depth);
+		directional_shadow.color_fb = RD::get_singleton()->framebuffer_create(color_fb_tex);
+	}
 }
 void LightStorage::directional_shadow_atlas_set_size(int p_size, bool p_16_bits) {
 	p_size = Math::nearest_power_of_2_templated(p_size);
@@ -2955,6 +2995,11 @@ void LightStorage::directional_shadow_atlas_set_size(int p_size, bool p_16_bits)
 		RD::get_singleton()->free_rid(directional_shadow.depth);
 		directional_shadow.depth = RID();
 		RendererSceneRenderRD::get_singleton()->base_uniforms_changed();
+	}
+	if (directional_shadow.color_transmission.is_valid()) {
+		RD::get_singleton()->free_rid(directional_shadow.color_transmission);
+		directional_shadow.color_transmission = RID();
+		directional_shadow.color_fb = RID();
 	}
 }
 

@@ -344,6 +344,8 @@ public:
 	virtual void light_set_max_hddagi_cascade(RID p_light, uint32_t p_cascade) override {}
 	virtual void light_set_allow_contact_shadows(RID p_light, bool p_enable) override {}
 	virtual bool light_get_allow_contact_shadows(RID p_light) const override { return false; }
+	virtual void light_set_colored_shadows(RID p_light, bool p_enable) override {}
+	virtual bool light_get_colored_shadows(RID p_light) const override { return false; }
 
 	virtual void light_omni_set_shadow_mode(RID p_light, RSE::LightOmniShadowMode p_mode) override;
 

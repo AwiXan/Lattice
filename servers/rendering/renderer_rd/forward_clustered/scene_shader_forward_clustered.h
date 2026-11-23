@@ -250,6 +250,7 @@ public:
 		bool uses_point_size = false;
 		bool uses_alpha = false;
 		bool uses_blend_alpha = false;
+		bool casts_colored_shadows = false;
 		// blend_oit: drawn order-independent, after the sorted transparent surfaces.
 		bool uses_oit = false;
 		// shadow_catcher: only the shadows cast on it are drawn, over what is behind;

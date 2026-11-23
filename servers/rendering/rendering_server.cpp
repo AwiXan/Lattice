@@ -2613,6 +2613,7 @@ void RenderingServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("light_set_bake_mode", "light", "bake_mode"), &RenderingServer::light_set_bake_mode);
 	ClassDB::bind_method(D_METHOD("light_set_max_hddagi_cascade", "light", "cascade"), &RenderingServer::light_set_max_hddagi_cascade);
 	ClassDB::bind_method(D_METHOD("light_set_allow_contact_shadows", "light", "enable"), &RenderingServer::light_set_allow_contact_shadows);
+	ClassDB::bind_method(D_METHOD("light_set_colored_shadows", "light", "enable"), &RenderingServer::light_set_colored_shadows);
 
 	ClassDB::bind_method(D_METHOD("light_omni_set_shadow_mode", "light", "mode"), &RenderingServer::light_omni_set_shadow_mode);
 
@@ -3811,6 +3812,7 @@ void RenderingServer::init() {
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality", PROPERTY_HINT_ENUM, "Hard (Fastest),Soft Very Low (Faster),Soft Low (Fast),Soft Medium (Average),Soft High (Slow),Soft Ultra (Slowest)"), 2);
 	GLOBAL_DEF("rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality.mobile", 0);
 	GLOBAL_DEF("rendering/lights_and_shadows/directional_shadow/16_bits", true);
+	GLOBAL_DEF("rendering/lights_and_shadows/directional_shadow/colored_shadows_enabled", false);
 
 	GLOBAL_DEF_RST(PropertyInfo(Variant::BOOL, "rendering/lights_and_shadows/multi_bounce_occlusion/enabled"), false);
 

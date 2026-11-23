@@ -89,6 +89,7 @@ private:
 	Color correlated_color = Color(1.0, 1.0, 1.0);
 	float temperature = 6500.0;
 	bool allow_contact_shadows = true;
+	bool colored_shadows = false;
 	// bind helpers
 
 	virtual void owner_changed_notify() override;
@@ -143,6 +144,9 @@ public:
 
 	void set_allow_contact_shadows(bool p_enable);
 	bool get_allow_contact_shadows() const;
+
+	void set_colored_shadows_enabled(bool p_enable);
+	bool is_colored_shadows_enabled() const;
 
 	void set_bake_mode(BakeMode p_mode);
 	BakeMode get_bake_mode() const;

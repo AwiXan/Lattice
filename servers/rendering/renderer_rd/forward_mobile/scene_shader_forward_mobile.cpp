@@ -68,6 +68,7 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 	uses_shadow_catcher = false;
 	uses_shadow_catcher_reflections = false;
 	uses_depth_prepass_alpha = false;
+	casts_colored_shadows = false;
 	uses_discard = false;
 	uses_roughness = false;
 	uses_normal = false;
@@ -133,6 +134,7 @@ void SceneShaderForwardMobile::ShaderData::set_code(const String &p_code) {
 	actions.usage_flag_pointers["ALPHA_ANTIALIASING_EDGE"] = &uses_alpha_antialiasing;
 	actions.usage_flag_pointers["ALPHA_TEXTURE_COORDINATE"] = &uses_alpha_antialiasing;
 	actions.render_mode_flags["depth_prepass_alpha"] = &uses_depth_prepass_alpha;
+	actions.render_mode_flags["cast_colored_shadows"] = &casts_colored_shadows;
 
 	actions.usage_flag_pointers["SSS_STRENGTH"] = &uses_sss;
 	actions.usage_flag_pointers["SSS_TRANSMITTANCE_DEPTH"] = &uses_transmittance;
@@ -268,6 +270,9 @@ bool SceneShaderForwardMobile::ShaderData::is_animated() const {
 }
 
 bool SceneShaderForwardMobile::ShaderData::casts_shadows() const {
+	if (casts_colored_shadows) {
+		return true;
+	}
 	bool has_read_screen_alpha = uses_screen_texture || uses_depth_texture || uses_normal_texture;
 	bool has_base_alpha = (uses_alpha && (!uses_alpha_clip || uses_alpha_antialiasing)) || has_read_screen_alpha;
 	bool has_alpha = has_base_alpha || uses_blend_alpha;
@@ -876,6 +881,7 @@ void SceneShaderForwardMobile::init(const String p_defines) {
 		actions.render_mode_defines["specular_occlusion_disabled"] = "#define SPECULAR_OCCLUSION_DISABLED\n";
 
 		actions.render_mode_defines["micro_shadows_disabled"] = "#define MICRO_SHADOWS_DISABLED\n";
+		actions.render_mode_defines["cast_colored_shadows"] = "#define CAST_COLORED_SHADOWS\n";
 
 		actions.base_texture_binding_index = 1;
 		actions.texture_layout_set = RenderForwardMobile::MATERIAL_UNIFORM_SET;

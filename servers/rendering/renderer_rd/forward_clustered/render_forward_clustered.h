@@ -229,6 +229,7 @@ private:
 		PASS_MODE_COLOR,
 		PASS_MODE_SHADOW,
 		PASS_MODE_SHADOW_DP,
+		PASS_MODE_SHADOW_COLORED,
 		PASS_MODE_DEPTH,
 		PASS_MODE_DEPTH_NORMAL_ROUGHNESS,
 		PASS_MODE_DEPTH_NORMAL_ROUGHNESS_VOXEL_GI,
@@ -548,6 +549,7 @@ private:
 			FLAG_PASS_OPAQUE = 2,
 			FLAG_PASS_ALPHA = 4,
 			FLAG_PASS_SHADOW = 8,
+			FLAG_PASS_SHADOW_COLORED = 16,
 			FLAG_USES_SHARED_SHADOW_MATERIAL = 128,
 			FLAG_USES_SUBSURFACE_SCATTERING = 2048,
 			FLAG_USES_SCREEN_TEXTURE = 4096,
@@ -852,7 +854,7 @@ private:
 	// The view the shadows being drawn are for; none for a reflection probe.
 	ObjectID shadow_cache_owner;
 	void _render_shadow_begin();
-	void _render_shadow_append(RID p_framebuffer, const PagedArray<RenderGeometryInstance *> &p_instances, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, float p_bias, float p_normal_bias, bool p_reverse_cull_face, bool p_use_dp, bool p_use_dp_flip, bool p_use_pancake, float p_lod_distance_multiplier = 0.0, float p_screen_mesh_lod_threshold = 0.0, const Rect2i &p_rect = Rect2i(), bool p_flip_y = false, bool p_clear_region = true, bool p_begin = true, bool p_end = true, RenderingServerTypes::RenderInfo *p_render_info = nullptr, const Size2i &p_viewport_size = Size2i(1, 1), const Transform3D &p_main_cam_transform = Transform3D());
+	void _render_shadow_append(RID p_framebuffer, const PagedArray<RenderGeometryInstance *> &p_instances, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, float p_bias, float p_normal_bias, bool p_reverse_cull_face, bool p_use_dp, bool p_use_dp_flip, bool p_use_pancake, float p_lod_distance_multiplier = 0.0, float p_screen_mesh_lod_threshold = 0.0, const Rect2i &p_rect = Rect2i(), bool p_flip_y = false, bool p_clear_region = true, bool p_begin = true, bool p_end = true, RenderingServerTypes::RenderInfo *p_render_info = nullptr, const Size2i &p_viewport_size = Size2i(1, 1), const Transform3D &p_main_cam_transform = Transform3D(), PassMode p_pass_mode = PASS_MODE_MAX);
 	void _render_shadow_process();
 	void _render_shadow_end();
 

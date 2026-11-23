@@ -46,6 +46,7 @@ namespace RendererRD {
 
 // As light_data_inc.glsl.
 #define DIRECTIONAL_LIGHT_FLAG_CLIPMAP 1u
+#define DIRECTIONAL_LIGHT_FLAG_COLORED_SHADOWS 2u
 
 class LightStorage : public RendererLightStorage {
 public:
@@ -115,6 +116,7 @@ private:
 		RSE::LightAreaShape area_shape = RSE::LIGHT_AREA_SHAPE_RECTANGLE;
 		uint64_t version = 0;
 		bool allow_contact_shadows = true;
+		bool colored_shadows = false;
 
 		Dependency dependency;
 	};
@@ -481,6 +483,8 @@ private:
 	struct DirectionalShadow {
 		RID depth;
 		RID fb; //when renderign direct
+		RID color_transmission;
+		RID color_fb;
 
 		int light_count = 0;
 		int size = 0;
@@ -554,6 +558,8 @@ public:
 	virtual void light_set_max_hddagi_cascade(RID p_light, uint32_t p_cascade) override;
 	virtual void light_set_allow_contact_shadows(RID p_light, bool p_enable) override;
 	virtual bool light_get_allow_contact_shadows(RID p_light) const override;
+	virtual void light_set_colored_shadows(RID p_light, bool p_enable) override;
+	virtual bool light_get_colored_shadows(RID p_light) const override;
 
 	virtual void light_omni_set_shadow_mode(RID p_light, RSE::LightOmniShadowMode p_mode) override;
 
@@ -1235,6 +1241,14 @@ public:
 
 	_FORCE_INLINE_ RID directional_shadow_get_texture() {
 		return directional_shadow.depth;
+	}
+
+	_FORCE_INLINE_ RID directional_shadow_get_color_texture() {
+		return directional_shadow.color_transmission;
+	}
+
+	_FORCE_INLINE_ RID directional_shadow_get_color_fb() {
+		return directional_shadow.color_fb;
 	}
 
 	_FORCE_INLINE_ int directional_shadow_get_size() {

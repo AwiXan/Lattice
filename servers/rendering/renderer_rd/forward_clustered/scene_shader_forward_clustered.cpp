@@ -68,6 +68,7 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	uses_alpha_antialiasing = false;
 	uses_blend_alpha = false;
 	uses_depth_prepass_alpha = false;
+	casts_colored_shadows = false;
 	uses_discard = false;
 	uses_roughness = false;
 	uses_normal = false;
@@ -137,6 +138,7 @@ void SceneShaderForwardClustered::ShaderData::set_code(const String &p_code) {
 	actions.usage_flag_pointers["ALPHA_ANTIALIASING_EDGE"] = &uses_alpha_antialiasing;
 	actions.usage_flag_pointers["ALPHA_TEXTURE_COORDINATE"] = &uses_alpha_antialiasing;
 	actions.render_mode_flags["depth_prepass_alpha"] = &uses_depth_prepass_alpha;
+	actions.render_mode_flags["cast_colored_shadows"] = &casts_colored_shadows;
 
 	actions.usage_flag_pointers["SSS_STRENGTH"] = &uses_sss;
 	actions.usage_flag_pointers["SSS_TRANSMITTANCE_DEPTH"] = &uses_transmittance;
@@ -278,6 +280,9 @@ bool SceneShaderForwardClustered::ShaderData::is_animated() const {
 }
 
 bool SceneShaderForwardClustered::ShaderData::casts_shadows() const {
+	if (casts_colored_shadows) {
+		return true;
+	}
 	bool has_read_screen_alpha = uses_screen_texture || uses_depth_texture || uses_normal_texture;
 	bool has_base_alpha = (uses_alpha && (!uses_alpha_clip || uses_alpha_antialiasing)) || has_read_screen_alpha;
 	bool has_alpha = has_base_alpha || uses_blend_alpha;
@@ -528,9 +533,20 @@ void SceneShaderForwardClustered::ShaderData::_create_pipeline(PipelineKey p_pip
 			case PIPELINE_VERSION_DEPTH_PASS:
 			case PIPELINE_VERSION_DEPTH_PASS_DP:
 			case PIPELINE_VERSION_DEPTH_PASS_MULTIVIEW:
-			case PIPELINE_VERSION_DEPTH_PASS_WITH_SDF:
-			default:
-				break;
+			case PIPELINE_VERSION_DEPTH_PASS_WITH_SDF: {
+				if (casts_colored_shadows) {
+					RD::PipelineColorBlendState::Attachment attachment;
+					attachment.enable_blend = true;
+					attachment.alpha_blend_op = RD::BLEND_OP_ADD;
+					attachment.color_blend_op = RD::BLEND_OP_ADD;
+					attachment.src_color_blend_factor = RD::BLEND_FACTOR_DST_COLOR;
+					attachment.dst_color_blend_factor = RD::BLEND_FACTOR_ZERO;
+					attachment.src_alpha_blend_factor = RD::BLEND_FACTOR_DST_ALPHA;
+					attachment.dst_alpha_blend_factor = RD::BLEND_FACTOR_ZERO;
+					blend_state.attachments = { attachment };
+					depth_stencil_state.enable_depth_write = false;
+				}
+			} break;
 		}
 	}
 
@@ -987,6 +1003,7 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 		actions.render_mode_defines["specular_occlusion_disabled"] = "#define SPECULAR_OCCLUSION_DISABLED\n";
 
 		actions.render_mode_defines["micro_shadows_disabled"] = "#define MICRO_SHADOWS_DISABLED\n";
+		actions.render_mode_defines["cast_colored_shadows"] = "#define CAST_COLORED_SHADOWS\n";
 
 		actions.base_texture_binding_index = 1;
 		actions.texture_layout_set = RenderForwardClustered::MATERIAL_UNIFORM_SET;

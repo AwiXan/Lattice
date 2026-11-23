@@ -65,6 +65,7 @@ struct ReflectionData {
 
 // The cascades are spheres around the camera, picked by distance, not by depth.
 #define DIRECTIONAL_LIGHT_FLAG_CLIPMAP 1u
+#define DIRECTIONAL_LIGHT_FLAG_COLORED_SHADOWS 2u
 
 struct DirectionalLightData {
 	vec3 direction;

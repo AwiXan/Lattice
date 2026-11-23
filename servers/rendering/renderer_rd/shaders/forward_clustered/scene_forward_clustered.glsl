@@ -1125,6 +1125,11 @@ layout(location = 3) out vec4 gbuffer_emission_output_buffer;
 #endif
 
 #endif //MODE_RENDER_NORMAL
+
+#if !defined(MODE_RENDER_MATERIAL) && !defined(MODE_RENDER_NORMAL_ROUGHNESS) && !defined(MODE_RENDER_SDF) && defined(CAST_COLORED_SHADOWS)
+layout(location = 0) out vec4 colored_shadow_output_buffer;
+#endif
+
 #else // RENDER DEPTH
 
 #ifdef MODE_SEPARATE_SPECULAR
@@ -2766,6 +2771,7 @@ void fragment_shader(in SceneData scene_data) {
 				}
 
 				float shadow = 1.0;
+				vec4 color_pssm_coord = vec4(0.0);
 
 				if (directional_lights.data[i].shadow_opacity > 0.001) {
 					float depth_z = bool(directional_lights.data[i].flags & DIRECTIONAL_LIGHT_FLAG_CLIPMAP) ? length(vertex) : -vertex.z;
@@ -2790,6 +2796,7 @@ void fragment_shader(in SceneData scene_data) {
 
 							vec4 pssm_coord = (directional_lights.data[i].shadow_matrix1 * v);
 							pssm_coord /= pssm_coord.w;
+							color_pssm_coord = pssm_coord;
 
 							float range_pos = dot(directional_lights.data[i].direction, v.xyz);
 							float range_begin = directional_lights.data[i].shadow_range_begin.x;
@@ -2806,6 +2813,9 @@ void fragment_shader(in SceneData scene_data) {
 
 							vec4 pssm_coord = (directional_lights.data[i].shadow_matrix2 * v);
 							pssm_coord /= pssm_coord.w;
+							if (color_pssm_coord.w == 0.0) {
+								color_pssm_coord = pssm_coord;
+							}
 
 							float range_pos = dot(directional_lights.data[i].direction, v.xyz);
 							float range_begin = directional_lights.data[i].shadow_range_begin.y;
@@ -2831,6 +2841,9 @@ void fragment_shader(in SceneData scene_data) {
 
 							vec4 pssm_coord = (directional_lights.data[i].shadow_matrix3 * v);
 							pssm_coord /= pssm_coord.w;
+							if (color_pssm_coord.w == 0.0) {
+								color_pssm_coord = pssm_coord;
+							}
 
 							float range_pos = dot(directional_lights.data[i].direction, v.xyz);
 							float range_begin = directional_lights.data[i].shadow_range_begin.z;
@@ -2856,6 +2869,9 @@ void fragment_shader(in SceneData scene_data) {
 
 							vec4 pssm_coord = (directional_lights.data[i].shadow_matrix4 * v);
 							pssm_coord /= pssm_coord.w;
+							if (color_pssm_coord.w == 0.0) {
+								color_pssm_coord = pssm_coord;
+							}
 
 							float range_pos = dot(directional_lights.data[i].direction, v.xyz);
 							float range_begin = directional_lights.data[i].shadow_range_begin.w;
@@ -2911,6 +2927,7 @@ void fragment_shader(in SceneData scene_data) {
 						}
 
 						pssm_coord /= pssm_coord.w;
+						color_pssm_coord = pssm_coord;
 
 						shadow = sample_directional_pcf_shadow(directional_shadow_atlas, scene_data.directional_shadow_pixel_size * directional_lights.data[i].soft_shadow_scale * (blur_factor + (1.0 - blur_factor) * float(directional_lights.data[i].blend_splits)), pssm_coord, scene_data.taa_frame_count);
 
@@ -3112,12 +3129,17 @@ void fragment_shader(in SceneData scene_data) {
 #ifdef USE_SHADOW_CATCHER
 			shadow_catcher_add_light(directional_lights.data[i].color * directional_lights.data[i].energy, max(dot(vec3(normal), directional_lights.data[i].direction), 0.0) * (1.0 / M_PI), float(shadow));
 #endif
-			light_compute(normal, directional_lights.data[i].direction, normalize(view), size_A,
-#ifndef DEBUG_DRAW_PSSM_SPLITS
-					directional_lights.data[i].color * directional_lights.data[i].energy,
-#else
-					directional_lights.data[i].color * directional_lights.data[i].energy * tint,
+			vec3 light_color = directional_lights.data[i].color * directional_lights.data[i].energy;
+#ifdef DEBUG_DRAW_PSSM_SPLITS
+			light_color *= tint;
 #endif
+			if (bool(directional_lights.data[i].flags & DIRECTIONAL_LIGHT_FLAG_COLORED_SHADOWS) && color_pssm_coord.w > 0.0) {
+				vec3 colored_shadow = textureLod(sampler2D(directional_shadow_color_atlas, SAMPLER_LINEAR_CLAMP), color_pssm_coord.xy, 0.0).rgb;
+				light_color *= colored_shadow;
+			}
+
+			light_compute(normal, directional_lights.data[i].direction, normalize(view), size_A,
+					light_color,
 					true, shadow, f0, roughness, metallic, directional_lights.data[i].specular, albedo, alpha, screen_uv, energy_compensation,
 #ifdef LIGHT_BACKLIGHT_USED
 					backlight,
@@ -3547,6 +3569,11 @@ void fragment_shader(in SceneData scene_data) {
 #endif
 
 #endif //MODE_RENDER_NORMAL_ROUGHNESS
+
+#if !defined(MODE_RENDER_MATERIAL) && !defined(MODE_RENDER_NORMAL_ROUGHNESS) && !defined(MODE_RENDER_SDF) && defined(CAST_COLORED_SHADOWS)
+	vec3 transmission_color = mix(vec3(1.0), albedo, clamp(alpha, 0.0, 1.0));
+	colored_shadow_output_buffer = vec4(transmission_color, 1.0);
+#endif
 
 //nothing happens, so a tree-ssa optimizer will result in no fragment shader :)
 #else
