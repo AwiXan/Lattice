@@ -32,15 +32,18 @@
 
 #include "core/templates/hash_map.h"
 #include "core/templates/local_vector.h"
+#include "editor/debugger/editor_profiler.h"
 #include "main/performance.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
+#include "scene/gui/check_box.h"
 #include "scene/gui/control.h"
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/panel_container.h"
+#include "scene/gui/popup_menu.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tree.h"
 #include "servers/rendering/rendering_server_types.h"
@@ -101,6 +104,7 @@ private:
 	Label *diagnosis_label = nullptr;
 	OptionButton *view_mode_opt = nullptr;
 	Button *btn_pause = nullptr;
+	CheckBox *btn_call_chains = nullptr;
 	Button *btn_copy = nullptr;
 	Button *btn_clear = nullptr;
 
@@ -108,6 +112,16 @@ private:
 	Control *monitor_draw = nullptr;
 	Label *info_message = nullptr;
 	Tree *breakdown_tree = nullptr;
+	PopupMenu *breakdown_context_menu = nullptr;
+
+	enum ContextMenuOptions {
+		CONTEXT_COPY_ROW = 0,
+		CONTEXT_COPY_CATEGORY_HEADER_ONLY,
+		CONTEXT_COPY_FUNC_NAME,
+		CONTEXT_COPY_CALL_CHAIN,
+		CONTEXT_COPY_REPORT_WITH_CHAINS,
+		CONTEXT_COPY_REPORT_SUMMARY,
+	};
 
 	StringName marker_key;
 	int marker_frame = 0;
@@ -116,6 +130,8 @@ private:
 	const int MARKER_MARGIN = 2;
 
 	bool is_paused = false;
+	bool detailed_profiling_enabled = true;
+	EditorProfiler::Metric last_server_metric;
 	ViewMode view_mode = VIEW_GRAPHS;
 	Vector<RenderingServerTypes::FrameProfileArea> last_gpu_areas;
 	uint64_t last_breakdown_update_msec = 0;
@@ -134,12 +150,22 @@ private:
 	void _on_preset_selected(int p_id);
 	void _on_view_mode_selected(int p_mode);
 	void _on_pause_toggled(bool p_pressed);
+	void _on_call_chains_toggled(bool p_pressed);
 	void _on_copy_pressed();
 	void _on_clear_pressed();
+	void _on_breakdown_tree_rmb(const Vector2 &p_pos, MouseButton p_button);
+	void _breakdown_tree_gui_input(const Ref<InputEvent> &p_event);
+	void _on_context_menu_id_pressed(int p_id);
+	void _copy_selected_item();
+	void _export_item_subtree(TreeItem *p_item, int p_depth, String &r_text) const;
+	void _export_report_children(TreeItem *p_parent, int p_indent, bool p_include_call_chains, String &r_text) const;
+	String _generate_breakdown_report(bool p_include_call_chains) const;
+	void _collect_collapsed_items(TreeItem *p_item, HashSet<String> &r_collapsed);
 
 	void _update_frame_breakdown(const Vector<float> &p_values);
 
 protected:
+	static void _bind_methods();
 	void _notification(int p_what);
 
 public:
@@ -147,6 +173,8 @@ public:
 	void update_monitors(const Vector<StringName> &p_names, const PackedInt32Array &p_types);
 	void add_profile_frame(const Vector<float> &p_values);
 	void add_visual_profile_frame(const Vector<RenderingServerTypes::FrameProfileArea> &p_areas);
+	void add_server_profile_metric(const EditorProfiler::Metric &p_metric);
+	bool is_detailed_profiling_enabled() const { return detailed_profiling_enabled; }
 	List<float> *get_monitor_data(const StringName &p_name);
 	EditorPerformanceProfiler();
 };

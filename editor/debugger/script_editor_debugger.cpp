@@ -897,6 +897,9 @@ void ScriptEditorDebugger::_msg_servers_profile_common(const Array &p_data, cons
 	metric.categories.push_back(funcs);
 
 	profiler->add_frame_metric(metric, p_final);
+	if (performance_profiler) {
+		performance_profiler->add_server_profile_metric(metric);
+	}
 }
 
 void ScriptEditorDebugger::_msg_servers_profile_frame(uint64_t p_thread_id, const Array &p_data) {
@@ -1317,6 +1320,10 @@ void ScriptEditorDebugger::start(Ref<RemoteDebuggerPeer> p_peer) {
 	if (EditorSettings::get_singleton()->get_project_metadata("debug_options", "autostart_visual_profiler", false)) {
 		visual_profiler->set_profiling(true);
 	}
+
+	if (performance_profiler && performance_profiler->is_detailed_profiling_enabled()) {
+		_profiler_activate(true, PROFILER_SCRIPTS_SERVERS);
+	}
 }
 
 void ScriptEditorDebugger::_update_buttons_state() {
@@ -1407,14 +1414,25 @@ void ScriptEditorDebugger::_profiler_activate(bool p_enable, int p_type) {
 				profiler_signature.clear();
 				// Add max funcs options to request.
 				int max_funcs = EDITOR_GET("debugger/profiler_frame_max_functions");
-				bool include_native = EDITOR_GET("debugger/profile_native_calls");
+				bool include_native = true;
 				Array opts = { CLAMP(max_funcs, 16, 512), include_native };
 				msg_data.push_back(opts);
+			} else if (performance_profiler && performance_profiler->is_detailed_profiling_enabled()) {
+				// Keep active for performance breakdown
+				return;
 			}
 			_put_msg("profiler:servers", msg_data);
 			break;
 		default:
 			ERR_FAIL_MSG("Invalid profiler type");
+	}
+}
+
+void ScriptEditorDebugger::_performance_detailed_profiling_toggled(bool p_enabled) {
+	if (p_enabled) {
+		_profiler_activate(true, PROFILER_SCRIPTS_SERVERS);
+	} else if (!profiler->is_profiling()) {
+		_profiler_activate(false, PROFILER_SCRIPTS_SERVERS);
 	}
 }
 
@@ -2401,6 +2419,7 @@ ScriptEditorDebugger::ScriptEditorDebugger() {
 
 	{ //monitors
 		performance_profiler = memnew(EditorPerformanceProfiler);
+		performance_profiler->connect("detailed_profiling_toggled", callable_mp(this, &ScriptEditorDebugger::_performance_detailed_profiling_toggled));
 		tabs->add_child(performance_profiler);
 	}
 

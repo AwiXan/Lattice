@@ -9,6 +9,9 @@
 #include "cargo_manager_dock.h"
 
 #include "../rust_manager.h"
+#include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/object/worker_thread_pool.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
@@ -16,6 +19,7 @@
 #include "editor/script/script_editor_plugin.h"
 #include "editor/themes/editor_scale.h"
 #include "editor/themes/editor_theme_manager.h"
+#include "rust_editor_plugin.h"
 
 CargoManagerDock *CargoManagerDock::singleton = nullptr;
 
@@ -70,6 +74,7 @@ void CargoManagerDock::_update_status() {
 	}
 
 	_update_deps();
+	_update_diagnostics();
 }
 
 void CargoManagerDock::_update_deps() {
@@ -87,6 +92,160 @@ void CargoManagerDock::_update_deps() {
 	if (deps.is_empty()) {
 		deps_list->add_item(TTR("No dependencies found in Cargo.toml."));
 	}
+}
+
+void CargoManagerDock::_update_diagnostics() {
+	RustManager *rm = RustManager::get_singleton();
+	String crate_dir = rm ? rm->find_project_crate_dir() : "";
+	String toml_path = crate_dir.is_empty() ? "" : crate_dir.path_join("Cargo.toml");
+
+	String opt_dev = "0 (Debug default)";
+	String opt_release = "3 (Default)";
+	if (!toml_path.is_empty() && FileAccess::exists(toml_path)) {
+		Ref<FileAccess> fa = FileAccess::open(toml_path, FileAccess::READ);
+		if (fa.is_valid()) {
+			String content = fa->get_as_utf8_string();
+			if (content.contains("opt-level")) {
+				int dev_idx = content.find("[profile.dev]");
+				if (dev_idx != -1) {
+					int opt_idx = content.find("opt-level", dev_idx);
+					int next_sec = content.find("\n[", dev_idx + 13);
+					if (opt_idx != -1 && (next_sec == -1 || opt_idx < next_sec)) {
+						int eq = content.find("=", opt_idx);
+						int nl = content.find("\n", eq);
+						if (eq != -1 && nl != -1) {
+							opt_dev = content.substr(eq + 1, nl - eq - 1).strip_edges();
+						}
+					}
+				}
+			}
+		}
+	}
+
+	String backtrace_env = OS::get_singleton()->get_environment("RUST_BACKTRACE");
+	bool backtrace_on = (backtrace_env == "full" || backtrace_env == "1");
+
+	if (backtrace_status) {
+		backtrace_status->set_text(backtrace_on ? TTR("RUST_BACKTRACE: ON (full)") : TTR("RUST_BACKTRACE: OFF"));
+	}
+
+	if (profile_info) {
+		profile_info->clear();
+		profile_info->push_bold();
+		profile_info->add_text(TTR("Active Profile Settings (Cargo.toml):\n"));
+		profile_info->pop();
+		profile_info->add_text(vformat(TTR("  • [profile.dev] opt-level: %s\n"), opt_dev));
+		profile_info->add_text(vformat(TTR("  • [profile.release] opt-level: %s\n\n"), opt_release));
+
+		profile_info->push_bold();
+		profile_info->add_text(TTR("Performance & FPS Optimization Tips:\n"));
+		profile_info->pop();
+		profile_info->add_text(TTR(
+				"  1. In development, pure debug builds (opt-level = 0) can cause 15 FPS due to lack of inlining.\n"
+				"     Click 'Dev-Optimized (opt-level = 2)' below to get 100+ FPS while retaining full debug symbols!\n"
+				"  2. Follow the Read -> Compute -> Write pattern: do not query Node transforms inside tight loops.\n"
+				"  3. Keep physics calculations inside pure Rust structs (10-20 ns/op) rather than engine FFI.\n"));
+	}
+}
+
+void CargoManagerDock::_on_set_opt_level(int p_level) {
+	RustManager *rm = RustManager::get_singleton();
+	if (!rm) {
+		return;
+	}
+	String crate_dir = rm->find_project_crate_dir();
+	if (crate_dir.is_empty()) {
+		return;
+	}
+	String toml_path = crate_dir.path_join("Cargo.toml");
+	if (!FileAccess::exists(toml_path)) {
+		return;
+	}
+
+	Ref<FileAccess> fa = FileAccess::open(toml_path, FileAccess::READ);
+	if (fa.is_null()) {
+		return;
+	}
+	String content = fa->get_as_utf8_string();
+	fa.unref();
+
+	if (content.contains("[profile.dev]")) {
+		int pos = content.find("[profile.dev]");
+		int next_section = content.find("\n[", pos + 13);
+		String new_section = vformat("[profile.dev]\nopt-level = %d\n", p_level);
+		if (next_section != -1) {
+			content = content.substr(0, pos) + new_section + content.substr(next_section + 1);
+		} else {
+			content = content.substr(0, pos) + new_section;
+		}
+	} else {
+		content += vformat("\n[profile.dev]\nopt-level = %d\n", p_level);
+	}
+
+	Ref<FileAccess> fa_write = FileAccess::open(toml_path, FileAccess::WRITE);
+	if (fa_write.is_valid()) {
+		fa_write->store_string(content);
+		fa_write.unref();
+		if (EditorToaster::get_singleton()) {
+			EditorToaster::get_singleton()->popup_str(vformat(TTR("Set [profile.dev] opt-level = %d in Cargo.toml"), p_level), EditorToaster::SEVERITY_INFO);
+		}
+	}
+	_update_diagnostics();
+}
+
+void CargoManagerDock::_on_setup_vscode() {
+	String vscode_dir = "res://.vscode";
+	DirAccess::make_dir_recursive_absolute(ProjectSettings::get_singleton()->globalize_path(vscode_dir));
+
+	String launch_path = vscode_dir.path_join("launch.json");
+	String godot_bin = OS::get_singleton()->get_executable_path().replace("\\", "/");
+
+	String launch_json = "{\n"
+		"    \"version\": \"0.2.0\",\n"
+		"    \"configurations\": [\n"
+		"        {\n"
+		"            \"name\": \"Godot: Debug Rust (CodeLLDB)\",\n"
+		"            \"type\": \"lldb\",\n"
+		"            \"request\": \"launch\",\n"
+		"            \"program\": \"" + godot_bin + "\",\n"
+		"            \"args\": [\"--path\", \"${workspaceFolder}\"],\n"
+		"            \"cwd\": \"${workspaceFolder}\",\n"
+		"            \"stopOnEntry\": false\n"
+		"        },\n"
+		"        {\n"
+		"            \"name\": \"Godot: Debug Rust (C++/MSVC)\",\n"
+		"            \"type\": \"cppvsdbg\",\n"
+		"            \"request\": \"launch\",\n"
+		"            \"program\": \"" + godot_bin + "\",\n"
+		"            \"args\": [\"--path\", \"${workspaceFolder}\"],\n"
+		"            \"cwd\": \"${workspaceFolder}\",\n"
+		"            \"stopAtEntry\": false\n"
+		"        }\n"
+		"    ]\n"
+		"}\n";
+
+	Ref<FileAccess> fa = FileAccess::open(launch_path, FileAccess::WRITE);
+	if (fa.is_valid()) {
+		fa->store_string(launch_json);
+		fa.unref();
+		if (EditorToaster::get_singleton()) {
+			EditorToaster::get_singleton()->popup_str(TTR("Created .vscode/launch.json for Rust debugging!"), EditorToaster::SEVERITY_INFO);
+		}
+	}
+}
+
+void CargoManagerDock::_on_toggle_backtrace() {
+	String current = OS::get_singleton()->get_environment("RUST_BACKTRACE");
+	if (current == "full" || current == "1") {
+		OS::get_singleton()->set_environment("RUST_BACKTRACE", "0");
+	} else {
+		OS::get_singleton()->set_environment("RUST_BACKTRACE", "full");
+	}
+	if (EditorToaster::get_singleton()) {
+		String status = (OS::get_singleton()->get_environment("RUST_BACKTRACE") == "full") ? "Enabled" : "Disabled";
+		EditorToaster::get_singleton()->popup_str(vformat(TTR("RUST_BACKTRACE is now %s."), status), EditorToaster::SEVERITY_INFO);
+	}
+	_update_diagnostics();
 }
 
 void CargoManagerDock::_build_worker(void *p_userdata) {
@@ -109,6 +268,13 @@ void CargoManagerDock::_build_worker(void *p_userdata) {
 
 void CargoManagerDock::_on_build_completed(String p_action, int p_exit_code, String p_output, int p_err) {
 	is_building = false;
+
+	if (dock_spinner) {
+		dock_spinner->set_spinning(false);
+	}
+	if (RustEditorPlugin::get_singleton()) {
+		RustEditorPlugin::get_singleton()->set_building(false);
+	}
 
 	if (btn_build_debug) {
 		btn_build_debug->set_disabled(false);
@@ -153,6 +319,14 @@ void CargoManagerDock::_start_cargo_task(const String &p_action, bool p_release)
 	}
 
 	is_building = true;
+
+	if (dock_spinner) {
+		dock_spinner->set_spinning(true);
+	}
+	if (RustEditorPlugin::get_singleton()) {
+		RustEditorPlugin::get_singleton()->set_building(true);
+	}
+
 	if (btn_build_debug) {
 		btn_build_debug->set_disabled(true);
 	}
@@ -288,7 +462,7 @@ void CargoManagerDock::_on_create_scaffold() {
 
 CargoManagerDock::CargoManagerDock() {
 	singleton = this;
-	set_custom_minimum_size(Size2(0, 200 * EDSCALE));
+	set_custom_minimum_size(Size2(0, 220 * EDSCALE));
 
 	// Top control bar
 	HBoxContainer *top_bar = memnew(HBoxContainer);
@@ -297,6 +471,10 @@ CargoManagerDock::CargoManagerDock() {
 	status_label = memnew(Label);
 	status_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	top_bar->add_child(status_label);
+
+	dock_spinner = memnew(RustProgressSpinner);
+	dock_spinner->set_tooltip_text(TTR("Cargo compilation in progress..."));
+	top_bar->add_child(dock_spinner);
 
 	btn_build_debug = memnew(Button(TTR("Build (Debug)")));
 	btn_build_debug->set_tooltip_text(TTR("Compile Rust crate in Debug mode and hot-reload library"));
@@ -384,7 +562,68 @@ CargoManagerDock::CargoManagerDock() {
 	btn_refresh_deps->connect(SceneStringName(pressed), callable_mp(this, &CargoManagerDock::_on_refresh_deps));
 	dep_add_bar->add_child(btn_refresh_deps);
 
-	// Tab 2: Scaffolding / Bridge info
+	// Tab 2: Profiling & Optimization
+	VBoxContainer *prof_tab = memnew(VBoxContainer);
+	prof_tab->set_name(TTR("Profiling & Performance"));
+	tabs->add_child(prof_tab);
+
+	profile_info = memnew(RichTextLabel);
+	profile_info->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	profile_info->set_selection_enabled(true);
+	prof_tab->add_child(profile_info);
+
+	HBoxContainer *prof_btn_bar = memnew(HBoxContainer);
+	prof_tab->add_child(prof_btn_bar);
+
+	Label *lbl_quick_set = memnew(Label(TTR("Quick Configure Dev Opt-Level:")));
+	prof_btn_bar->add_child(lbl_quick_set);
+
+	btn_opt_dev = memnew(Button(TTR("Debug (opt 0)")));
+	btn_opt_dev->set_tooltip_text(TTR("Set [profile.dev] opt-level = 0 (fast compilation, slow runtime execution)"));
+	btn_opt_dev->connect(SceneStringName(pressed), callable_mp(this, &CargoManagerDock::_on_set_opt_level).bind(0));
+	prof_btn_bar->add_child(btn_opt_dev);
+
+	btn_opt_fast = memnew(Button(TTR("Dev-Optimized (opt 2) [Recommended]")));
+	btn_opt_fast->set_tooltip_text(TTR("Set [profile.dev] opt-level = 2 (fixes 15 FPS in editor while retaining debug symbols)"));
+	btn_opt_fast->connect(SceneStringName(pressed), callable_mp(this, &CargoManagerDock::_on_set_opt_level).bind(2));
+	prof_btn_bar->add_child(btn_opt_fast);
+
+	btn_opt_release = memnew(Button(TTR("Release (opt 3)")));
+	btn_opt_release->set_tooltip_text(TTR("Set [profile.dev] opt-level = 3 (maximum speed, slower compile times)"));
+	btn_opt_release->connect(SceneStringName(pressed), callable_mp(this, &CargoManagerDock::_on_set_opt_level).bind(3));
+	prof_btn_bar->add_child(btn_opt_release);
+
+	// Tab 3: Debugging & Tooling
+	VBoxContainer *debug_tab = memnew(VBoxContainer);
+	debug_tab->set_name(TTR("Debugging & Tools"));
+	tabs->add_child(debug_tab);
+
+	Label *debug_info = memnew(Label);
+	debug_info->set_text(
+			TTR("Native Rust Debugging Suite:\n\n"
+				"• Setup VSCode Launch: generates .vscode/launch.json for CodeLLDB / MSVC.\n"
+				"  You can set breakpoints directly inside any .rs source file and press F5.\n"
+				"• RUST_BACKTRACE: provides full symbolic stack traces with source lines on crash.\n"));
+	debug_info->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	debug_tab->add_child(debug_info);
+
+	HBoxContainer *debug_btn_bar = memnew(HBoxContainer);
+	debug_tab->add_child(debug_btn_bar);
+
+	btn_setup_vscode = memnew(Button(TTR("Setup VSCode Debugger (.vscode/launch.json)")));
+	btn_setup_vscode->set_tooltip_text(TTR("Generate or update VSCode debugger launch configurations for Rust"));
+	btn_setup_vscode->connect(SceneStringName(pressed), callable_mp(this, &CargoManagerDock::_on_setup_vscode));
+	debug_btn_bar->add_child(btn_setup_vscode);
+
+	btn_toggle_backtrace = memnew(Button(TTR("Toggle RUST_BACKTRACE")));
+	btn_toggle_backtrace->set_tooltip_text(TTR("Toggle RUST_BACKTRACE between full and disabled"));
+	btn_toggle_backtrace->connect(SceneStringName(pressed), callable_mp(this, &CargoManagerDock::_on_toggle_backtrace));
+	debug_btn_bar->add_child(btn_toggle_backtrace);
+
+	backtrace_status = memnew(Label(TTR("RUST_BACKTRACE: OFF")));
+	debug_btn_bar->add_child(backtrace_status);
+
+	// Tab 4: Scaffolding / Bridge info
 	VBoxContainer *scaffold_tab = memnew(VBoxContainer);
 	scaffold_tab->set_name(TTR("Project Setup"));
 	tabs->add_child(scaffold_tab);

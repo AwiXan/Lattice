@@ -51,7 +51,10 @@ void RustSyntaxHighlighter::_update_cache() {
 	const Color comment_color = EDITOR_GET("text_editor/theme/highlighting/comment_color");
 	const Color doc_comment_color = EDITOR_GET("text_editor/theme/highlighting/doc_comment_color");
 	const Color string_color = EDITOR_GET("text_editor/theme/highlighting/string_color");
-	const Color annotation_color = EDITOR_GET("text_editor/theme/highlighting/annotation_color");
+	Color annotation_color = Color(1.0, 0.7, 0.45);
+	if (EditorSettings::get_singleton() && EditorSettings::get_singleton()->has_setting("text_editor/theme/highlighting/gdscript/annotation_color")) {
+		annotation_color = EDITOR_GET("text_editor/theme/highlighting/gdscript/annotation_color");
+	}
 
 	// Control flow keywords
 	static const char *cf_keywords[] = {

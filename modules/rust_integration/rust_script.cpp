@@ -202,17 +202,13 @@ void RustScript::_update_doc_data() {
 		accumulated_item_doc = "";
 	}
 
-	cdoc.description = accumulated_class_doc;
 	int first_nl = accumulated_class_doc.find("\n\n");
 	if (first_nl != -1) {
-		cdoc.brief_description = accumulated_class_doc.substr(0, first_nl);
+		cdoc.brief_description = accumulated_class_doc.substr(0, first_nl).strip_edges();
+		cdoc.description = accumulated_class_doc.substr(first_nl + 2).strip_edges();
 	} else {
-		int dot = accumulated_class_doc.find(". ");
-		if (dot != -1) {
-			cdoc.brief_description = accumulated_class_doc.substr(0, dot + 1);
-		} else {
-			cdoc.brief_description = accumulated_class_doc;
-		}
+		cdoc.brief_description = accumulated_class_doc.strip_edges();
+		cdoc.description = "";
 	}
 
 	docs.push_back(cdoc);

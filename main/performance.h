@@ -72,6 +72,7 @@ class Performance : public Object {
 	uint64_t frame_render_usec = 0;
 	uint64_t frame_physics_usec = 0;
 	int frame_physics_steps = 0;
+	uint64_t frame_shader_wait_usec = 0;
 	uint64_t last_shader_wait_usec = 0;
 	uint32_t last_shaders_done = 0;
 	uint32_t last_pipelines_done = 0;
@@ -83,6 +84,8 @@ public:
 		TIME_PROCESS,
 		TIME_PHYSICS_PROCESS,
 		TIME_NAVIGATION_PROCESS,
+		TIME_RENDER_CPU,
+		TIME_SHADER_STALL,
 		MEMORY_STATIC,
 		MEMORY_STATIC_MAX,
 		MEMORY_MESSAGE_BUFFER_MAX,
@@ -177,7 +180,7 @@ public:
 	String get_frame_breakdown_text() const;
 	void print_frame_breakdown();
 	uint64_t get_frame_render_usec() const { return frame_render_usec; }
-	uint64_t get_last_shader_wait_usec() const { return last_shader_wait_usec; }
+	uint64_t get_last_shader_wait_usec() const { return frame_shader_wait_usec; }
 
 	void add_custom_monitor(const StringName &p_id, const Callable &p_callable, const Vector<Variant> &p_args, MonitorType p_type = MONITOR_TYPE_QUANTITY);
 	void remove_custom_monitor(const StringName &p_id);

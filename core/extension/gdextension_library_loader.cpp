@@ -259,7 +259,7 @@ bool GDExtensionLibraryLoader::has_library_changed() const {
 	if (FileAccess::get_modified_time(resource_path) != resource_last_modified_time) {
 		return true;
 	}
-	if (FileAccess::get_modified_time(library_path) != library_last_modified_time) {
+	if (FileAccess::get_modified_time(source_library_path) != library_last_modified_time) {
 		return true;
 	}
 #endif
@@ -374,12 +374,14 @@ Error GDExtensionLibraryLoader::parse_gdextension_file(const String &p_path) {
 		library_path = p_path.get_base_dir().path_join(library_path);
 	}
 
+	source_library_path = library_path;
+
 #ifdef TOOLS_ENABLED
 	is_reloadable = config->get_value("configuration", "reloadable", false);
 
 	update_last_modified_time(
 			FileAccess::get_modified_time(resource_path),
-			FileAccess::get_modified_time(library_path));
+			FileAccess::get_modified_time(source_library_path));
 #endif
 
 	library_dependencies = find_extension_dependencies(p_path, config, [](const String &p_feature) { return OS::get_singleton()->has_feature(p_feature); });

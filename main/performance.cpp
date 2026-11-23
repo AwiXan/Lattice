@@ -93,6 +93,8 @@ void Performance::_bind_methods() {
 	BIND_ENUM_CONSTANT(TIME_PROCESS);
 	BIND_ENUM_CONSTANT(TIME_PHYSICS_PROCESS);
 	BIND_ENUM_CONSTANT(TIME_NAVIGATION_PROCESS);
+	BIND_ENUM_CONSTANT(TIME_RENDER_CPU);
+	BIND_ENUM_CONSTANT(TIME_SHADER_STALL);
 	BIND_ENUM_CONSTANT(MEMORY_STATIC);
 	BIND_ENUM_CONSTANT(MEMORY_STATIC_MAX);
 	BIND_ENUM_CONSTANT(MEMORY_MESSAGE_BUFFER_MAX);
@@ -193,6 +195,8 @@ String Performance::get_monitor_name(Monitor p_monitor) const {
 		PNAME("time/process"),
 		PNAME("time/physics_process"),
 		PNAME("time/navigation_process"),
+		PNAME("time/render_cpu"),
+		PNAME("time/shader_stall"),
 		PNAME("memory/static"),
 		PNAME("memory/static_max"),
 		PNAME("memory/msg_buf_max"),
@@ -275,6 +279,10 @@ double Performance::get_monitor(Monitor p_monitor) const {
 			return _physics_process_time;
 		case TIME_NAVIGATION_PROCESS:
 			return _navigation_process_time;
+		case TIME_RENDER_CPU:
+			return double(frame_render_usec) / 1000000.0;
+		case TIME_SHADER_STALL:
+			return double(frame_shader_wait_usec) / 1000000.0;
 		case MEMORY_STATIC:
 			return Memory::get_mem_usage();
 		case MEMORY_STATIC_MAX:
@@ -502,6 +510,8 @@ Performance::MonitorType Performance::get_monitor_type(Monitor p_monitor) const 
 		MONITOR_TYPE_TIME,
 		MONITOR_TYPE_TIME,
 		MONITOR_TYPE_TIME,
+		MONITOR_TYPE_TIME,
+		MONITOR_TYPE_TIME,
 		MONITOR_TYPE_MEMORY,
 		MONITOR_TYPE_MEMORY,
 		MONITOR_TYPE_MEMORY,
@@ -608,6 +618,7 @@ void Performance::frame_ended(uint64_t p_frame_usec) {
 	last_shaders_done = shaders;
 	last_pipelines_done = pipelines;
 	last_shader_wait_usec = shader_wait;
+	frame_shader_wait_usec = waited;
 
 	const bool known = frame_work_known;
 	frame_work_known = false;
@@ -719,7 +730,7 @@ Dictionary Performance::get_frame_breakdown() const {
 	const double physics_ms = physics_time_sec * 1000.0;
 	const double nav_ms = nav_time_sec * 1000.0;
 	const double render_cpu_ms = double(frame_render_usec) / 1000.0;
-	const double shader_wait_ms = double(last_shader_wait_usec) / 1000.0;
+	const double shader_wait_ms = double(frame_shader_wait_usec) / 1000.0;
 
 	// Total CPU time spent on main thread:
 	double total_cpu_ms = process_ms;

@@ -105,12 +105,15 @@ static String _get_var_type(const Variant *p_var) {
 }
 
 void GDScriptFunction::_profile_native_call(uint64_t p_t_taken, const String &p_func_name, const String &p_instance_class_name) {
-	HashMap<String, Profile::NativeProfile>::Iterator inner_prof = profile.native_calls.find(p_func_name);
+	String full_name = p_instance_class_name.is_empty() ? p_func_name : (p_instance_class_name + "." + p_func_name);
+	HashMap<String, Profile::NativeProfile>::Iterator inner_prof = profile.native_calls.find(full_name);
 	if (inner_prof) {
 		inner_prof->value.call_count += 1;
 	} else {
-		String sig = vformat("%s::0::%s%s%s", get_script()->get_script_path(), p_instance_class_name, p_instance_class_name.is_empty() ? "" : ".", p_func_name);
-		inner_prof = profile.native_calls.insert(p_func_name, Profile::NativeProfile{ 1, 0, sig });
+		String script_path = get_script() ? get_script()->get_script_path() : String();
+		String caller_name = String(name);
+		String sig = vformat("%s::%d::%s -> %s", script_path, _initial_line, caller_name, full_name);
+		inner_prof = profile.native_calls.insert(full_name, Profile::NativeProfile{ 1, 0, sig });
 	}
 	inner_prof->value.total_time += p_t_taken;
 }

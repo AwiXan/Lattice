@@ -68,6 +68,28 @@ void RustManager::_check_cargo() {
 	}
 }
 
+bool RustManager::_is_ignored_directory(const String &p_name, const String &p_full_path) const {
+	if (p_name.begins_with(".")) {
+		return true;
+	}
+	// System / Engine / Build directories
+	if (p_name == "target" || p_name == "build" || p_name == ".godot" || p_name == ".git" || p_name == "bin" || p_name == ".jenova") {
+		return true;
+	}
+	// Shelved / archived / temporary directories
+	String lower = p_name.to_lower();
+	if (lower.begins_with("deferred") || lower.begins_with("backup") || lower.begins_with("archive") ||
+			lower.begins_with("deprecated") || lower.begins_with("temp") || lower.begins_with("tmp") ||
+			lower.begins_with("disabled") || lower.begins_with("ignore")) {
+		return true;
+	}
+	// Standard Godot .gdignore check: if .gdignore exists, this directory tree is ignored
+	if (FileAccess::exists(p_full_path.path_join(".gdignore"))) {
+		return true;
+	}
+	return false;
+}
+
 String RustManager::find_project_crate_dir() const {
 	if (ProjectSettings::get_singleton() && ProjectSettings::get_singleton()->has_setting("rust/general/crate_dir")) {
 		String custom_dir = GLOBAL_GET("rust/general/crate_dir");
@@ -85,7 +107,7 @@ String RustManager::find_project_crate_dir() const {
 		return "res://";
 	}
 
-	// Auto-discover Cargo.toml in any subfolder (e.g. fist-of-goal/core/...)
+	// Auto-discover Cargo.toml in any valid, non-ignored subfolder
 	Vector<String> queue;
 	queue.push_back("res://");
 	int visited = 0;
@@ -94,8 +116,13 @@ String RustManager::find_project_crate_dir() const {
 		queue.remove_at(0);
 		visited++;
 
-		if (current != "res://" && FileAccess::exists(current.path_join("Cargo.toml"))) {
-			return current;
+		if (current != "res://") {
+			if (_is_ignored_directory(current.get_file(), current)) {
+				continue;
+			}
+			if (FileAccess::exists(current.path_join("Cargo.toml"))) {
+				return current;
+			}
 		}
 
 		Ref<DirAccess> da = DirAccess::open(current);
@@ -103,8 +130,11 @@ String RustManager::find_project_crate_dir() const {
 			da->list_dir_begin();
 			String item = da->get_next();
 			while (!item.is_empty()) {
-				if (da->current_is_dir() && !item.begins_with(".") && item != "target" && item != ".godot") {
-					queue.push_back(current.path_join(item));
+				if (da->current_is_dir()) {
+					String sub_path = current.path_join(item);
+					if (!_is_ignored_directory(item, sub_path) && item != "addons") {
+						queue.push_back(sub_path);
+					}
 				}
 				item = da->get_next();
 			}
@@ -121,12 +151,20 @@ bool RustManager::has_rust_project() const {
 
 Vector<String> RustManager::scan_rust_source_files() const {
 	Vector<String> result;
+	if (!has_rust_project()) {
+		return result;
+	}
+
 	Vector<String> queue;
 	queue.push_back("res://");
 
 	while (!queue.is_empty()) {
 		String current = queue[0];
 		queue.remove_at(0);
+
+		if (current != "res://" && _is_ignored_directory(current.get_file(), current)) {
+			continue;
+		}
 
 		Ref<DirAccess> da = DirAccess::open(current);
 		if (da.is_null()) {
@@ -136,14 +174,9 @@ Vector<String> RustManager::scan_rust_source_files() const {
 		da->list_dir_begin();
 		String item = da->get_next();
 		while (!item.is_empty()) {
-			if (item.begins_with(".")) {
-				item = da->get_next();
-				continue;
-			}
-
 			String full_path = current.path_join(item);
 			if (da->current_is_dir()) {
-				if (item != "target" && item != ".godot" && item != "build" && item != ".git") {
+				if (!_is_ignored_directory(item, full_path) && item != "addons") {
 					queue.push_back(full_path);
 				}
 			} else {

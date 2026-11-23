@@ -47,6 +47,7 @@ private:
 
 	void *library = nullptr; // pointer if valid.
 	String library_path;
+	String source_library_path;
 	String entry_symbol;
 
 #ifdef TOOLS_ENABLED

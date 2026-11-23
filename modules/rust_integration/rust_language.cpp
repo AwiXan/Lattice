@@ -117,19 +117,19 @@ String RustLanguage::make_function(const String &p_class, const String &p_name, 
 }
 
 void RustLanguage::reload_all_scripts() {
-	if (RustManager::get_singleton()) {
+	if (RustManager::get_singleton() && RustManager::get_singleton()->has_rust_project()) {
 		RustManager::get_singleton()->reload_library();
 	}
 }
 
 void RustLanguage::reload_scripts(const Array &p_scripts, bool p_soft_reload) {
-	if (RustManager::get_singleton()) {
+	if (RustManager::get_singleton() && RustManager::get_singleton()->has_rust_project()) {
 		RustManager::get_singleton()->reload_library();
 	}
 }
 
 void RustLanguage::reload_tool_script(const Ref<Script> &p_script, bool p_soft_reload) {
-	if (RustManager::get_singleton()) {
+	if (RustManager::get_singleton() && RustManager::get_singleton()->has_rust_project()) {
 		RustManager::get_singleton()->reload_library();
 	}
 }

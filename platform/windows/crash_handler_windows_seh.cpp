@@ -350,7 +350,7 @@ static const char *_stall_likely_cause(HANDLE p_process, const DWORD64 *p_frames
 	// begun, the editor draws on through a timer).
 	for (int i = 0; i < count; i++) {
 		if (p_frames[i] >= engine_begin && p_frames[i] < engine_end) {
-			if (i > 0 && p_names[i].find("WndProc") != std::string::npos) {
+			if (i > 0 && (p_names[i].find("WndProc") != std::string::npos || p_names[0].find("USER32") != std::string::npos || p_names[0].find("win32u") != std::string::npos || (i > 1 && p_names[1].find("USER32") != std::string::npos))) {
 				return "Lattice: this is Windows handling an editor window, not the editor: a mouse button held on the title bar or its buttons, the window's menu open, or the like. The editor goes on when that ends.";
 			}
 			if (p_names[i].find("ShaderGLES3::") != std::string::npos) {

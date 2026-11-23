@@ -917,9 +917,9 @@ EditorProfiler::EditorProfiler() {
 	display_time->connect(SceneStringName(item_selected), callable_mp(this, &EditorProfiler::_combo_changed));
 	hb_time->add_child(display_time);
 
-	display_internal_profiles = memnew(CheckButton(TTRC("Display internal functions")));
-	display_internal_profiles->set_visible(EDITOR_GET("debugger/profile_native_calls"));
-	display_internal_profiles->set_pressed(false);
+	display_internal_profiles = memnew(CheckButton(TTRC("Display internal C++ calls")));
+	display_internal_profiles->set_visible(true);
+	display_internal_profiles->set_pressed(true);
 	display_internal_profiles->connect(SceneStringName(pressed), callable_mp(this, &EditorProfiler::_internal_profiles_pressed));
 	container->add_child(display_internal_profiles);
 

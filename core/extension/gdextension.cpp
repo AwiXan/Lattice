@@ -838,6 +838,16 @@ Error GDExtension::open_library(const String &p_path, const Ref<GDExtensionLoade
 
 void GDExtension::close_library() {
 	ERR_FAIL_COND(!is_library_open());
+#ifdef TOOLS_ENABLED
+	if (is_reloading) {
+		for (KeyValue<StringName, Extension> &E : extension_classes) {
+			if (E.value.is_reloading && ClassDB::class_exists(E.key)) {
+				_clear_extension(&E.value);
+				ClassDB::unregister_extension_class(E.key, false);
+			}
+		}
+	}
+#endif
 	loader->close_library();
 
 	class_icon_paths.clear();
@@ -1210,6 +1220,7 @@ void GDExtension::finish_reload() {
 		}
 	}
 	for (const StringName &class_name : classes_to_remove) {
+		ClassDB::unregister_extension_class(class_name, true);
 		extension_classes.erase(class_name);
 	}
 

@@ -25,6 +25,7 @@ class RustManager : public Object {
 	String cargo_version;
 
 	void _check_cargo();
+	bool _is_ignored_directory(const String &p_name, const String &p_full_path) const;
 
 	Error _clean_crate_bind() { return clean_crate(); }
 	Error _check_crate_bind() { return check_crate(); }

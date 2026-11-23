@@ -2478,13 +2478,15 @@ void GDScriptLanguage::profiling_collate_native_call_data(bool p_accumulated) {
 
 		while (it != nat_calls->end()) {
 			Vector<String> sig = it->value.signature.split("::");
-			HashMap<String, GDScriptFunction::Profile::NativeProfile *>::ConstIterator already_found = seen_nat_calls.find(sig[2]);
-			if (already_found) {
-				already_found->value->total_time += it->value.total_time;
-				already_found->value->call_count += it->value.call_count;
-				elem->self()->profile.last_native_calls.remove(it);
-			} else {
-				seen_nat_calls.insert(sig[2], &it->value);
+			if (sig.size() > 2) {
+				HashMap<String, GDScriptFunction::Profile::NativeProfile *>::ConstIterator already_found = seen_nat_calls.find(sig[2]);
+				if (already_found) {
+					already_found->value->total_time += it->value.total_time;
+					already_found->value->call_count += it->value.call_count;
+					nat_calls->remove(it);
+				} else {
+					seen_nat_calls.insert(sig[2], &it->value);
+				}
 			}
 			++it;
 		}

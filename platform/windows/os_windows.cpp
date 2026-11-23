@@ -2378,7 +2378,7 @@ void OS_Windows::run() {
 	const double game_freeze_seconds = editor ? 0.0 : double(GLOBAL_GET("debug/settings/crash_handler/freeze_report_seconds"));
 	const bool watched = !crash_handler.is_disabled() && (editor || game_freeze_seconds > 0.0);
 	if (watched) {
-		crash_handler.start_stall_watchdog(editor ? 5000 : uint64_t(game_freeze_seconds * 1000.0), !editor);
+		crash_handler.start_stall_watchdog(editor ? 15000 : uint64_t(game_freeze_seconds * 1000.0), !editor);
 	}
 
 	while (true) {

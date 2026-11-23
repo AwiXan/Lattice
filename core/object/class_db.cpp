@@ -232,7 +232,7 @@ public:
 
 bool ClassDB::_is_parent_class(const StringName &p_class, const StringName &p_inherits) {
 	const ClassInfo *c = classes.getptr(p_class);
-	return c ? c->gdtype->get_name_hierarchy().has(p_inherits) : false;
+	return (c && c->gdtype) ? c->gdtype->get_name_hierarchy().has(p_inherits) : false;
 }
 
 bool ClassDB::is_parent_class(const StringName &p_class, const StringName &p_inherits) {
@@ -314,7 +314,7 @@ void ClassDB::get_direct_inheriters_from_class(const StringName &p_class, List<S
 	Locker::Lock lock(Locker::STATE_READ);
 
 	for (const KeyValue<StringName, ClassInfo> &E : classes) {
-		if (E.value.gdtype->get_super_type_name() == p_class) {
+		if (E.value.gdtype && E.value.gdtype->get_super_type_name() == p_class) {
 			p_classes->push_back(E.key);
 		}
 	}
@@ -324,14 +324,14 @@ StringName ClassDB::get_parent_class_nocheck(const StringName &p_class) {
 	Locker::Lock lock(Locker::STATE_READ);
 
 	ClassInfo *ti = classes.getptr(p_class);
-	return ti ? ti->gdtype->get_super_type_name() : StringName();
+	return (ti && ti->gdtype) ? ti->gdtype->get_super_type_name() : StringName();
 }
 
 bool ClassDB::get_inheritance_chain_nocheck(const StringName &p_class, Vector<StringName> &r_result) {
 	Locker::Lock lock(Locker::STATE_READ);
 
 	ClassInfo *ti = classes.getptr(p_class);
-	if (!ti) {
+	if (!ti || !ti->gdtype) {
 		return false;
 	}
 

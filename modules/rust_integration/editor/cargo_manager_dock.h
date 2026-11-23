@@ -17,12 +17,15 @@
 #include "scene/gui/rich_text_label.h"
 #include "scene/gui/tab_container.h"
 
+class RustProgressSpinner;
+
 class CargoManagerDock : public VBoxContainer {
 	GDCLASS(CargoManagerDock, VBoxContainer);
 
 	static CargoManagerDock *singleton;
 
 	Label *status_label = nullptr;
+	RustProgressSpinner *dock_spinner = nullptr;
 	Button *btn_build_debug = nullptr;
 	Button *btn_build_release = nullptr;
 	Button *btn_check = nullptr;
@@ -43,6 +46,17 @@ class CargoManagerDock : public VBoxContainer {
 
 	Label *scaffold_info = nullptr;
 	Button *btn_create_scaffold = nullptr;
+
+	// Profiling & Optimization UI
+	RichTextLabel *profile_info = nullptr;
+	Button *btn_opt_dev = nullptr;
+	Button *btn_opt_fast = nullptr;
+	Button *btn_opt_release = nullptr;
+
+	// Debugging & Tooling UI
+	Button *btn_setup_vscode = nullptr;
+	Button *btn_toggle_backtrace = nullptr;
+	Label *backtrace_status = nullptr;
 
 	bool is_building = false;
 
@@ -68,6 +82,11 @@ class CargoManagerDock : public VBoxContainer {
 	void _on_refresh_deps();
 	void _on_create_scaffold();
 
+	void _on_set_opt_level(int p_level);
+	void _on_setup_vscode();
+	void _on_toggle_backtrace();
+	void _update_diagnostics();
+
 	void _start_cargo_task(const String &p_action, bool p_release);
 	void _update_status();
 	void _update_deps();
@@ -80,6 +99,7 @@ public:
 	static CargoManagerDock *get_singleton() { return singleton; }
 
 	void trigger_build(bool p_release = false);
+	bool get_is_building() const { return is_building; }
 
 	CargoManagerDock();
 	~CargoManagerDock();

@@ -10,12 +10,66 @@
 
 #include "../rust_manager.h"
 #include "cargo_manager_dock.h"
+#include "core/math/math_defs.h"
+#include "core/math/math_funcs.h"
 #include "core/object/callable_mp.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/themes/editor_scale.h"
 #include "editor/themes/editor_theme_manager.h"
+
+RustEditorPlugin *RustEditorPlugin::singleton = nullptr;
+
+// =========================================================================
+// RustProgressSpinner: Native antialiased spinning loading indicator (NO EMOJI)
+// =========================================================================
+
+void RustProgressSpinner::_notification(int p_what) {
+	if (p_what == NOTIFICATION_PROCESS) {
+		angle += get_process_delta_time() * 6.5f;
+		if (angle > (float)Math::TAU) {
+			angle -= (float)Math::TAU;
+		}
+		queue_redraw();
+	} else if (p_what == NOTIFICATION_DRAW) {
+		if (!spinning) {
+			return;
+		}
+		Size2 size = get_size();
+		Point2 center = size * 0.5f;
+		float radius = MIN(size.width, size.height) * 0.42f;
+		float stroke = MAX(2.0f * EDSCALE, 2.0f);
+
+		Color base_color = Color(0.5f, 0.5f, 0.5f, 0.25f);
+		Color arc_color = Color(0.95f, 0.45f, 0.15f); // Vibrant Rust orange
+		if (is_inside_tree()) {
+			arc_color = get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
+		}
+
+		draw_arc(center, radius, 0.0f, (float)Math::TAU, 28, base_color, stroke, true);
+		draw_arc(center, radius, angle, angle + (float)Math::TAU * 0.75f, 28, arc_color, stroke, true);
+	}
+}
+
+void RustProgressSpinner::set_spinning(bool p_spin) {
+	spinning = p_spin;
+	set_visible(p_spin);
+	set_process(p_spin);
+	if (p_spin) {
+		angle = 0.0f;
+		queue_redraw();
+	}
+}
+
+RustProgressSpinner::RustProgressSpinner() {
+	set_custom_minimum_size(Size2(20 * EDSCALE, 20 * EDSCALE));
+	set_visible(false);
+}
+
+// =========================================================================
+// RustEditorPlugin
+// =========================================================================
 
 enum MenuItems {
 	MENU_BUILD_DEBUG = 0,
@@ -35,15 +89,27 @@ void RustEditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_on_open_cargo_dock"), &RustEditorPlugin::_on_open_cargo_dock);
 }
 
+void RustEditorPlugin::set_building(bool p_building) {
+	if (toolbar_spinner) {
+		toolbar_spinner->set_spinning(p_building);
+	}
+	if (toolbar_build_btn) {
+		toolbar_build_btn->set_disabled(p_building);
+		toolbar_build_btn->set_text(p_building ? TTR("Building...") : TTR("Build Rust"));
+	}
+}
+
 void RustEditorPlugin::_on_build_rust() {
 	if (cargo_dock) {
 		cargo_dock->trigger_build(false);
 	} else {
 		RustManager *rm = RustManager::get_singleton();
 		if (rm) {
+			set_building(true);
 			String output;
 			int exit_code = 0;
 			rm->build_crate(false, &output, &exit_code);
+			set_building(false);
 		}
 	}
 }
@@ -138,6 +204,10 @@ void RustEditorPlugin::_notification(int p_what) {
 		}
 		toolbar_hb->add_child(toolbar_build_btn);
 
+		toolbar_spinner = memnew(RustProgressSpinner);
+		toolbar_spinner->set_tooltip_text(TTR("Cargo compilation in progress..."));
+		toolbar_hb->add_child(toolbar_spinner);
+
 		toolbar_menu_btn = memnew(MenuButton);
 		toolbar_menu_btn->set_tooltip_text(TTR("Cargo Build Options"));
 		if (EditorNode::get_singleton() && EditorNode::get_singleton()->get_gui_base()) {
@@ -169,8 +239,27 @@ void RustEditorPlugin::_notification(int p_what) {
 	}
 }
 
+void RustEditorExportPlugin::_export_begin(const HashSet<String> &p_features, bool p_debug, const String &p_path, int p_flags) {
+	RustManager *rm = RustManager::get_singleton();
+	if (rm && rm->has_rust_project()) {
+		print_line(vformat("[RustEditorExportPlugin] Preparing Rust GDExtension for export (debug=%s)...", p_debug ? "true" : "false"));
+		String output;
+		int exit_code = 0;
+		rm->build_crate(!p_debug, &output, &exit_code);
+	}
+}
+
 RustEditorPlugin::RustEditorPlugin() {
+	singleton = this;
+	export_plugin.instantiate();
+	add_export_plugin(export_plugin);
 }
 
 RustEditorPlugin::~RustEditorPlugin() {
+	if (singleton == this) {
+		singleton = nullptr;
+	}
+	if (export_plugin.is_valid()) {
+		remove_export_plugin(export_plugin);
+	}
 }

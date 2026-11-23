@@ -1288,8 +1288,6 @@ void LottieAnimation::_process(double delta) {
 	_update_animation(delta);
 	if (is_visible_in_tree() || Engine::get_singleton()->is_editor_hint()) {
 		// Culling disabled: always treat as visible and post/refresh on frame/size change
-		bool on_screen_now = true;
-		bool became_visible = false;
 		if (render_thread_enabled) {
 			// Ask worker to render the next desired frame
 			{
@@ -1485,7 +1483,6 @@ bool LottieAnimation::_find_marker_range(const String &json_path, const String &
 	}
 	Dictionary d = v;
 	// fr: frame rate; ip/op: in/out points in frames. Markers are in frames as well in many exports.
-	double fr = d.has("fr") ? (double)d["fr"] : 60.0;
 	if (!d.has("markers")) {
 		return false;
 	}
@@ -1828,16 +1825,16 @@ String LottieAnimation::get_selected_dotlottie_animation() const {
 	return selected_dotlottie_animation;
 }
 
-void LottieAnimation::load_from_buffer(const PackedByteArray &data, bool compressed) {
-	if (data.is_empty()) {
+void LottieAnimation::load_from_buffer(const PackedByteArray &p_data, bool compressed) {
+	if (p_data.is_empty()) {
 		ERR_PRINT("load_from_buffer: empty data");
 		return;
 	}
 
 	// Minimal Cache Mechansiim
 	uint64_t h = 1469598103934665603ull;
-	const uint8_t *bytes = data.ptr();
-	const int64_t sz = data.size();
+	const uint8_t *bytes = p_data.ptr();
+	const int64_t sz = p_data.size();
 	for (int64_t i = 0; i < sz; ++i) {
 		h ^= (uint64_t)bytes[i];
 		h *= 1099511628211ull;
@@ -1857,7 +1854,7 @@ void LottieAnimation::load_from_buffer(const PackedByteArray &data, bool compres
 			ERR_PRINT("load_from_buffer: failed to write cache file: " + cache_rel);
 			return;
 		}
-		f->store_buffer(data);
+		f->store_buffer(p_data);
 		f->flush();
 		f->close();
 	}

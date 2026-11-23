@@ -6,6 +6,35 @@ Import("env_modules")
 
 env_rust = env_modules.Clone()
 
+def make_scaffolding_header(target, source, env):
+    import methods
+    dst = str(target[0])
+    src_ffi = str(source[0])
+    src_macros = str(source[1])
+    src_build = str(source[2])
+
+    with open(src_ffi, "r", encoding="utf-8") as f:
+        ffi_code = f.read()
+
+    with open(src_macros, "r", encoding="utf-8") as f:
+        macros_code = f.read()
+
+    with open(src_build, "r", encoding="utf-8") as f:
+        build_code = f.read()
+
+    with open(dst, "w", encoding="utf-8") as f:
+        f.write("/* THIS FILE IS GENERATED. EDITS WILL BE LOST. */\n")
+        f.write("#pragma once\n\n")
+        f.write("inline constexpr const char *RUST_SCAFFOLDING_GODOT_FFI = " + methods.to_raw_cstring(ffi_code) + ";\n\n")
+        f.write("inline constexpr const char *RUST_SCAFFOLDING_MACROS = " + methods.to_raw_cstring(macros_code) + ";\n\n")
+        f.write("inline constexpr const char *RUST_SCAFFOLDING_BUILD_RS = " + methods.to_raw_cstring(build_code) + ";\n\n")
+
+env.CommandNoCache(
+    "#modules/rust_integration/scaffolding.gen.h",
+    ["scaffolding/godot_ffi.rs", "scaffolding/macros.rs", "scaffolding/build.rs"],
+    env.Run(make_scaffolding_header),
+)
+
 module_obj = []
 
 env_rust.add_source_files(module_obj, "*.cpp")

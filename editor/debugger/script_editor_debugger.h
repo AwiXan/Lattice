@@ -281,6 +281,7 @@ private:
 	void _profiler_activate(bool p_enable, int p_profiler);
 	void _profiler_seeked();
 	void _profiler_inspect_node(uint64_t p_id);
+	void _performance_detailed_profiling_toggled(bool p_enabled);
 
 	void _clear_errors_list();
 
