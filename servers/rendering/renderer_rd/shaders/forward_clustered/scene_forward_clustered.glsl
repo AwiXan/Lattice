@@ -2771,7 +2771,6 @@ void fragment_shader(in SceneData scene_data) {
 				}
 
 				float shadow = 1.0;
-				vec4 color_pssm_coord = vec4(0.0);
 
 				if (directional_lights.data[i].shadow_opacity > 0.001) {
 					float depth_z = bool(directional_lights.data[i].flags & DIRECTIONAL_LIGHT_FLAG_CLIPMAP) ? length(vertex) : -vertex.z;
@@ -2796,7 +2795,6 @@ void fragment_shader(in SceneData scene_data) {
 
 							vec4 pssm_coord = (directional_lights.data[i].shadow_matrix1 * v);
 							pssm_coord /= pssm_coord.w;
-							color_pssm_coord = pssm_coord;
 
 							float range_pos = dot(directional_lights.data[i].direction, v.xyz);
 							float range_begin = directional_lights.data[i].shadow_range_begin.x;
@@ -2813,9 +2811,6 @@ void fragment_shader(in SceneData scene_data) {
 
 							vec4 pssm_coord = (directional_lights.data[i].shadow_matrix2 * v);
 							pssm_coord /= pssm_coord.w;
-							if (color_pssm_coord.w == 0.0) {
-								color_pssm_coord = pssm_coord;
-							}
 
 							float range_pos = dot(directional_lights.data[i].direction, v.xyz);
 							float range_begin = directional_lights.data[i].shadow_range_begin.y;
@@ -2841,9 +2836,6 @@ void fragment_shader(in SceneData scene_data) {
 
 							vec4 pssm_coord = (directional_lights.data[i].shadow_matrix3 * v);
 							pssm_coord /= pssm_coord.w;
-							if (color_pssm_coord.w == 0.0) {
-								color_pssm_coord = pssm_coord;
-							}
 
 							float range_pos = dot(directional_lights.data[i].direction, v.xyz);
 							float range_begin = directional_lights.data[i].shadow_range_begin.z;
@@ -2869,9 +2861,6 @@ void fragment_shader(in SceneData scene_data) {
 
 							vec4 pssm_coord = (directional_lights.data[i].shadow_matrix4 * v);
 							pssm_coord /= pssm_coord.w;
-							if (color_pssm_coord.w == 0.0) {
-								color_pssm_coord = pssm_coord;
-							}
 
 							float range_pos = dot(directional_lights.data[i].direction, v.xyz);
 							float range_begin = directional_lights.data[i].shadow_range_begin.w;
@@ -2927,7 +2916,6 @@ void fragment_shader(in SceneData scene_data) {
 						}
 
 						pssm_coord /= pssm_coord.w;
-						color_pssm_coord = pssm_coord;
 
 						shadow = sample_directional_pcf_shadow(directional_shadow_atlas, scene_data.directional_shadow_pixel_size * directional_lights.data[i].soft_shadow_scale * (blur_factor + (1.0 - blur_factor) * float(directional_lights.data[i].blend_splits)), pssm_coord, scene_data.taa_frame_count);
 
@@ -3133,10 +3121,24 @@ void fragment_shader(in SceneData scene_data) {
 #ifdef DEBUG_DRAW_PSSM_SPLITS
 			light_color *= tint;
 #endif
-			if (bool(directional_lights.data[i].flags & DIRECTIONAL_LIGHT_FLAG_COLORED_SHADOWS) && color_pssm_coord.w > 0.0) {
-				vec3 colored_shadow = textureLod(sampler2D(directional_shadow_color_atlas, SAMPLER_LINEAR_CLAMP), color_pssm_coord.xy, 0.0).rgb;
+#ifndef SHADOWS_DISABLED
+			if (bool(directional_lights.data[i].flags & DIRECTIONAL_LIGHT_FLAG_COLORED_SHADOWS)) {
+				float depth_z = bool(directional_lights.data[i].flags & DIRECTIONAL_LIGHT_FLAG_CLIPMAP) ? length(vertex) : -vertex.z;
+				vec4 color_coord;
+				if (depth_z < directional_lights.data[i].shadow_split_offsets.x) {
+					color_coord = directional_lights.data[i].shadow_matrix1 * vec4(vertex, 1.0);
+				} else if (depth_z < directional_lights.data[i].shadow_split_offsets.y) {
+					color_coord = directional_lights.data[i].shadow_matrix2 * vec4(vertex, 1.0);
+				} else if (depth_z < directional_lights.data[i].shadow_split_offsets.z) {
+					color_coord = directional_lights.data[i].shadow_matrix3 * vec4(vertex, 1.0);
+				} else {
+					color_coord = directional_lights.data[i].shadow_matrix4 * vec4(vertex, 1.0);
+				}
+				color_coord /= color_coord.w;
+				vec3 colored_shadow = textureLod(sampler2D(directional_shadow_color_atlas, SAMPLER_LINEAR_CLAMP), color_coord.xy, 0.0).rgb;
 				light_color *= colored_shadow;
 			}
+#endif
 
 			light_compute(normal, directional_lights.data[i].direction, normalize(view), size_A,
 					light_color,
