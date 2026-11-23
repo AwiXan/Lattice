@@ -4726,6 +4726,14 @@ RID RenderForwardClustered::_setup_hddagi_render_pass_uniform_set(RID p_albedo_t
 		uniforms.push_back(u);
 	}
 
+	{
+		RD::Uniform u;
+		u.binding = 45;
+		u.uniform_type = RD::UNIFORM_TYPE_TEXTURE;
+		u.append_id(texture_storage->texture_rd_get_default(RendererRD::TextureStorage::DEFAULT_RD_TEXTURE_WHITE));
+		uniforms.push_back(u);
+	}
+
 	if (scene_shader.default_shader_hddagi_rd.is_null()) {
 		// The variant for SDF from the default material should only be retrieved when Dynamic GI is required.
 		ERR_FAIL_NULL_V(scene_shader.default_material_shader_ptr, RID());
