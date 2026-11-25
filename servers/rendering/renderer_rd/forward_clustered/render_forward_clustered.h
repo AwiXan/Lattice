@@ -842,6 +842,17 @@ private:
 	void _render_shadow_pass(RID p_light, RID p_shadow_atlas, int p_pass, const PagedArray<RenderGeometryInstance *> &p_instances, float p_lod_distance_multiplier = 0, float p_screen_mesh_lod_threshold = 0.0, bool p_open_pass = true, bool p_close_pass = true, bool p_clear_region = true, RenderingServerTypes::RenderInfo *p_render_info = nullptr, const Size2i &p_viewport_size = Size2i(1, 1), const Transform3D &p_main_cam_transform = Transform3D(), const RendererSceneRender::RenderShadowData *p_static = nullptr);
 	// A directional cascade's still casters, from its cache (drawn into it
 	// first if it does not hold any more), into p_atlas_rect.
+	struct DirectionalShadowCacheEvaluation {
+		bool reuse = false;
+		Vector2i shift;
+		int strip_count = 0;
+		Rect2i strips[2];
+		Rect2 strip_rects_light_space[2];
+		Vector2 texel;
+		real_t left = 0.0;
+		real_t bottom = 0.0;
+	};
+	static DirectionalShadowCacheEvaluation _evaluate_directional_shadow_cache(const RendererRD::LightStorage::ShadowCache *p_cache, const Size2i &p_size, uint64_t p_generation, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, bool p_use_pancake);
 	void _render_directional_static_cached(RID p_light, int p_pass, const PagedArray<RenderGeometryInstance *> &p_static_instances, uint64_t p_generation, RID p_atlas_fb, const Rect2i &p_atlas_rect, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, bool p_reverse_cull_face, bool p_use_pancake, bool p_flip_y, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, RenderingServerTypes::RenderInfo *p_render_info, const Size2i &p_viewport_size, const Transform3D &p_main_cam_transform);
 	void _render_shadow_copy(RID p_source, const Size2i &p_source_size, RID p_framebuffer, const Rect2i &p_rect, const Vector2i &p_offset);
 	// An omni or spot light's still casters, from its cache (drawn into it
@@ -939,6 +950,9 @@ public:
 	virtual bool free(RID p_rid) override;
 
 	virtual bool shadow_cache_supported() const override { return true; }
+	virtual bool shadow_cache_can_own(const Ref<RenderSceneBuffers> &p_render_buffers) const override;
+	virtual DirectionalShadowCacheProbeInfo shadow_cache_probe_directional(const Ref<RenderSceneBuffers> &p_render_buffers, RID p_light, int p_pass, int p_directional_shadow_index, int p_directional_shadow_count, uint64_t p_static_generation, const Projection &p_projection, const Transform3D &p_transform) override;
+	virtual bool shadow_cache_probe_positional(RID p_light, RID p_shadow_atlas, int p_pass, uint64_t p_static_generation, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, bool p_use_dp, bool p_use_dp_flip, bool p_use_pancake) override;
 
 	virtual void update() override;
 

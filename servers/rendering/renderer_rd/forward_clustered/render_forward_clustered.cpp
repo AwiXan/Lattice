@@ -3204,10 +3204,13 @@ void RenderForwardClustered::_render_shadow_pass(RID p_light, RID p_shadow_atlas
 	if (render_cubemap) {
 		//rendering to cubemap
 		bool cube_cached = false;
-		if (p_static && p_static->cache_static && p_static->static_instances.size() > 0) {
+		const bool cache_hit = p_static && p_static->static_cache_state == RendererSceneRender::RenderShadowData::STATIC_CACHE_HIT;
+		if (p_static && p_static->cache_static && (p_static->static_instances.size() > 0 || cache_hit)) {
 			// The face's still casters from its cache; the rest over them.
 			_render_positional_static_cached(p_light, p_pass, p_static->static_instances, p_static->static_generation, render_fb, Rect2i(0, 0, cube_size, cube_size), light_storage->get_cubemap_side_texture(cube_size, p_pass), Size2i(cube_size, cube_size), light_projection, light_transform, zfar, reverse_cull_face, false, false, use_pancake, false, p_lod_distance_multiplier, p_screen_mesh_lod_threshold, p_render_info, p_viewport_size, p_main_cam_transform);
 			cube_cached = true;
+		} else if (p_static && p_static->cache_static) {
+			light_storage->light_instance_invalidate_shadow_cache(p_light, p_pass);
 		}
 		_render_shadow_append(render_fb, p_instances, light_projection, light_transform, zfar, 0, 0, reverse_cull_face, false, false, use_pancake, p_lod_distance_multiplier, p_screen_mesh_lod_threshold, Rect2(), false, !cube_cached, !cube_cached, true, p_render_info, p_viewport_size, p_main_cam_transform);
 		if (finalize_cubemap) {
@@ -3228,20 +3231,26 @@ void RenderForwardClustered::_render_shadow_pass(RID p_light, RID p_shadow_atlas
 		}
 
 	} else {
-		if (p_static && p_static->cache_static && p_static->static_instances.size() > 0 && light_storage->light_get_type(base) == RSE::LIGHT_DIRECTIONAL) {
+		const RSE::LightType light_type = light_storage->light_get_type(base);
+		const bool cache_hit = p_static && p_static->static_cache_state == RendererSceneRender::RenderShadowData::STATIC_CACHE_HIT;
+		const bool cache_scroll = p_static && p_static->static_cache_state == RendererSceneRender::RenderShadowData::STATIC_CACHE_SCROLL;
+		if (p_static && p_static->cache_static && (p_static->static_instances.size() > 0 || cache_hit || cache_scroll) && light_type == RSE::LIGHT_DIRECTIONAL) {
 			// The casters that keep still come from the cascade's cache; the
 			// rest are drawn over them below, as always.
 			_render_directional_static_cached(p_light, p_pass, p_static->static_instances, p_static->static_generation, render_fb, atlas_rect, light_projection, light_transform, zfar, reverse_cull_face, use_pancake, flip_y, p_lod_distance_multiplier, p_screen_mesh_lod_threshold, p_render_info, p_viewport_size, p_main_cam_transform);
+		} else if (p_static && p_static->cache_static && light_type == RSE::LIGHT_DIRECTIONAL) {
+			light_storage->light_instance_invalidate_shadow_cache(p_light, p_pass);
 		}
 		bool clear_region = p_clear_region;
 		bool open_pass = p_open_pass;
-		const RSE::LightType light_type = light_storage->light_get_type(base);
-		if (p_static && p_static->cache_static && p_static->static_instances.size() > 0 && (light_type == RSE::LIGHT_OMNI || light_type == RSE::LIGHT_SPOT)) {
+		if (p_static && p_static->cache_static && (p_static->static_instances.size() > 0 || cache_hit) && (light_type == RSE::LIGHT_OMNI || light_type == RSE::LIGHT_SPOT)) {
 			// The region's still casters from the light's cache; the rest
 			// over them, without clearing it again.
 			_render_positional_static_cached(p_light, p_pass, p_static->static_instances, p_static->static_generation, render_fb, atlas_rect, light_storage->shadow_atlas_get_texture(p_shadow_atlas), Size2i(light_storage->shadow_atlas_get_size(p_shadow_atlas), light_storage->shadow_atlas_get_size(p_shadow_atlas)), light_projection, light_transform, zfar, reverse_cull_face, using_dual_paraboloid, using_dual_paraboloid_flip, use_pancake, flip_y, p_lod_distance_multiplier, p_screen_mesh_lod_threshold, p_render_info, p_viewport_size, p_main_cam_transform);
 			clear_region = false;
 			open_pass = false;
+		} else if (p_static && p_static->cache_static && (light_type == RSE::LIGHT_OMNI || light_type == RSE::LIGHT_SPOT)) {
+			light_storage->light_instance_invalidate_shadow_cache(p_light, p_pass);
 		}
 		//render shadow
 		_render_shadow_append(render_fb, p_instances, light_projection, light_transform, zfar, 0, 0, reverse_cull_face, using_dual_paraboloid, using_dual_paraboloid_flip, use_pancake, p_lod_distance_multiplier, p_screen_mesh_lod_threshold, atlas_rect, flip_y, clear_region, open_pass, p_close_pass, p_render_info, p_viewport_size, p_main_cam_transform);
@@ -3270,6 +3279,190 @@ void RenderForwardClustered::_render_shadow_copy(RID p_source, const Size2i &p_s
 	scene_state.shadow_passes.push_back(shadow_pass);
 }
 
+RenderForwardClustered::DirectionalShadowCacheEvaluation RenderForwardClustered::_evaluate_directional_shadow_cache(const RendererRD::LightStorage::ShadowCache *p_cache, const Size2i &p_size, uint64_t p_generation, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, bool p_use_pancake) {
+	DirectionalShadowCacheEvaluation eval;
+	if (!p_cache || p_size.width <= 0 || p_size.height <= 0 || Math::is_zero_approx(p_projection.columns[0][0]) || Math::is_zero_approx(p_projection.columns[1][1])) {
+		return eval;
+	}
+
+	// The square in light space, from its orthogonal projection: texel (0, 0)
+	// is its (left, bottom) corner.
+	eval.left = (-1.0 - p_projection.columns[3][0]) / p_projection.columns[0][0];
+	eval.bottom = (-1.0 - p_projection.columns[3][1]) / p_projection.columns[1][1];
+	eval.texel = Vector2(2.0 / p_projection.columns[0][0] / p_size.width, 2.0 / p_projection.columns[1][1] / p_size.height);
+
+	// Whether the cache still holds and, the square having moved with the
+	// camera, by how many texels.
+	eval.reuse = p_cache->valid && p_cache->generation == p_generation && p_cache->pancake == p_use_pancake && p_cache->zfar == p_zfar && p_cache->projection == p_projection && p_cache->transform.basis == p_transform.basis;
+	if (!eval.reuse) {
+		return eval;
+	}
+
+	const Vector3 moved = p_transform.basis.xform_inv(p_transform.origin - p_cache->transform.origin);
+	const Vector2 texels = Vector2(moved.x / eval.texel.x, moved.y / eval.texel.y);
+	const Vector2 whole = texels.round();
+	eval.reuse = Math::abs(moved.z) <= eval.texel.x * 0.01 && Math::abs(texels.x - whole.x) < 0.01 && Math::abs(texels.y - whole.y) < 0.01 && Math::abs(whole.x) < p_size.width && Math::abs(whole.y) < p_size.height;
+	if (!eval.reuse) {
+		return eval;
+	}
+
+	// A point of the world lies that much further back in the square.
+	eval.shift = Vector2i(-whole.x, -whole.y);
+	if (eval.shift != Vector2i()) {
+		if (eval.shift.x > 0) {
+			eval.strips[eval.strip_count++] = Rect2i(0, 0, eval.shift.x, p_size.height);
+		} else if (eval.shift.x < 0) {
+			eval.strips[eval.strip_count++] = Rect2i(p_size.width + eval.shift.x, 0, -eval.shift.x, p_size.height);
+		}
+		if (eval.shift.y > 0) {
+			eval.strips[eval.strip_count++] = Rect2i(0, 0, p_size.width, eval.shift.y);
+		} else if (eval.shift.y < 0) {
+			eval.strips[eval.strip_count++] = Rect2i(0, p_size.height + eval.shift.y, p_size.width, -eval.shift.y);
+		}
+
+		for (int s = 0; s < eval.strip_count; s++) {
+			const Rect2i &strip = eval.strips[s];
+			const real_t l = eval.left + strip.position.x * eval.texel.x;
+			const real_t r = eval.left + strip.get_end().x * eval.texel.x;
+			const real_t b = eval.bottom + strip.position.y * eval.texel.y;
+			const real_t t = eval.bottom + strip.get_end().y * eval.texel.y;
+			eval.strip_rects_light_space[s] = Rect2(l, b, r - l, t - b);
+		}
+	}
+
+	return eval;
+}
+
+bool RenderForwardClustered::shadow_cache_can_own(const Ref<RenderSceneBuffers> &p_render_buffers) const {
+	Ref<RenderSceneBuffersRD> rb = p_render_buffers;
+	return rb.is_valid() && rb->has_custom_data(RB_SCOPE_FORWARD_CLUSTERED);
+}
+
+RendererSceneRender::DirectionalShadowCacheProbeInfo RenderForwardClustered::shadow_cache_probe_directional(const Ref<RenderSceneBuffers> &p_render_buffers, RID p_light, int p_pass, int p_directional_shadow_index, int p_directional_shadow_count, uint64_t p_static_generation, const Projection &p_projection, const Transform3D &p_transform) {
+	DirectionalShadowCacheProbeInfo info;
+	if (!shadow_cache_can_own(p_render_buffers) || p_directional_shadow_count <= 0) {
+		return info;
+	}
+
+	RendererRD::LightStorage *light_storage = RendererRD::LightStorage::get_singleton();
+	if (!light_storage->owns_light_instance(p_light)) {
+		return info;
+	}
+
+	RID base = light_storage->light_instance_get_base_light(p_light);
+	if (light_storage->light_get_type(base) != RSE::LIGHT_DIRECTIONAL) {
+		return info;
+	}
+
+	RID atlas_tex = light_storage->directional_shadow_get_texture();
+	if (atlas_tex.is_null()) {
+		return info;
+	}
+
+	Rect2i atlas_rect = light_storage->get_directional_shadow_rect_for_index(p_directional_shadow_count, p_directional_shadow_index);
+	switch (light_storage->light_directional_get_shadow_mode(base)) {
+		case RSE::LIGHT_DIRECTIONAL_SHADOW_ORTHOGONAL:
+			break;
+		case RSE::LIGHT_DIRECTIONAL_SHADOW_PARALLEL_2_SPLITS:
+			atlas_rect.size.height /= 2;
+			break;
+		case RSE::LIGHT_DIRECTIONAL_SHADOW_PARALLEL_4_SPLITS:
+			atlas_rect.size.width /= 2;
+			atlas_rect.size.height /= 2;
+			break;
+	}
+	if (atlas_rect.size.width <= 0 || atlas_rect.size.height <= 0) {
+		return info;
+	}
+
+	const RendererRD::LightStorage::ShadowCache *cache = light_storage->light_instance_find_shadow_cache(p_light, p_pass);
+	if (!cache || !cache->valid || cache->texture.is_null() || cache->size != atlas_rect.size) {
+		return info;
+	}
+	if (cache->format != RD::get_singleton()->texture_get_format(atlas_tex).format) {
+		return info;
+	}
+
+	const ObjectID owner_id = p_render_buffers->get_instance_id();
+	const uint64_t frame = RSG::rasterizer->get_frame_number();
+	const bool mine = owner_id.is_valid() && (cache->owner == owner_id || !cache->owner.is_valid() || cache->owner_frame + 1 < frame);
+	if (!mine) {
+		return info;
+	}
+
+	const float zfar = light_storage->light_get_param(base, RSE::LIGHT_PARAM_RANGE);
+	const bool use_pancake = light_storage->light_get_param(base, RSE::LIGHT_PARAM_SHADOW_PANCAKE_SIZE) > 0;
+	const DirectionalShadowCacheEvaluation eval = _evaluate_directional_shadow_cache(cache, atlas_rect.size, p_static_generation, p_projection, p_transform, zfar, use_pancake);
+	if (!eval.reuse) {
+		return info;
+	}
+
+	if (eval.shift == Vector2i()) {
+		info.result = SHADOW_CACHE_PROBE_HIT;
+	} else {
+		info.result = SHADOW_CACHE_PROBE_SCROLL;
+		info.strip_count = eval.strip_count;
+		for (int s = 0; s < eval.strip_count; s++) {
+			info.strip_rects[s] = eval.strip_rects_light_space[s];
+		}
+	}
+	return info;
+}
+
+bool RenderForwardClustered::shadow_cache_probe_positional(RID p_light, RID p_shadow_atlas, int p_pass, uint64_t p_static_generation, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, bool p_use_dp, bool p_use_dp_flip, bool p_use_pancake) {
+	RendererRD::LightStorage *light_storage = RendererRD::LightStorage::get_singleton();
+	if (!light_storage->owns_light_instance(p_light) || !light_storage->owns_shadow_atlas(p_shadow_atlas) || !light_storage->shadow_atlas_owns_light_instance(p_shadow_atlas, p_light)) {
+		return false;
+	}
+
+	RID base = light_storage->light_instance_get_base_light(p_light);
+	const RSE::LightType light_type = light_storage->light_get_type(base);
+	if (light_type != RSE::LIGHT_OMNI && light_type != RSE::LIGHT_SPOT) {
+		return false;
+	}
+
+	uint32_t key = light_storage->shadow_atlas_get_light_instance_key(p_shadow_atlas, p_light);
+	uint32_t quadrant = (key >> RendererRD::LightStorage::QUADRANT_SHIFT) & 0x3;
+	uint32_t subdivision = light_storage->shadow_atlas_get_quadrant_subdivision(p_shadow_atlas, quadrant);
+	if (subdivision == 0) {
+		return false;
+	}
+	uint32_t shadow_atlas_size = light_storage->shadow_atlas_get_size(p_shadow_atlas);
+	uint32_t shadow_size = (shadow_atlas_size >> 1) / subdivision;
+
+	Size2i expected_size;
+	RD::DataFormat expected_format = RD::DATA_FORMAT_MAX;
+	if (light_type == RSE::LIGHT_OMNI && light_storage->light_omni_get_shadow_mode(base) == RSE::LIGHT_OMNI_SHADOW_CUBE) {
+		int cube_size = shadow_size / 2;
+		if (cube_size <= 0) {
+			return false;
+		}
+		expected_size = Size2i(cube_size, cube_size);
+		expected_format = light_storage->get_cubemap_depth_format();
+	} else {
+		RID atlas_tex = light_storage->shadow_atlas_get_texture(p_shadow_atlas);
+		if (atlas_tex.is_null()) {
+			return false;
+		}
+		expected_format = RD::get_singleton()->texture_get_format(atlas_tex).format;
+		if (light_type == RSE::LIGHT_OMNI) {
+			expected_size = Size2i(int(shadow_size) - 2, int(shadow_size) - 2);
+		} else {
+			expected_size = Size2i(shadow_size, shadow_size);
+		}
+	}
+	if (expected_size.width <= 0 || expected_size.height <= 0) {
+		return false;
+	}
+
+	const RendererRD::LightStorage::ShadowCache *cache = light_storage->light_instance_find_shadow_cache(p_light, p_pass);
+	if (!cache || !cache->valid || cache->texture.is_null() || cache->size != expected_size || cache->format != expected_format) {
+		return false;
+	}
+
+	return cache->generation == p_static_generation && cache->pancake == p_use_pancake && cache->dual_paraboloid == p_use_dp && cache->dual_paraboloid_flip == p_use_dp_flip && cache->zfar == p_zfar && cache->projection == p_projection && cache->transform == p_transform;
+}
+
 void RenderForwardClustered::_render_directional_static_cached(RID p_light, int p_pass, const PagedArray<RenderGeometryInstance *> &p_static_instances, uint64_t p_generation, RID p_atlas_fb, const Rect2i &p_atlas_rect, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, bool p_reverse_cull_face, bool p_use_pancake, bool p_flip_y, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, RenderingServerTypes::RenderInfo *p_render_info, const Size2i &p_viewport_size, const Transform3D &p_main_cam_transform) {
 	RendererRD::LightStorage *light_storage = RendererRD::LightStorage::get_singleton();
 	RendererRD::LightStorage::ShadowCache *cache = light_storage->light_instance_get_shadow_cache(p_light, p_pass, p_atlas_rect.size, RD::get_singleton()->texture_get_format(light_storage->directional_shadow_get_texture()).format);
@@ -3290,58 +3483,28 @@ void RenderForwardClustered::_render_directional_static_cached(RID p_light, int 
 	const RID atlas_texture = light_storage->directional_shadow_get_texture();
 	const Size2i atlas_size = Size2i(light_storage->directional_shadow_get_size(), light_storage->directional_shadow_get_size());
 
-	// The square in light space, from its orthogonal projection: texel (0, 0)
-	// is its (left, bottom) corner.
-	const real_t left = (-1.0 - p_projection.columns[3][0]) / p_projection.columns[0][0];
-	const real_t bottom = (-1.0 - p_projection.columns[3][1]) / p_projection.columns[1][1];
-	const Vector2 texel = Vector2(2.0 / p_projection.columns[0][0] / size.width, 2.0 / p_projection.columns[1][1] / size.height);
+	const DirectionalShadowCacheEvaluation eval = _evaluate_directional_shadow_cache(cache, size, p_generation, p_projection, p_transform, p_zfar, p_use_pancake);
 
-	// Whether the cache still holds and, the square having moved with the
-	// camera, by how many texels.
-	Vector2i shift;
-	bool reuse = cache->valid && cache->generation == p_generation && cache->pancake == p_use_pancake && cache->zfar == p_zfar && cache->projection == p_projection && cache->transform.basis == p_transform.basis;
-	if (reuse) {
-		const Vector3 moved = p_transform.basis.xform_inv(p_transform.origin - cache->transform.origin);
-		const Vector2 texels = Vector2(moved.x / texel.x, moved.y / texel.y);
-		const Vector2 whole = texels.round();
-		reuse = Math::abs(moved.z) <= texel.x * 0.01 && Math::abs(texels.x - whole.x) < 0.01 && Math::abs(texels.y - whole.y) < 0.01 && Math::abs(whole.x) < size.width && Math::abs(whole.y) < size.height;
-		// A point of the world lies that much further back in the square.
-		shift = Vector2i(-whole.x, -whole.y);
-	}
-
-	if (!reuse) {
+	if (!eval.reuse) {
 		// Drawn anew, into the atlas where it is needed now, and kept.
 		_render_shadow_append(p_atlas_fb, p_static_instances, p_projection, p_transform, p_zfar, 0, 0, p_reverse_cull_face, false, false, p_use_pancake, p_lod_distance_multiplier, p_screen_mesh_lod_threshold, p_atlas_rect, p_flip_y, false, false, false, p_render_info, p_viewport_size, p_main_cam_transform);
 		_render_shadow_copy(atlas_texture, atlas_size, cache->framebuffer, Rect2i(Point2i(), size), p_atlas_rect.position);
-	} else if (shift == Vector2i()) {
+	} else if (eval.shift == Vector2i()) {
 		_render_shadow_copy(cache->texture, size, p_atlas_fb, p_atlas_rect, Vector2i());
 	} else {
 		// Moved along with the camera: what the cache holds is copied to where
 		// it is now, only what came into the square is drawn, and the result
 		// is kept.
-		_render_shadow_copy(cache->texture, size, p_atlas_fb, p_atlas_rect, -shift);
-
-		Rect2i strips[2];
-		int strip_count = 0;
-		if (shift.x > 0) {
-			strips[strip_count++] = Rect2i(0, 0, shift.x, size.height);
-		} else if (shift.x < 0) {
-			strips[strip_count++] = Rect2i(size.width + shift.x, 0, -shift.x, size.height);
-		}
-		if (shift.y > 0) {
-			strips[strip_count++] = Rect2i(0, 0, size.width, shift.y);
-		} else if (shift.y < 0) {
-			strips[strip_count++] = Rect2i(0, size.height + shift.y, size.width, -shift.y);
-		}
+		_render_shadow_copy(cache->texture, size, p_atlas_fb, p_atlas_rect, -eval.shift);
 
 		const Vector3 axis_x = p_transform.basis.get_column(Vector3::AXIS_X);
 		const Vector3 axis_y = p_transform.basis.get_column(Vector3::AXIS_Y);
-		for (int s = 0; s < strip_count; s++) {
-			const Rect2i &strip = strips[s];
-			const real_t l = left + strip.position.x * texel.x;
-			const real_t r = left + strip.get_end().x * texel.x;
-			const real_t b = bottom + strip.position.y * texel.y;
-			const real_t t = bottom + strip.get_end().y * texel.y;
+		for (int s = 0; s < eval.strip_count; s++) {
+			const Rect2i &strip = eval.strips[s];
+			const real_t l = eval.strip_rects_light_space[s].position.x;
+			const real_t r = eval.strip_rects_light_space[s].get_end().x;
+			const real_t b = eval.strip_rects_light_space[s].position.y;
+			const real_t t = eval.strip_rects_light_space[s].get_end().y;
 
 			// The same projection, narrowed to the strip.
 			Projection strip_projection = p_projection;

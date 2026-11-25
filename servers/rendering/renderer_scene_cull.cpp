@@ -2251,7 +2251,7 @@ void RendererSceneCull::_update_instance_lightmap_captures(Instance *p_instance)
 	geom->geometry_instance->set_lightmap_capture(p_instance->lightmap_sh.ptr());
 }
 
-void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_index, Instance *p_instance, const Transform3D p_cam_transform, const Frustum &p_cam_frustum, bool p_cam_orthogonal, bool p_cam_vaspect) {
+void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_index, int p_directional_shadow_count, Instance *p_instance, const Transform3D p_cam_transform, const Frustum &p_cam_frustum, bool p_cam_orthogonal, bool p_cam_vaspect, const Ref<RenderSceneBuffers> &p_render_buffers, Scenario *p_scenario, bool p_is_reflection_probe) {
 	// For later tight culling, the light culler needs to know the details of the directional light.
 	light_culler->prepare_directional_light_begin(p_instance, p_shadow_index);
 
@@ -2309,12 +2309,35 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 	// The cache holds a cascade's whole square; a tighter draw rect changes
 	// with every turn of the camera, so the two do not go together.
 	cull.shadows[p_shadow_index].cache_static = directional_shadow_cache_static && !directional_shadow_tighter_draw_rect && scene_render->shadow_cache_supported();
+	cull.shadows[p_shadow_index].all_cascades_cache_hit = cull.shadows[p_shadow_index].cache_static;
 
 	// Discard scale
 	const Transform3D light_transform = p_instance->transform.orthonormalized();
 	const Vector3 light_basis_x = light_transform.basis.get_column(Vector3::AXIS_X); // Already normalized
 	const Vector3 light_basis_y = light_transform.basis.get_column(Vector3::AXIS_Y);
 	const Vector3 light_basis_z = light_transform.basis.get_column(Vector3::AXIS_Z);
+	cull.shadows[p_shadow_index].light_axis_x = light_basis_x;
+	cull.shadows[p_shadow_index].light_axis_y = light_basis_y;
+	cull.shadows[p_shadow_index].light_axis_z = light_basis_z;
+
+	const ObjectID rb_id = p_render_buffers.is_valid() ? p_render_buffers->get_instance_id() : ObjectID();
+	const uint64_t cache_frame = RSG::rasterizer->get_frame_number();
+	const bool is_cache_owner = cull.shadows[p_shadow_index].cache_static && !p_is_reflection_probe && scene_render->shadow_cache_can_own(p_render_buffers) && rb_id.is_valid() &&
+			(light->directional_cache_owner == rb_id || !light->directional_cache_owner.is_valid() || light->directional_cache_owner_frame + 1 < cache_frame);
+	if (is_cache_owner) {
+		light->directional_cache_owner = rb_id;
+		light->directional_cache_owner_frame = cache_frame;
+		const uint64_t light_ver = RSG::light_storage->light_get_version(p_instance->base);
+		if (light->directional_cache_light_version != light_ver || light->directional_cache_light_basis != light_transform.basis || light->directional_cache_splits != splits || light->directional_cache_clipmap != clipmap) {
+			for (int k = 0; k < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; k++) {
+				light->directional_cache_states[k] = InstanceLightData::DirectionalCacheState();
+			}
+			light->directional_cache_light_version = light_ver;
+			light->directional_cache_light_basis = light_transform.basis;
+			light->directional_cache_splits = splits;
+			light->directional_cache_clipmap = clipmap;
+		}
+	}
 
 	for (int i = 0; i < splits; i++) {
 		RENDER_TIMESTAMP("Cull DirectionalLight3D, Split " + itos(i));
@@ -2388,6 +2411,7 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 
 		//z_vec points against the camera, like in default opengl
 		real_t z_min_cam = light_basis_z.dot(frustum_centroid_world) - frustum_circumscribing_radius;
+		const real_t orig_z_min_cam = z_min_cam;
 
 		// Expansion for soft shadow is needed regardless of tighter or normal rect, so make it a standalone block.
 		{
@@ -2425,6 +2449,43 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 
 		// Add two texels (one on each side) as margin to compensate for under-rounding of pixel positions
 		frustum_circumscribing_radius *= texture_size / (texture_size - 2.0);
+		bool radius_changed = false;
+		if (cull.shadows[p_shadow_index].cache_static && !clipmap && !USE_TIGHTER_DRAW_RECT && is_cache_owner) {
+			InstanceLightData::DirectionalCacheState &cascade_state = light->directional_cache_states[i];
+			const real_t needed_radius = frustum_circumscribing_radius;
+			if (cascade_state.cached_radius <= 0.0) {
+				cascade_state.cached_radius = needed_radius;
+				cascade_state.prev_needed_radius = needed_radius;
+				cascade_state.shrink_stable_frames = 0;
+				radius_changed = true;
+			} else if (needed_radius > cascade_state.cached_radius) {
+				cascade_state.cached_radius = MAX(needed_radius, cascade_state.cached_radius * (real_t)1.25);
+				cascade_state.prev_needed_radius = needed_radius;
+				cascade_state.shrink_stable_frames = 0;
+				radius_changed = true;
+			} else if (needed_radius < cascade_state.cached_radius * (real_t)0.55) {
+				cascade_state.cached_radius = needed_radius * (real_t)1.05;
+				cascade_state.prev_needed_radius = needed_radius;
+				cascade_state.shrink_stable_frames = 0;
+				radius_changed = true;
+			} else if (needed_radius < cascade_state.cached_radius * (real_t)0.80) {
+				if (Math::abs(needed_radius - cascade_state.prev_needed_radius) <= cascade_state.prev_needed_radius * (real_t)0.002) {
+					cascade_state.shrink_stable_frames++;
+					if (cascade_state.shrink_stable_frames >= SHADOW_STATIC_FRAMES * 2) {
+						cascade_state.cached_radius = needed_radius;
+						cascade_state.shrink_stable_frames = 0;
+						radius_changed = true;
+					}
+				} else {
+					cascade_state.shrink_stable_frames = 0;
+				}
+				cascade_state.prev_needed_radius = needed_radius;
+			} else {
+				cascade_state.prev_needed_radius = needed_radius;
+				cascade_state.shrink_stable_frames = 0;
+			}
+			frustum_circumscribing_radius = cascade_state.cached_radius;
+		}
 		real_t unit = frustum_circumscribing_radius * 4.0 / texture_size;
 
 		Vector3 texel_snapped_frustum_centroid;
@@ -2440,15 +2501,29 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 
 		// a pre pass will need to be needed to determine the actual z-near to be used
 
-		// Snap z to very coarse steps to prevent flickering caused by z changing despite x and y being correctly pinned to a grid point.
-		light_view_frustum_rect_max.z = Math::snapped(light_basis_z.dot(frustum_centroid_world) + frustum_circumscribing_radius * 2, frustum_circumscribing_radius) + pancake_size;
-
 		// The bias is an offset in world units, as long as the range was: kept so.
-		const real_t z_min_for_bias = z_min_cam;
-		if (cull.shadows[p_shadow_index].cache_static) {
-			// A cache keeps depth as it was drawn, so the depth range has to hold
-			// still as well: its far end snapped too, down, so it still covers.
-			z_min_cam = Math::floor(z_min_cam / frustum_circumscribing_radius) * frustum_circumscribing_radius;
+		const real_t z_min_for_bias = orig_z_min_cam;
+		if (cull.shadows[p_shadow_index].cache_static && is_cache_owner) {
+			InstanceLightData::DirectionalCacheState &cascade_state = light->directional_cache_states[i];
+			const real_t center_z = light_basis_z.dot(frustum_centroid_world);
+			const real_t req_z_min = center_z - frustum_circumscribing_radius;
+			const real_t req_z_max = center_z + frustum_circumscribing_radius + pancake_size;
+			const real_t max_z_span = frustum_circumscribing_radius * (real_t)4.5 + pancake_size;
+			if (radius_changed || !cascade_state.z_valid || req_z_min < cascade_state.cached_z_min || req_z_max > cascade_state.cached_z_max || (cascade_state.cached_z_max - cascade_state.cached_z_min) > max_z_span) {
+				cascade_state.cached_z_min = center_z - frustum_circumscribing_radius * (real_t)1.7;
+				cascade_state.cached_z_max = center_z + frustum_circumscribing_radius * (real_t)1.7 + pancake_size;
+				cascade_state.z_valid = true;
+			}
+			light_view_frustum_rect_max.z = cascade_state.cached_z_max;
+			z_min_cam = cascade_state.cached_z_min;
+		} else {
+			// Snap z to very coarse steps to prevent flickering caused by z changing despite x and y being correctly pinned to a grid point.
+			light_view_frustum_rect_max.z = Math::snapped(light_basis_z.dot(frustum_centroid_world) + frustum_circumscribing_radius * 2, frustum_circumscribing_radius) + pancake_size;
+			if (cull.shadows[p_shadow_index].cache_static) {
+				// A cache keeps depth as it was drawn, so the depth range has to hold
+				// still as well: its far end snapped too, down, so it still covers.
+				z_min_cam = Math::floor(z_min_cam / frustum_circumscribing_radius) * frustum_circumscribing_radius;
+			}
 		}
 
 		{
@@ -2512,6 +2587,21 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 				cull.shadows[p_shadow_index].cascades[i].normalized_render_bounds = Rect2(Vector2(0, 0), Vector2(1, 1));
 			}
 			cull.shadows[p_shadow_index].cascades[i].uv_scale = uv_scale;
+			if (cull.shadows[p_shadow_index].cache_static && p_scenario) {
+				const RendererSceneRender::DirectionalShadowCacheProbeInfo probe = scene_render->shadow_cache_probe_directional(p_render_buffers, light->instance, i, p_shadow_index, p_directional_shadow_count, p_scenario->shadow_static_generation, ortho_camera, ortho_transform);
+				cull.shadows[p_shadow_index].cascades[i].static_cache_mode = probe.result;
+				cull.shadows[p_shadow_index].cascades[i].static_strip_count = probe.strip_count;
+				if (probe.result != RendererSceneRender::SHADOW_CACHE_PROBE_HIT) {
+					cull.shadows[p_shadow_index].all_cascades_cache_hit = false;
+				}
+				for (int s = 0; s < probe.strip_count; s++) {
+					cull.shadows[p_shadow_index].cascades[i].static_strip_rects[s] = probe.strip_rects[s];
+				}
+			} else {
+				cull.shadows[p_shadow_index].cascades[i].static_cache_mode = RendererSceneRender::SHADOW_CACHE_PROBE_MISS;
+				cull.shadows[p_shadow_index].cascades[i].static_strip_count = 0;
+				cull.shadows[p_shadow_index].all_cascades_cache_hit = false;
+			}
 		}
 	}
 }
@@ -2577,6 +2667,8 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 					RendererSceneRender::RenderShadowData &shadow_data = render_shadow_data[max_shadows_used++];
 					shadow_data.cache_static = cache_static_positional;
 					shadow_data.static_generation = p_scenario->shadow_static_generation;
+					const bool cache_hit = cache_static_positional && scene_render->shadow_cache_probe_positional(light->instance, p_shadow_atlas, i, p_scenario->shadow_static_generation, Projection(), light_transform, radius, true, i == 1, false);
+					shadow_data.static_cache_state = cache_static_positional ? (cache_hit ? RendererSceneRender::RenderShadowData::STATIC_CACHE_HIT : RendererSceneRender::RenderShadowData::STATIC_CACHE_REBUILD) : RendererSceneRender::RenderShadowData::STATIC_CACHE_DISABLED;
 
 					if (!light->is_shadow_update_full() && !cache_static_positional) {
 						light_culler->cull_regular_light(instance_shadow_cull_result);
@@ -2584,6 +2676,9 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 
 					for (int j = 0; j < (int)instance_shadow_cull_result.size(); j++) {
 						Instance *instance = instance_shadow_cull_result[j];
+						if (cache_hit && instance->shadow_static) {
+							continue;
+						}
 						const bool is_inactive_particle = (instance->base_type == RSE::INSTANCE_PARTICLES) && RSG::particles_storage->particles_is_inactive(instance->base);
 						if (!instance->visible || !((1 << instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows || !(p_visible_layers & instance->layer_mask & RSG::light_storage->light_get_shadow_caster_mask(p_instance->base)) || is_inactive_particle) {
 							continue;
@@ -2676,6 +2771,8 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 					RendererSceneRender::RenderShadowData &shadow_data = render_shadow_data[max_shadows_used++];
 					shadow_data.cache_static = cache_static_positional;
 					shadow_data.static_generation = p_scenario->shadow_static_generation;
+					const bool cache_hit = cache_static_positional && scene_render->shadow_cache_probe_positional(light->instance, p_shadow_atlas, i, p_scenario->shadow_static_generation, cm, xform, radius, false, false, false);
+					shadow_data.static_cache_state = cache_static_positional ? (cache_hit ? RendererSceneRender::RenderShadowData::STATIC_CACHE_HIT : RendererSceneRender::RenderShadowData::STATIC_CACHE_REBUILD) : RendererSceneRender::RenderShadowData::STATIC_CACHE_DISABLED;
 
 					if (!light->is_shadow_update_full() && !cache_static_positional) {
 						light_culler->cull_regular_light(instance_shadow_cull_result);
@@ -2683,6 +2780,9 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 
 					for (int j = 0; j < (int)instance_shadow_cull_result.size(); j++) {
 						Instance *instance = instance_shadow_cull_result[j];
+						if (cache_hit && instance->shadow_static) {
+							continue;
+						}
 						const bool is_inactive_particle = (instance->base_type == RSE::INSTANCE_PARTICLES) && RSG::particles_storage->particles_is_inactive(instance->base);
 						if (!instance->visible || !((1 << instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows || !(p_visible_layers & instance->layer_mask & RSG::light_storage->light_get_shadow_caster_mask(p_instance->base)) || is_inactive_particle) {
 							continue;
@@ -2760,6 +2860,8 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 			RendererSceneRender::RenderShadowData &shadow_data = render_shadow_data[max_shadows_used++];
 			shadow_data.cache_static = cache_static_positional;
 			shadow_data.static_generation = p_scenario->shadow_static_generation;
+			const bool cache_hit = cache_static_positional && scene_render->shadow_cache_probe_positional(light->instance, p_shadow_atlas, 0, p_scenario->shadow_static_generation, cm, light_transform, radius, false, false, false);
+			shadow_data.static_cache_state = cache_static_positional ? (cache_hit ? RendererSceneRender::RenderShadowData::STATIC_CACHE_HIT : RendererSceneRender::RenderShadowData::STATIC_CACHE_REBUILD) : RendererSceneRender::RenderShadowData::STATIC_CACHE_DISABLED;
 
 			if (!light->is_shadow_update_full() && !cache_static_positional) {
 				light_culler->cull_regular_light(instance_shadow_cull_result);
@@ -2767,6 +2869,9 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 
 			for (int j = 0; j < (int)instance_shadow_cull_result.size(); j++) {
 				Instance *instance = instance_shadow_cull_result[j];
+				if (cache_hit && instance->shadow_static) {
+					continue;
+				}
 				const bool is_inactive_particle = (instance->base_type == RSE::INSTANCE_PARTICLES) && RSG::particles_storage->particles_is_inactive(instance->base);
 				if (!instance->visible || !((1 << instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows || !(p_visible_layers & instance->layer_mask & RSG::light_storage->light_get_shadow_caster_mask(p_instance->base)) || is_inactive_particle) {
 					continue;
@@ -2883,6 +2988,7 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 				RendererSceneRender::RenderShadowData &shadow_data = render_shadow_data[max_shadows_used++];
 				shadow_data.cache_static = cache_static_positional;
 				shadow_data.static_generation = p_scenario->shadow_static_generation;
+				shadow_data.static_cache_state = RendererSceneRender::RenderShadowData::STATIC_CACHE_DISABLED;
 
 				if (!light->is_shadow_update_full() && !cache_static_positional) {
 					light_culler->cull_regular_light(instance_shadow_cull_result);
@@ -3539,21 +3645,70 @@ void RendererSceneCull::_scene_cull(CullData &cull_data, InstanceCullResult &cul
 			}
 
 			for (uint32_t j = 0; j < cull_data.cull->shadow_count; j++) {
-				const bool cached = cull_data.cull->shadows[j].cache_static && (idata.flags & InstanceData::FLAG_SHADOW_STATIC);
-				for (uint32_t k = 0; k < cull_data.cull->shadows[j].cascade_count; k++) {
-					if (!cached && !light_culler->cull_directional_light(cull_data.scenario->instance_aabbs[i], j, k)) { // pass the cascade index
+				const Cull::Shadow &shadow = cull_data.cull->shadows[j];
+				const bool cached = shadow.cache_static && (idata.flags & InstanceData::FLAG_SHADOW_STATIC);
+				if (cached) {
+					if (shadow.all_cascades_cache_hit || !(idata.flags & InstanceData::FLAG_CAST_SHADOWS) || !(LAYER_CHECK & shadow.caster_mask)) {
 						continue;
 					}
-					if (IN_FRUSTUM(cached ? cull_data.cull->shadows[j].cascades[k].static_frustum : cull_data.cull->shadows[j].cascades[k].frustum) && VIS_CHECK) {
+					bool has_aabb_proj = false;
+					Vector3 aabb_center;
+					Vector3 extent;
+					real_t ex = 0.0;
+					real_t ey = 0.0;
+					real_t ez = 0.0;
+
+					for (uint32_t k = 0; k < shadow.cascade_count; k++) {
+						const Cull::Shadow::Cascade &cascade = shadow.cascades[k];
+						if (cascade.static_cache_mode == RendererSceneRender::SHADOW_CACHE_PROBE_HIT) {
+							continue;
+						}
+						if (cascade.static_cache_mode == RendererSceneRender::SHADOW_CACHE_PROBE_SCROLL) {
+							if (!has_aabb_proj) {
+								const float *b = cull_data.scenario->instance_aabbs[i].bounds;
+								aabb_center = Vector3((b[0] + b[3]) * 0.5f, (b[1] + b[4]) * 0.5f, (b[2] + b[5]) * 0.5f);
+								extent = Vector3((b[3] - b[0]) * 0.5f, (b[4] - b[1]) * 0.5f, (b[5] - b[2]) * 0.5f);
+								ex = Math::abs(shadow.light_axis_x.x) * extent.x + Math::abs(shadow.light_axis_x.y) * extent.y + Math::abs(shadow.light_axis_x.z) * extent.z;
+								ey = Math::abs(shadow.light_axis_y.x) * extent.x + Math::abs(shadow.light_axis_y.y) * extent.y + Math::abs(shadow.light_axis_y.z) * extent.z;
+								ez = Math::abs(shadow.light_axis_z.x) * extent.x + Math::abs(shadow.light_axis_z.y) * extent.y + Math::abs(shadow.light_axis_z.z) * extent.z;
+								has_aabb_proj = true;
+							}
+							const Vector3 rel_center = aabb_center - cascade.transform.origin;
+							const real_t cz = shadow.light_axis_z.dot(rel_center);
+							if (cz + ez < -cascade.zfar || cz - ez > (real_t)1e6) {
+								continue;
+							}
+							const real_t cx = shadow.light_axis_x.dot(rel_center);
+							const real_t cy = shadow.light_axis_y.dot(rel_center);
+							bool hits_strip = false;
+							for (int s = 0; s < cascade.static_strip_count; s++) {
+								const Rect2 &sr = cascade.static_strip_rects[s];
+								if (cx + ex >= sr.position.x && cx - ex <= sr.position.x + sr.size.x && cy + ey >= sr.position.y && cy - ey <= sr.position.y + sr.size.y) {
+									hits_strip = true;
+									break;
+								}
+							}
+							if (hits_strip && VIS_CHECK) {
+								cull_result.directional_shadows[j].cascade_static_geometry_instances[k].push_back(idata.instance_geometry);
+							}
+							continue;
+						}
+						if (IN_FRUSTUM(cascade.static_frustum) && VIS_CHECK) {
+							cull_result.directional_shadows[j].cascade_static_geometry_instances[k].push_back(idata.instance_geometry);
+						}
+					}
+					continue;
+				}
+				for (uint32_t k = 0; k < shadow.cascade_count; k++) {
+					if (!light_culler->cull_directional_light(cull_data.scenario->instance_aabbs[i], j, k)) { // pass the cascade index
+						continue;
+					}
+					if (IN_FRUSTUM(shadow.cascades[k].frustum) && VIS_CHECK) {
 						uint32_t base_type = idata.flags & InstanceData::FLAG_BASE_TYPE_MASK;
 
 						const bool is_inactive_particle = (base_type == RSE::INSTANCE_PARTICLES) && RSG::particles_storage->particles_is_inactive(idata.base_rid);
-						if (((1 << base_type) & RSE::INSTANCE_GEOMETRY_MASK) && idata.flags & InstanceData::FLAG_CAST_SHADOWS && (LAYER_CHECK & cull_data.cull->shadows[j].caster_mask) && !is_inactive_particle) {
-							if (cached) {
-								cull_result.directional_shadows[j].cascade_static_geometry_instances[k].push_back(idata.instance_geometry);
-							} else {
-								cull_result.directional_shadows[j].cascade_geometry_instances[k].push_back(idata.instance_geometry);
-							}
+						if (((1 << base_type) & RSE::INSTANCE_GEOMETRY_MASK) && idata.flags & InstanceData::FLAG_CAST_SHADOWS && (LAYER_CHECK & shadow.caster_mask) && !is_inactive_particle) {
+							cull_result.directional_shadows[j].cascade_geometry_instances[k].push_back(idata.instance_geometry);
 							mesh_visible = true;
 						}
 					}
@@ -3693,7 +3848,7 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 		RSG::light_storage->set_directional_shadow_count(lights_with_shadow.size());
 
 		for (int i = 0; i < lights_with_shadow.size(); i++) {
-			_light_instance_setup_directional_shadow(i, lights_with_shadow[i], p_camera_data->main_transform, p_camera_data->main_frustum, p_camera_data->is_orthogonal, p_camera_data->vaspect);
+			_light_instance_setup_directional_shadow(i, lights_with_shadow.size(), lights_with_shadow[i], p_camera_data->main_transform, p_camera_data->main_frustum, p_camera_data->is_orthogonal, p_camera_data->vaspect, p_render_buffers, scenario, p_reflection_probe.is_valid());
 		}
 	}
 
@@ -3798,6 +3953,21 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 				render_shadow_data[max_shadows_used].instances.merge_unordered(scene_cull_result.directional_shadows[i].cascade_geometry_instances[j]);
 				render_shadow_data[max_shadows_used].static_instances.merge_unordered(scene_cull_result.directional_shadows[i].cascade_static_geometry_instances[j]);
 				render_shadow_data[max_shadows_used].cache_static = cull.shadows[i].cache_static;
+				if (cull.shadows[i].cache_static) {
+					switch (c.static_cache_mode) {
+						case RendererSceneRender::SHADOW_CACHE_PROBE_HIT:
+							render_shadow_data[max_shadows_used].static_cache_state = RendererSceneRender::RenderShadowData::STATIC_CACHE_HIT;
+							break;
+						case RendererSceneRender::SHADOW_CACHE_PROBE_SCROLL:
+							render_shadow_data[max_shadows_used].static_cache_state = RendererSceneRender::RenderShadowData::STATIC_CACHE_SCROLL;
+							break;
+						default:
+							render_shadow_data[max_shadows_used].static_cache_state = RendererSceneRender::RenderShadowData::STATIC_CACHE_REBUILD;
+							break;
+					}
+				} else {
+					render_shadow_data[max_shadows_used].static_cache_state = RendererSceneRender::RenderShadowData::STATIC_CACHE_DISABLED;
+				}
 				render_shadow_data[max_shadows_used].static_generation = scenario->shadow_static_generation;
 				max_shadows_used++;
 			}
@@ -4024,6 +4194,7 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 		render_shadow_data[i].instances.clear();
 		render_shadow_data[i].static_instances.clear();
 		render_shadow_data[i].cache_static = false;
+		render_shadow_data[i].static_cache_state = RendererSceneRender::RenderShadowData::STATIC_CACHE_DISABLED;
 	}
 	max_shadows_used = 0;
 

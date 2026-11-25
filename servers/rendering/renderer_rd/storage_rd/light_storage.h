@@ -843,6 +843,8 @@ public:
 
 	// Pass p_pass's cache, (re)made for this size and depth format.
 	ShadowCache *light_instance_get_shadow_cache(RID p_light_instance, int p_pass, const Size2i &p_size, RD::DataFormat p_format);
+	const ShadowCache *light_instance_find_shadow_cache(RID p_light_instance, int p_pass) const;
+	void light_instance_invalidate_shadow_cache(RID p_light_instance, int p_pass);
 
 	_FORCE_INLINE_ Rect2 light_instance_get_directional_shadow_draw_norm_rect(RID p_light_instance, int p_index) {
 		LightInstance *li = light_instance_owner.get_or_null(p_light_instance);
@@ -1237,6 +1239,7 @@ public:
 	virtual void set_directional_shadow_count(int p_count) override;
 
 	Rect2i get_directional_shadow_rect();
+	Rect2i get_directional_shadow_rect_for_index(int p_count, int p_index) const;
 	void update_directional_shadow_atlas();
 
 	_FORCE_INLINE_ RID directional_shadow_get_texture() {

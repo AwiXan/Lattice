@@ -890,6 +890,22 @@ public:
 		bool uses_softshadow = false;
 		bool is_area = false;
 
+		struct DirectionalCacheState {
+			real_t cached_radius = 0.0;
+			real_t prev_needed_radius = 0.0;
+			uint32_t shrink_stable_frames = 0;
+			real_t cached_z_min = 0.0;
+			real_t cached_z_max = 0.0;
+			bool z_valid = false;
+		};
+		DirectionalCacheState directional_cache_states[RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES];
+		ObjectID directional_cache_owner;
+		uint64_t directional_cache_owner_frame = 0;
+		uint64_t directional_cache_light_version = 0;
+		Basis directional_cache_light_basis;
+		int directional_cache_splits = 0;
+		bool directional_cache_clipmap = false;
+
 		HashSet<Instance *> geometries;
 
 		Instance *baked_light = nullptr;
@@ -1296,7 +1312,7 @@ public:
 	_FORCE_INLINE_ void _update_instance_lightmap_captures(Instance *p_instance) const;
 	void _unpair_instance(Instance *p_instance);
 
-	void _light_instance_setup_directional_shadow(int p_shadow_index, Instance *p_instance, const Transform3D p_cam_transform, const Frustum &p_cam_frustum, bool p_cam_orthogonal, bool p_cam_vaspect);
+	void _light_instance_setup_directional_shadow(int p_shadow_index, int p_directional_shadow_count, Instance *p_instance, const Transform3D p_cam_transform, const Frustum &p_cam_frustum, bool p_cam_orthogonal, bool p_cam_vaspect, const Ref<RenderSceneBuffers> &p_render_buffers, Scenario *p_scenario, bool p_is_reflection_probe);
 
 	_FORCE_INLINE_ bool _light_instance_update_shadow(Instance *p_instance, const Transform3D p_cam_transform, bool p_cam_orthogonal, bool p_cam_vaspect, RID p_shadow_atlas, Scenario *p_scenario, float p_screen_mesh_lod_threshold, uint32_t p_visible_layers = 0xFFFFFF);
 
@@ -1309,6 +1325,10 @@ public:
 			uint32_t caster_mask;
 			// Still casters go to their own lists, for the renderer to cache.
 			bool cache_static = false;
+			bool all_cascades_cache_hit = false;
+			Vector3 light_axis_x;
+			Vector3 light_axis_y;
+			Vector3 light_axis_z;
 			struct Cascade {
 				FrustumSign frustum;
 				// The whole square the cascade draws, for still casters, which are
@@ -1324,6 +1344,9 @@ public:
 				real_t range_begin;
 				Vector2 uv_scale;
 				Rect2 normalized_render_bounds;
+				RendererSceneRender::ShadowCacheProbeResult static_cache_mode = RendererSceneRender::SHADOW_CACHE_PROBE_MISS;
+				int static_strip_count = 0;
+				Rect2 static_strip_rects[2];
 
 			} cascades[RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES]; //max 4 cascades
 			uint32_t cascade_count;

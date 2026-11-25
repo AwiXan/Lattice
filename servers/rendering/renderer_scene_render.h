@@ -288,6 +288,20 @@ public:
 	// Whether shadow passes can take their still casters apart
 	// (RenderShadowData::static_instances) and keep them in a cache.
 	virtual bool shadow_cache_supported() const { return false; }
+	enum ShadowCacheProbeResult : uint8_t {
+		SHADOW_CACHE_PROBE_MISS,
+		SHADOW_CACHE_PROBE_HIT,
+		SHADOW_CACHE_PROBE_SCROLL,
+	};
+	struct DirectionalShadowCacheProbeInfo {
+		ShadowCacheProbeResult result = SHADOW_CACHE_PROBE_MISS;
+		int strip_count = 0;
+		// Strip bounds in light space relative to the cascade's transform origin: Rect2(l, b, r - l, t - b).
+		Rect2 strip_rects[2];
+	};
+	virtual bool shadow_cache_can_own(const Ref<RenderSceneBuffers> &p_render_buffers) const { return false; }
+	virtual DirectionalShadowCacheProbeInfo shadow_cache_probe_directional(const Ref<RenderSceneBuffers> &p_render_buffers, RID p_light, int p_pass, int p_directional_shadow_index, int p_directional_shadow_count, uint64_t p_static_generation, const Projection &p_projection, const Transform3D &p_transform) { return DirectionalShadowCacheProbeInfo(); }
+	virtual bool shadow_cache_probe_positional(RID p_light, RID p_shadow_atlas, int p_pass, uint64_t p_static_generation, const Projection &p_projection, const Transform3D &p_transform, float p_zfar, bool p_use_dp, bool p_use_dp_flip, bool p_use_pancake) { return false; }
 	virtual void soft_shadow_set_use_dithering(bool p_dither) = 0;
 
 	virtual RID fog_volume_instance_create(RID p_fog_volume) = 0;
@@ -304,6 +318,12 @@ public:
 	virtual void voxel_gi_set_quality(RSE::VoxelGIQuality) = 0;
 
 	struct RenderShadowData {
+		enum StaticCacheState : uint8_t {
+			STATIC_CACHE_DISABLED,
+			STATIC_CACHE_REBUILD,
+			STATIC_CACHE_SCROLL,
+			STATIC_CACHE_HIT,
+		};
 		RID light;
 		int pass = 0;
 		PagedArray<RenderGeometryInstance *> instances;
@@ -315,6 +335,7 @@ public:
 		PagedArray<RenderGeometryInstance *> static_instances;
 		uint64_t static_generation = 0;
 		bool cache_static = false;
+		StaticCacheState static_cache_state = STATIC_CACHE_DISABLED;
 	};
 
 	struct RenderHDDAGIData {

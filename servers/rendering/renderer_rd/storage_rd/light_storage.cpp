@@ -2950,6 +2950,22 @@ LightStorage::ShadowCache *LightStorage::light_instance_get_shadow_cache(RID p_l
 	return &cache;
 }
 
+const LightStorage::ShadowCache *LightStorage::light_instance_find_shadow_cache(RID p_light_instance, int p_pass) const {
+	const LightInstance *light_instance = light_instance_owner.get_or_null(p_light_instance);
+	if (!light_instance || p_pass < 0 || p_pass >= 6) {
+		return nullptr;
+	}
+	return &light_instance->shadow_cache[p_pass];
+}
+
+void LightStorage::light_instance_invalidate_shadow_cache(RID p_light_instance, int p_pass) {
+	LightInstance *light_instance = light_instance_owner.get_or_null(p_light_instance);
+	if (!light_instance || p_pass < 0 || p_pass >= 6) {
+		return;
+	}
+	light_instance->shadow_cache[p_pass].valid = false;
+}
+
 void LightStorage::update_directional_shadow_atlas() {
 	if (directional_shadow.depth.is_null() && directional_shadow.size > 0) {
 		RD::TextureFormat tf;
@@ -3032,6 +3048,10 @@ static Rect2i _get_directional_shadow_rect(int p_size, int p_shadow_count, int p
 
 Rect2i LightStorage::get_directional_shadow_rect() {
 	return _get_directional_shadow_rect(directional_shadow.size, directional_shadow.light_count, directional_shadow.current_light);
+}
+
+Rect2i LightStorage::get_directional_shadow_rect_for_index(int p_count, int p_index) const {
+	return _get_directional_shadow_rect(directional_shadow.size, p_count, p_index);
 }
 
 int LightStorage::get_directional_light_shadow_size(RID p_light_instance) {
