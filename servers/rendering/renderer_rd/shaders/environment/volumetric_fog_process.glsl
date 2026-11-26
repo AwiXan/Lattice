@@ -178,7 +178,8 @@ layout(set = 0, binding = 15, std140) uniform Params {
 	float temporal_blend;
 
 	vec2 sky_border_size;
-	vec2 pad;
+	uint cluster_flags;
+	uint pad;
 
 	mat3x4 cam_rotation;
 	mat4 to_prev_view;
@@ -405,7 +406,7 @@ void main() {
 	float cell_depth_size = abs(view_pos.z - get_depth_at_pos(fog_cell_size.z, pos.z + 1));
 	//compute directional lights
 
-	if (total_density > 0.00005) {
+	if (total_density > 0.00005 && (scattering.r + scattering.g + scattering.b) > 0.00001) {
 		for (uint i = 0; i < params.directional_light_count; i++) {
 			if (directional_lights.data[i].volumetric_fog_energy > 0.001) {
 				vec3 shadow_attenuation = vec3(1.0);
@@ -472,7 +473,7 @@ void main() {
 
 		//compute lights from cluster
 
-		{ //omni lights
+		if ((params.cluster_flags & 1u) != 0u) { //omni lights
 
 			uint cluster_omni_offset = cluster_offset;
 
@@ -539,7 +540,7 @@ void main() {
 			}
 		}
 
-		{ //spot lights
+		if ((params.cluster_flags & 2u) != 0u) { //spot lights
 
 			uint cluster_spot_offset = cluster_offset + params.cluster_type_size;
 
@@ -604,7 +605,7 @@ void main() {
 			}
 		}
 
-		{ //area lights
+		if ((params.cluster_flags & 4u) != 0u) { //area lights
 
 			uint cluster_area_offset = cluster_offset + params.cluster_type_size * 2;
 
@@ -711,25 +712,30 @@ void main() {
 			}
 		}
 
-		vec3 world_pos = mat3(params.cam_rotation) * view_pos;
+		if (params.gi_inject > 0.001 && params.max_voxel_gi_instances > 0u) {
+			vec3 world_pos = mat3(params.cam_rotation) * view_pos;
 
-		for (uint i = 0; i < params.max_voxel_gi_instances; i++) {
-			vec3 position = (voxel_gi_instances.data[i].xform * vec4(world_pos, 1.0)).xyz;
+			for (uint i = 0; i < params.max_voxel_gi_instances; i++) {
+				vec3 position = (voxel_gi_instances.data[i].xform * vec4(world_pos, 1.0)).xyz;
 
-			//this causes corrupted pixels, i have no idea why..
-			if (all(bvec2(all(greaterThanEqual(position, vec3(0.0))), all(lessThan(position, voxel_gi_instances.data[i].bounds))))) {
-				position /= voxel_gi_instances.data[i].bounds;
+				//this causes corrupted pixels, i have no idea why..
+				if (all(bvec2(all(greaterThanEqual(position, vec3(0.0))), all(lessThan(position, voxel_gi_instances.data[i].bounds))))) {
+					position /= voxel_gi_instances.data[i].bounds;
 
-				vec4 light = vec4(0.0);
-				for (uint j = 0; j < voxel_gi_instances.data[i].mipmaps; j++) {
-					vec4 slight = textureLod(sampler3D(voxel_gi_textures[i], linear_sampler_with_mipmaps), position, float(j));
-					float a = (1.0 - light.a);
-					light += a * slight;
+					vec4 light = vec4(0.0);
+					for (uint j = 0; j < voxel_gi_instances.data[i].mipmaps; j++) {
+						vec4 slight = textureLod(sampler3D(voxel_gi_textures[i], linear_sampler_with_mipmaps), position, float(j));
+						float a = (1.0 - light.a);
+						light += a * slight;
+						if (light.a >= 0.99) {
+							break;
+						}
+					}
+
+					light.rgb *= voxel_gi_instances.data[i].dynamic_range * params.gi_inject * voxel_gi_instances.data[i].exposure_normalization;
+
+					total_light += light.rgb;
 				}
-
-				light.rgb *= voxel_gi_instances.data[i].dynamic_range * params.gi_inject * voxel_gi_instances.data[i].exposure_normalization;
-
-				total_light += light.rgb;
 			}
 		}
 
@@ -737,6 +743,7 @@ void main() {
 #ifdef ENABLE_HDDAGI
 
 		if (params.gi_inject > 0.001) {
+			vec3 world_pos = mat3(params.cam_rotation) * view_pos;
 			vec3 ambient_total = vec3(0.0);
 
 			int cascade = HDDAGI_MAX_CASCADES;
@@ -862,11 +869,13 @@ void main() {
 		float z = get_depth_at_pos(fog_cell_size.z, i);
 		//get distance from previous pos
 		float d = abs(prev_z - z);
-		//compute transmittance using beer's law
-		float transmittance = exp(-d * fog.a);
+		if (fog.a > 0.00001) {
+			//compute transmittance using beer's law
+			float transmittance = exp(-d * fog.a);
 
-		fog_accum.rgb += ((fog.rgb - fog.rgb * transmittance) / max(fog.a, 0.00001)) * fog_accum.a;
-		fog_accum.a *= transmittance;
+			fog_accum.rgb += ((fog.rgb - fog.rgb * transmittance) / fog.a) * fog_accum.a;
+			fog_accum.a *= transmittance;
+		}
 
 		prev_z = z;
 
@@ -882,6 +891,9 @@ void main() {
 #ifdef MODE_FILTER
 
 	ivec3 pos = ivec3(gl_GlobalInvocationID.xyz);
+	if (any(greaterThanEqual(pos, params.fog_volume_size))) {
+		return;
+	}
 
 	const float gauss[7] = float[](0.071303, 0.131514, 0.189879, 0.214607, 0.189879, 0.131514, 0.071303);
 

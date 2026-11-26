@@ -183,7 +183,8 @@ private:
 			float temporal_blend;
 
 			float sky_border_size[2];
-			float pad[2];
+			uint32_t cluster_flags;
+			float pad;
 
 			float cam_rotation[12];
 			float to_prev_view[16];

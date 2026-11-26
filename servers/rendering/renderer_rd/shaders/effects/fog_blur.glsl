@@ -39,13 +39,17 @@ mat4 view_to_world_matrix(mat3x4 p_matrix) {
 	return transpose(mat4(p_matrix[0], p_matrix[1], p_matrix[2], vec4(0.0, 0.0, 0.0, 1.0)));
 }
 
-vec3 reconstruct_view_position(ivec2 p_pixel, ivec2 p_screen_size, float p_depth) {
-	vec2 uv = (vec2(p_pixel) + vec2(0.5)) / vec2(p_screen_size);
-	vec4 view_position = scene.data.inv_projection_matrix_view[params.view_index] * vec4(uv_to_ndc(uv), p_depth, 1.0);
+vec3 reconstruct_view_position_uv(vec2 p_uv, float p_depth) {
+	vec4 view_position = scene.data.inv_projection_matrix_view[params.view_index] * vec4(uv_to_ndc(p_uv), p_depth, 1.0);
 	if (abs(view_position.w) < 0.000001) {
 		return vec3(0.0, 0.0, -scene.data.z_far);
 	}
 	return view_position.xyz / view_position.w;
+}
+
+vec3 reconstruct_view_position(ivec2 p_pixel, ivec2 p_screen_size, float p_depth) {
+	vec2 uv = (vec2(p_pixel) + vec2(0.5)) / vec2(p_screen_size);
+	return reconstruct_view_position_uv(uv, p_depth);
 }
 
 float get_fog_amount(vec3 p_view_position, vec2 p_uv) {
@@ -81,26 +85,53 @@ float get_fog_amount(vec3 p_view_position, vec2 p_uv) {
 	return clamp(fog_amount, 0.0, 1.0);
 }
 
-vec3 sample_vogel_blur(vec2 p_uv, float p_lod) {
+float compute_fog_lod(float p_fog_amount, float p_max_lod_cap) {
+	return min(p_fog_amount * params.intensity * params.max_blur_lod, p_max_lod_cap);
+}
+
+vec3 sample_depth_aware_vogel_blur(vec2 p_uv, float p_lod, float p_raw_depth, float p_view_distance, vec3 p_center_color, float p_max_lod_cap, int p_sample_count, float p_mip_lod) {
 	float radius = 0.5 * (exp2(p_lod) - 1.0);
 	if (radius < 0.25) {
-		return textureLod(screen_sampler, p_uv, 0.0).rgb;
+		return p_center_color;
 	}
 
 	const float GOLDEN_ANGLE = 2.39996323;
 	vec2 pixel_size = 1.0 / vec2(textureSize(screen_sampler, 0));
-	vec3 color = vec3(0.0);
-	float total_weight = 0.0;
-	const int SAMPLE_COUNT = 16;
-	const float inv_samples = 1.0 / float(SAMPLE_COUNT);
+	// Anchor accumulation with the center sample so occluded edges stay clean without dividing by zero.
+	vec3 color = p_center_color;
+	float total_weight = 1.0;
+	float inv_samples = 1.0 / float(p_sample_count);
 
-	for (int i = 0; i < SAMPLE_COUNT; i++) {
+	for (int i = 0; i < p_sample_count; i++) {
 		float r_norm = sqrt((float(i) + 0.5) * inv_samples);
+		float r_px = r_norm * radius;
 		float theta = float(i) * GOLDEN_ANGLE;
-		vec2 offset = vec2(cos(theta), sin(theta)) * (r_norm * radius) * pixel_size;
-		float weight = exp(-2.0 * r_norm * r_norm);
+		vec2 sample_uv = clamp(p_uv + vec2(cos(theta), sin(theta)) * r_px * pixel_size, vec2(0.0), vec2(1.0));
 
-		color += textureLod(screen_sampler, p_uv + offset, 0.0).rgb * weight;
+		float sample_raw_depth = textureLod(depth_sampler, sample_uv, 0.0).r;
+		float occ = 1.0;
+		float tap_mip = p_mip_lod;
+
+		// Reverse-Z: larger raw depth is closer to the camera (in front of p_raw_depth).
+		if (sample_raw_depth > p_raw_depth) {
+			vec3 s_view = reconstruct_view_position_uv(sample_uv, sample_raw_depth);
+			float s_dist = length(s_view);
+			float depth_diff = (p_view_distance - s_dist) / max(p_view_distance, 0.001);
+			if (depth_diff > 0.02) {
+				float s_fog = get_fog_amount(s_view, sample_uv);
+				float s_lod = compute_fog_lod(s_fog, p_max_lod_cap);
+				float s_radius = max(0.0, 0.5 * (exp2(s_lod) - 1.0));
+				occ = smoothstep(r_px - 0.5, r_px + 0.5, s_radius);
+				tap_mip = min(tap_mip, s_lod);
+			}
+		}
+
+		if (occ <= 0.001) {
+			continue;
+		}
+
+		float weight = exp(-2.0 * r_norm * r_norm) * occ;
+		color += textureLod(screen_sampler, sample_uv, tap_mip).rgb * weight;
 		total_weight += weight;
 	}
 
@@ -118,9 +149,20 @@ void main() {
 	vec4 original = textureLod(screen_sampler, uv, 0.0);
 	float raw_depth = texelFetch(depth_sampler, pixel, 0).r;
 	vec3 view_position = reconstruct_view_position(pixel, screen_size, raw_depth);
+	float view_distance = length(view_position);
 	float fog_amount = get_fog_amount(view_position, uv);
-	float lod = min(fog_amount * params.intensity * params.max_blur_lod, min(params.max_blur_lod, float(params.max_lod)));
+	float max_lod_cap = min(params.max_blur_lod, float(params.max_lod));
+	float lod = compute_fog_lod(fog_amount, max_lod_cap);
 
-	vec3 blurred = params.gaussian_filter_enabled != 0 ? sample_vogel_blur(uv, lod) : textureLod(screen_sampler, uv, lod).rgb;
+	vec3 blurred;
+	if (lod <= 0.05) {
+		blurred = original.rgb;
+	} else if (params.gaussian_filter_enabled != 0) {
+		blurred = sample_depth_aware_vogel_blur(uv, lod, raw_depth, view_distance, original.rgb, max_lod_cap, 16, 0.0);
+	} else {
+		float mip_lod = clamp(lod - 2.0, 0.0, 2.0);
+		blurred = sample_depth_aware_vogel_blur(uv, lod, raw_depth, view_distance, original.rgb, max_lod_cap, 8, mip_lod);
+	}
+
 	imageStore(output_image, pixel, vec4(blurred, original.a));
 }

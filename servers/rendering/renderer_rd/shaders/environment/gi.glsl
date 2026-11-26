@@ -730,8 +730,8 @@ vec4 voxel_cone_trace(texture3D probe, vec3 uvw_origin, vec3 uvw_dir, float tan_
 	vec4 color = vec4(0.0);
 	float two_tan = 2.0 * tan_half_angle;
 
-	const int MAX_SPECULAR_STEPS = 32;
-	for (int step = 0; step < MAX_SPECULAR_STEPS && dist < max_distance && color.a < 0.92; step++) {
+	const int max_steps = params.high_quality_vct ? 32 : 16;
+	for (int step = 0; step < max_steps && dist < max_distance && color.a < 0.90; step++) {
 		float diameter = max(1.0, two_tan * dist);
 		vec3 uvw_pos = uvw_origin + dist * uvw_dir;
 		vec4 scolor = textureLod(sampler3D(probe, linear_sampler_with_mipmaps), uvw_pos, log2(diameter));
@@ -747,8 +747,8 @@ vec4 voxel_cone_trace_45_degrees(texture3D probe, vec3 uvw_origin, vec3 uvw_dir,
 	float dist = p_bias;
 	vec4 color = vec4(0.0);
 
-	const int MAX_DIFFUSE_STEPS = 12;
-	for (int step = 0; step < MAX_DIFFUSE_STEPS && dist < max_distance && color.a < 0.92; step++) {
+	const int MAX_DIFFUSE_STEPS = 10;
+	for (int step = 0; step < MAX_DIFFUSE_STEPS && dist < max_distance && color.a < 0.90; step++) {
 		float radius = max(1.0, dist);
 		vec3 uvw_pos = uvw_origin + dist * uvw_dir;
 		vec4 scolor = textureLod(sampler3D(probe, linear_sampler_with_mipmaps), uvw_pos, log2(radius) + 1.0);
@@ -821,12 +821,13 @@ void voxel_gi_compute(uint index, vec3 position, vec3 normal, vec3 ref_vec, floa
 	out_diff += diff_contrib;
 
 	// Radiance (specular)
-	if (roughness > 0.70) {
+	if (roughness > 0.55) {
 		out_spec += diff_contrib;
 	} else {
 		vec3 voxel_ref = normalize(xform3 * ref_vec);
 		float tan_angle = max(0.03, tan(roughness * 1.555088));
-		vec4 irr_light = voxel_cone_trace(voxel_gi_textures[index], uvw_origin, voxel_ref * cell_size, tan_angle, 0.5, gi.bias);
+		float spec_step_mult = params.high_quality_vct ? 0.5 : 0.65;
+		vec4 irr_light = voxel_cone_trace(voxel_gi_textures[index], uvw_origin, voxel_ref * cell_size, tan_angle, spec_step_mult, gi.bias);
 		irr_light.rgb *= energy_scale;
 		if (!gi.blend_ambient) {
 			irr_light.a = 1.0;
@@ -967,10 +968,9 @@ void main() {
 #endif
 	}
 
+#ifdef USE_HDDAGI
 	memoryBarrierShared();
 	barrier();
-
-#ifdef USE_HDDAGI
 
 	if (thread_active) {
 		if (roughness < ROUGHNESS_TO_REFLECTION_TRESHOOLD) {

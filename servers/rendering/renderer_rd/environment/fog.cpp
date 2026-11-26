@@ -1225,6 +1225,19 @@ void Fog::volumetric_fog_update(const VolumetricFogSettings &p_settings, const F
 
 		params.screen_size[0] = p_settings.rb_size.x;
 		params.screen_size[1] = p_settings.rb_size.y;
+
+		uint32_t cluster_flags = 0;
+		if (p_settings.cluster_builder->get_cluster_count_by_type(ClusterBuilderRD::ELEMENT_TYPE_OMNI_LIGHT) > 0) {
+			cluster_flags |= 1u << 0;
+		}
+		if (p_settings.cluster_builder->get_cluster_count_by_type(ClusterBuilderRD::ELEMENT_TYPE_SPOT_LIGHT) > 0) {
+			cluster_flags |= 1u << 1;
+		}
+		if (p_settings.cluster_builder->get_cluster_count_by_type(ClusterBuilderRD::ELEMENT_TYPE_AREA_LIGHT) > 0) {
+			cluster_flags |= 1u << 2;
+		}
+		params.cluster_flags = cluster_flags;
+		params.pad = 0.0f;
 	}
 
 	Basis sky_transform = RendererSceneRenderRD::get_singleton()->environment_get_sky_orientation(p_settings.env);

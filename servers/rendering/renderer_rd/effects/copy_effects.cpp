@@ -97,6 +97,7 @@ CopyEffects::CopyEffects(BitField<RasterEffects> p_raster_effects) {
 		copy_modes.push_back("\n#define MODE_SET_COLOR\n");
 		copy_modes.push_back("\n#define MODE_SET_COLOR\n#define DST_IMAGE_8BIT\n");
 		copy_modes.push_back("\n#define MODE_MIPMAP\n");
+		copy_modes.push_back("\n#define MODE_MIPMAP_SMOOTH\n");
 		copy_modes.push_back("\n#define MODE_LINEARIZE_DEPTH_COPY\n");
 		copy_modes.push_back("\n#define MODE_OCTMAP_TO_PANORAMA\n");
 		copy_modes.push_back("\n#define MODE_OCTMAP_ARRAY_TO_PANORAMA\n");
@@ -997,7 +998,7 @@ void CopyEffects::gaussian_glow_upsample_raster(RID p_source_rd_texture, RID p_d
 	RD::get_singleton()->draw_list_end();
 }
 
-void CopyEffects::make_mipmap(RID p_source_rd_texture, RID p_dest_texture, const Size2i &p_size) {
+void CopyEffects::make_mipmap(RID p_source_rd_texture, RID p_dest_texture, const Size2i &p_size, bool p_smooth) {
 	ERR_FAIL_COND_MSG(raster_effects.has_flag(RASTER_EFFECT_COPY), "Can't use the compute version of the make_mipmap shader.");
 
 	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
@@ -1018,7 +1019,7 @@ void CopyEffects::make_mipmap(RID p_source_rd_texture, RID p_dest_texture, const
 	RD::Uniform u_source_rd_texture(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 0, Vector<RID>({ default_sampler, p_source_rd_texture }));
 	RD::Uniform u_dest_texture(RD::UNIFORM_TYPE_IMAGE, 0, p_dest_texture);
 
-	CopyMode mode = COPY_MODE_MIPMAP;
+	CopyMode mode = p_smooth ? COPY_MODE_MIPMAP_SMOOTH : COPY_MODE_MIPMAP;
 	RID shader = copy.shader.version_get_shader(copy.shader_version, mode);
 	ERR_FAIL_COND(shader.is_null());
 
@@ -1031,8 +1032,12 @@ void CopyEffects::make_mipmap(RID p_source_rd_texture, RID p_dest_texture, const
 	RD::get_singleton()->compute_list_end();
 }
 
-void CopyEffects::make_mipmap_raster(RID p_source_rd_texture, RID p_dest_texture, const Size2i &p_size) {
+void CopyEffects::make_mipmap_raster(RID p_source_rd_texture, RID p_dest_texture, const Size2i &p_size, bool p_smooth) {
 	ERR_FAIL_COND_MSG(!raster_effects.has_flag(RASTER_EFFECT_COPY), "Can't use the raster version of mipmap.");
+	if (p_smooth && raster_effects.has_flag(RASTER_EFFECT_GAUSSIAN_BLUR)) {
+		gaussian_blur_raster(p_source_rd_texture, p_dest_texture, Rect2i(Point2i(), p_size), p_size);
+		return;
+	}
 
 	RID dest_framebuffer = FramebufferCacheRD::get_singleton()->get_cache(p_dest_texture);
 

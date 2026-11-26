@@ -121,6 +121,7 @@ private:
 		COPY_MODE_SET_COLOR,
 		COPY_MODE_SET_COLOR_8BIT,
 		COPY_MODE_MIPMAP,
+		COPY_MODE_MIPMAP_SMOOTH,
 		COPY_MODE_LINEARIZE_DEPTH,
 		COPY_MODE_OCTMAP_TO_PANORAMA,
 		COPY_MODE_OCTMAP_ARRAY_TO_PANORAMA,
@@ -410,8 +411,8 @@ public:
 	void gaussian_glow_downsample_raster(RID p_source_rd_texture, RID p_dest_texture, float p_luminance_multiplier, const Size2i &p_size, float p_strength = 1.0, bool p_first_pass = false, float p_luminance_cap = 16.0, float p_exposure = 1.0, float p_bloom = 0.0, float p_hdr_bleed_threshold = 1.0, float p_hdr_bleed_scale = 1.0);
 	void gaussian_glow_upsample_raster(RID p_source_rd_texture, RID p_dest_texture, RID p_blend_texture, float p_luminance_multiplier, const Size2i &p_source_size, const Size2i &p_dest_size, float p_level, float p_base_strength, bool p_use_debanding);
 
-	void make_mipmap(RID p_source_rd_texture, RID p_dest_texture, const Size2i &p_size);
-	void make_mipmap_raster(RID p_source_rd_texture, RID p_dest_texture, const Size2i &p_size);
+	void make_mipmap(RID p_source_rd_texture, RID p_dest_texture, const Size2i &p_size, bool p_smooth = false);
+	void make_mipmap_raster(RID p_source_rd_texture, RID p_dest_texture, const Size2i &p_size, bool p_smooth = false);
 
 	void set_color(RID p_dest_texture, const Color &p_color, const Rect2i &p_region, bool p_8bit_dst = false);
 	void set_color_raster(RID p_dest_texture, const Color &p_color, const Rect2i &p_region);

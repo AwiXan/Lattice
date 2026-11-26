@@ -95,6 +95,22 @@ void main() {
 	imageStore(dest_buffer, pos + params.target, color);
 #endif
 
+#ifdef MODE_MIPMAP_SMOOTH
+
+	// 5-tap overlapping bilinear tent downsample (4x4 footprint) to prevent blocky mipmaps in screen-space refraction.
+	vec2 inv_src = 1.0 / vec2(textureSize(source_color, 0));
+	vec2 uv = (vec2(pos + params.section.xy) + 0.5) / vec2(params.section.zw);
+	vec4 color = textureLod(source_color, uv, 0.0) * 0.5;
+	color += textureLod(source_color, uv + vec2(-1.0, -1.0) * inv_src, 0.0) * 0.125;
+	color += textureLod(source_color, uv + vec2(1.0, -1.0) * inv_src, 0.0) * 0.125;
+	color += textureLod(source_color, uv + vec2(-1.0, 1.0) * inv_src, 0.0) * 0.125;
+	color += textureLod(source_color, uv + vec2(1.0, 1.0) * inv_src, 0.0) * 0.125;
+	color = mix(color, vec4(100.0, 100.0, 100.0, 1.0), isinf(color));
+	color = mix(color, vec4(100.0, 100.0, 100.0, 1.0), isnan(color));
+
+	imageStore(dest_buffer, pos + params.target, color);
+#endif
+
 #ifdef MODE_GAUSSIAN_BLUR
 
 #ifdef MODE_GLOW

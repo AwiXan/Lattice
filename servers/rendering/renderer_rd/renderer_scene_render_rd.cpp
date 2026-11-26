@@ -399,9 +399,9 @@ void RendererSceneRenderRD::_render_buffers_copy_screen_texture(const RenderData
 					copy_effects->gaussian_blur_raster(source, dest, mip_region, msize);
 				}
 			} else if (can_use_storage) {
-				copy_effects->make_mipmap(source, dest, msize);
+				copy_effects->make_mipmap(source, dest, msize, true);
 			} else {
-				copy_effects->make_mipmap_raster(source, dest, msize);
+				copy_effects->make_mipmap_raster(source, dest, msize, true);
 			}
 		}
 	}
