@@ -1795,9 +1795,28 @@ void RenderForwardClustered::_pre_opaque_render(RenderDataRD *p_render_data, boo
 
 		if (p_render_data->cube_shadows.size()) {
 			RENDER_TIMESTAMP("Render OmniLight Shadows");
-			// Cube shadows are rendered in their own way.
+			// Batch all cube shadow faces across active lights using pooled cubemaps,
+			// then blit them into the dual-paraboloid shadow atlas in a single pass sequence.
+			PendingCubeShadowBatch cube_batch;
+			_render_shadow_begin();
 			for (const int &index : p_render_data->cube_shadows) {
-				_render_shadow_pass(p_render_data->render_shadows[index].light, p_render_data->shadow_atlas, p_render_data->render_shadows[index].pass, p_render_data->render_shadows[index].instances, lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, true, true, true, p_render_data->render_info, viewport_size, p_render_data->scene_data->cam_transform, &p_render_data->render_shadows[index]);
+				const RendererSceneRender::RenderShadowData &rs = p_render_data->render_shadows[index];
+				_render_shadow_pass(rs.light, p_render_data->shadow_atlas, rs.pass, rs.instances, lod_distance_multiplier, p_render_data->scene_data->screen_mesh_lod_threshold, true, true, true, p_render_data->render_info, viewport_size, p_render_data->scene_data->cam_transform, &rs, &cube_batch);
+			}
+			_render_shadow_process();
+			_render_shadow_end();
+			for (const PendingCubeDPBlit &blit : cube_batch.pending_blits) {
+				Rect2 atlas_rect_norm = blit.atlas_rect;
+				atlas_rect_norm.position /= float(blit.atlas_size);
+				atlas_rect_norm.size /= float(blit.atlas_size);
+				copy_effects->copy_cubemap_to_dp(blit.render_texture, blit.atlas_fb, atlas_rect_norm, blit.atlas_rect.size, blit.z_near, blit.z_far, false);
+				if (!blit.area_cubemap) {
+					atlas_rect_norm.position += Vector2(blit.dual_paraboloid_offset) * atlas_rect_norm.size;
+					copy_effects->copy_cubemap_to_dp(blit.render_texture, blit.atlas_fb, atlas_rect_norm, blit.atlas_rect.size, blit.z_near, blit.z_far, true);
+				}
+
+				// Restore transform so it can be properly used.
+				light_storage->light_instance_set_shadow_transform(blit.light, Projection(), light_storage->light_instance_get_base_transform(blit.light), blit.z_far, 0, 0, 0);
 			}
 		}
 
@@ -2467,7 +2486,11 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 	_pre_opaque_render(p_render_data, using_ssao, using_ssil, using_ssr, using_sscs, using_hddagi || using_voxelgi, normal_roughness_views, rb_data.is_valid() && rb_data->has_voxelgi() ? rb_data->get_voxelgi() : RID());
 
 	if (current_cluster_builder) {
+		base_specialization.cluster_has_omni_light = current_cluster_builder->get_cluster_count_by_type(ClusterBuilderRD::ELEMENT_TYPE_OMNI_LIGHT) != 0;
+		base_specialization.cluster_has_spot_light = current_cluster_builder->get_cluster_count_by_type(ClusterBuilderRD::ELEMENT_TYPE_SPOT_LIGHT) != 0;
 		base_specialization.cluster_has_area_light = current_cluster_builder->get_cluster_count_by_type(ClusterBuilderRD::ELEMENT_TYPE_AREA_LIGHT) != 0;
+		base_specialization.cluster_has_decal = current_cluster_builder->get_cluster_count_by_type(ClusterBuilderRD::ELEMENT_TYPE_DECAL) != 0;
+		base_specialization.cluster_has_reflection_probe = current_cluster_builder->get_cluster_count_by_type(ClusterBuilderRD::ELEMENT_TYPE_REFLECTION_PROBE) != 0;
 	}
 
 	RENDER_TIMESTAMP("Render Opaque Pass");
@@ -3017,7 +3040,7 @@ void RenderForwardClustered::_render_buffers_debug_draw(const RenderDataRD *p_re
 	}
 }
 
-void RenderForwardClustered::_render_shadow_pass(RID p_light, RID p_shadow_atlas, int p_pass, const PagedArray<RenderGeometryInstance *> &p_instances, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, bool p_open_pass, bool p_close_pass, bool p_clear_region, RenderingServerTypes::RenderInfo *p_render_info, const Size2i &p_viewport_size, const Transform3D &p_main_cam_transform, const RendererSceneRender::RenderShadowData *p_static) {
+void RenderForwardClustered::_render_shadow_pass(RID p_light, RID p_shadow_atlas, int p_pass, const PagedArray<RenderGeometryInstance *> &p_instances, float p_lod_distance_multiplier, float p_screen_mesh_lod_threshold, bool p_open_pass, bool p_close_pass, bool p_clear_region, RenderingServerTypes::RenderInfo *p_render_info, const Size2i &p_viewport_size, const Transform3D &p_main_cam_transform, const RendererSceneRender::RenderShadowData *p_static, PendingCubeShadowBatch *p_cube_batch) {
 	RendererRD::LightStorage *light_storage = RendererRD::LightStorage::get_singleton();
 
 	ERR_FAIL_COND(!light_storage->owns_light_instance(p_light));
@@ -3040,6 +3063,8 @@ void RenderForwardClustered::_render_shadow_pass(RID p_light, RID p_shadow_atlas
 	bool render_cubemap = false;
 	bool finalize_cubemap = false;
 	bool area_cubemap = false;
+
+	uint32_t cube_slot = 0;
 
 	bool flip_y = false;
 	int cube_size = 0;
@@ -3148,8 +3173,9 @@ void RenderForwardClustered::_render_shadow_pass(RID p_light, RID p_shadow_atlas
 
 			if (light_storage->light_omni_get_shadow_mode(base) == RSE::LIGHT_OMNI_SHADOW_CUBE) {
 				cube_size = shadow_size / 2;
-				render_texture = light_storage->get_cubemap(shadow_size / 2);
-				render_fb = light_storage->get_cubemap_fb(shadow_size / 2, p_pass);
+				cube_slot = p_cube_batch ? p_cube_batch->acquire_slot(p_light, cube_size) : 0;
+				render_texture = light_storage->get_cubemap(cube_size, cube_slot);
+				render_fb = light_storage->get_cubemap_fb(cube_size, p_pass, cube_slot);
 
 				light_projection = light_storage->light_instance_get_shadow_camera(p_light, p_pass);
 				light_transform = light_storage->light_instance_get_shadow_transform(p_light, p_pass);
@@ -3159,7 +3185,7 @@ void RenderForwardClustered::_render_shadow_pass(RID p_light, RID p_shadow_atlas
 
 				atlas_size = shadow_atlas_size;
 
-				if (p_pass == 0) {
+				if (!p_cube_batch && p_pass == 0) {
 					_render_shadow_begin();
 				}
 
@@ -3200,15 +3226,16 @@ void RenderForwardClustered::_render_shadow_pass(RID p_light, RID p_shadow_atlas
 				// Drawn like an omni light's cube, without the face behind the emitter,
 				// then turned into the front half of a paraboloid in the atlas.
 				cube_size = shadow_size / 2;
-				render_texture = light_storage->get_cubemap(cube_size);
-				render_fb = light_storage->get_cubemap_fb(cube_size, p_pass);
+				cube_slot = p_cube_batch ? p_cube_batch->acquire_slot(p_light, cube_size) : 0;
+				render_texture = light_storage->get_cubemap(cube_size, cube_slot);
+				render_fb = light_storage->get_cubemap_fb(cube_size, p_pass, cube_slot);
 				render_cubemap = true;
 				finalize_cubemap = p_pass == 5;
 				area_cubemap = true;
 				atlas_fb = light_storage->shadow_atlas_get_fb(p_shadow_atlas);
 				atlas_size = shadow_atlas_size;
 
-				if (p_pass == 0) {
+				if (!p_cube_batch && p_pass == 0) {
 					_render_shadow_begin();
 				}
 			} else {
@@ -3227,27 +3254,41 @@ void RenderForwardClustered::_render_shadow_pass(RID p_light, RID p_shadow_atlas
 		const bool cache_hit = p_static && p_static->static_cache_state == RendererSceneRender::RenderShadowData::STATIC_CACHE_HIT;
 		if (p_static && p_static->cache_static && (p_static->static_instances.size() > 0 || cache_hit)) {
 			// The face's still casters from its cache; the rest over them.
-			_render_positional_static_cached(p_light, p_pass, p_static->static_instances, p_static->static_generation, render_fb, Rect2i(0, 0, cube_size, cube_size), light_storage->get_cubemap_side_texture(cube_size, p_pass), Size2i(cube_size, cube_size), light_projection, light_transform, zfar, reverse_cull_face, false, false, use_pancake, false, p_lod_distance_multiplier, p_screen_mesh_lod_threshold, p_render_info, p_viewport_size, p_main_cam_transform);
+			_render_positional_static_cached(p_light, p_pass, p_static->static_instances, p_static->static_generation, render_fb, Rect2i(0, 0, cube_size, cube_size), light_storage->get_cubemap_side_texture(cube_size, p_pass, cube_slot), Size2i(cube_size, cube_size), light_projection, light_transform, zfar, reverse_cull_face, false, false, use_pancake, false, p_lod_distance_multiplier, p_screen_mesh_lod_threshold, p_render_info, p_viewport_size, p_main_cam_transform);
 			cube_cached = true;
 		} else if (p_static && p_static->cache_static) {
 			light_storage->light_instance_invalidate_shadow_cache(p_light, p_pass);
 		}
 		_render_shadow_append(render_fb, p_instances, light_projection, light_transform, zfar, 0, 0, reverse_cull_face, false, false, use_pancake, p_lod_distance_multiplier, p_screen_mesh_lod_threshold, Rect2(), false, !cube_cached, !cube_cached, true, p_render_info, p_viewport_size, p_main_cam_transform);
 		if (finalize_cubemap) {
-			_render_shadow_process();
-			_render_shadow_end();
-			//reblit
-			Rect2 atlas_rect_norm = atlas_rect;
-			atlas_rect_norm.position /= float(atlas_size);
-			atlas_rect_norm.size /= float(atlas_size);
-			copy_effects->copy_cubemap_to_dp(render_texture, atlas_fb, atlas_rect_norm, atlas_rect.size, light_projection.get_z_near(), zfar, false);
-			if (!area_cubemap) {
-				atlas_rect_norm.position += Vector2(dual_paraboloid_offset) * atlas_rect_norm.size;
-				copy_effects->copy_cubemap_to_dp(render_texture, atlas_fb, atlas_rect_norm, atlas_rect.size, light_projection.get_z_near(), zfar, true);
-			}
+			if (p_cube_batch) {
+				PendingCubeDPBlit blit;
+				blit.render_texture = render_texture;
+				blit.atlas_fb = atlas_fb;
+				blit.atlas_rect = atlas_rect;
+				blit.atlas_size = atlas_size;
+				blit.z_near = light_projection.get_z_near();
+				blit.z_far = zfar;
+				blit.area_cubemap = area_cubemap;
+				blit.dual_paraboloid_offset = dual_paraboloid_offset;
+				blit.light = p_light;
+				p_cube_batch->pending_blits.push_back(blit);
+			} else {
+				_render_shadow_process();
+				_render_shadow_end();
+				//reblit
+				Rect2 atlas_rect_norm = atlas_rect;
+				atlas_rect_norm.position /= float(atlas_size);
+				atlas_rect_norm.size /= float(atlas_size);
+				copy_effects->copy_cubemap_to_dp(render_texture, atlas_fb, atlas_rect_norm, atlas_rect.size, light_projection.get_z_near(), zfar, false);
+				if (!area_cubemap) {
+					atlas_rect_norm.position += Vector2(dual_paraboloid_offset) * atlas_rect_norm.size;
+					copy_effects->copy_cubemap_to_dp(render_texture, atlas_fb, atlas_rect_norm, atlas_rect.size, light_projection.get_z_near(), zfar, true);
+				}
 
-			//restore transform so it can be properly used
-			light_storage->light_instance_set_shadow_transform(p_light, Projection(), light_storage->light_instance_get_base_transform(p_light), zfar, 0, 0, 0);
+				//restore transform so it can be properly used
+				light_storage->light_instance_set_shadow_transform(p_light, Projection(), light_storage->light_instance_get_base_transform(p_light), zfar, 0, 0, 0);
+			}
 		}
 
 	} else {

@@ -929,7 +929,61 @@ private:
 
 	/* Render shadows */
 
-	void _render_shadow_pass(RID p_light, RID p_shadow_atlas, int p_pass, const PagedArray<RenderGeometryInstance *> &p_instances, float p_lod_distance_multiplier = 0, float p_screen_mesh_lod_threshold = 0.0, bool p_open_pass = true, bool p_close_pass = true, bool p_clear_region = true, RenderingServerTypes::RenderInfo *p_render_info = nullptr, const Size2i &p_viewport_size = Size2i(1, 1), const Transform3D &p_main_cam_transform = Transform3D(), const RendererSceneRender::RenderShadowData *p_static = nullptr);
+	struct PendingCubeDPBlit {
+		RID render_texture;
+		RID atlas_fb;
+		Rect2i atlas_rect;
+		uint32_t atlas_size = 0;
+		float z_near = 0.0f;
+		float z_far = 0.0f;
+		bool area_cubemap = false;
+		Vector2i dual_paraboloid_offset;
+		RID light;
+	};
+
+	struct PendingCubeShadowBatch {
+		struct LightSlot {
+			RID light;
+			uint32_t slot = 0;
+		};
+		struct SizeCount {
+			int size = 0;
+			uint32_t count = 0;
+		};
+		LocalVector<LightSlot> light_slots;
+		LocalVector<SizeCount> size_counts;
+		LocalVector<PendingCubeDPBlit> pending_blits;
+
+		uint32_t acquire_slot(RID p_light, int p_cube_size) {
+			for (const LightSlot &ls : light_slots) {
+				if (ls.light == p_light) {
+					return ls.slot;
+				}
+			}
+			uint32_t slot = 0;
+			bool found = false;
+			for (SizeCount &sc : size_counts) {
+				if (sc.size == p_cube_size) {
+					slot = sc.count++;
+					found = true;
+					break;
+				}
+			}
+			if (!found) {
+				SizeCount sc;
+				sc.size = p_cube_size;
+				sc.count = 1;
+				size_counts.push_back(sc);
+			}
+			LightSlot ls;
+			ls.light = p_light;
+			ls.slot = slot;
+			light_slots.push_back(ls);
+			return slot;
+		}
+	};
+
+	void _render_shadow_pass(RID p_light, RID p_shadow_atlas, int p_pass, const PagedArray<RenderGeometryInstance *> &p_instances, float p_lod_distance_multiplier = 0, float p_screen_mesh_lod_threshold = 0.0, bool p_open_pass = true, bool p_close_pass = true, bool p_clear_region = true, RenderingServerTypes::RenderInfo *p_render_info = nullptr, const Size2i &p_viewport_size = Size2i(1, 1), const Transform3D &p_main_cam_transform = Transform3D(), const RendererSceneRender::RenderShadowData *p_static = nullptr, PendingCubeShadowBatch *p_cube_batch = nullptr);
 	// A directional cascade's still casters, from its cache (drawn into it
 	// first if it does not hold any more), into p_atlas_rect.
 	struct DirectionalShadowCacheEvaluation {

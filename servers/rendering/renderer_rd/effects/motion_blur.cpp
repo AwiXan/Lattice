@@ -248,6 +248,39 @@ void RendererRD::MotionBlur::motion_blur_compute(Ref<RenderSceneBuffersRD> p_ren
 		motion_blur.preprocess_push_constant.support_fsr2 = (p_render_buffers->get_scaling_3d_mode() == RSE::ViewportScaling3DMode::VIEWPORT_SCALING_3D_MODE_FSR2) ? 1.0 : 0.0;
 		motion_blur.preprocess_push_constant.framerate_normalization_factor = framerate_normalization_factor;
 
+		bool camera_moved = !p_scene_data->cam_transform.origin.is_equal_approx(p_scene_data->prev_cam_transform.origin) ||
+				!p_scene_data->cam_transform.basis.is_equal_approx(p_scene_data->prev_cam_transform.basis);
+		if (!camera_moved) {
+			for (int c = 0; c < 4; c++) {
+				if (!p_scene_data->cam_projection.columns[c].is_equal_approx(p_scene_data->prev_cam_projection.columns[c])) {
+					camera_moved = true;
+					break;
+				}
+			}
+		}
+		if (!camera_moved) {
+			for (uint32_t v = 0; v < view_count && !camera_moved; v++) {
+				for (int c = 0; c < 4; c++) {
+					if (!p_scene_data->view_projection[v].columns[c].is_equal_approx(p_scene_data->prev_view_projection[v].columns[c])) {
+						camera_moved = true;
+						break;
+					}
+				}
+			}
+		}
+
+		uint32_t preprocess_flags = 0;
+		if (camera_moved) {
+			preprocess_flags |= 1u << 0;
+		}
+		if (Math::is_equal_approx(motion_blur.preprocess_push_constant.velocity_multiplier_camera_rotation, motion_blur.preprocess_push_constant.velocity_multiplier_camera_movement)) {
+			preprocess_flags |= 1u << 1;
+		}
+		motion_blur.preprocess_push_constant.flags = preprocess_flags;
+		motion_blur.preprocess_push_constant.pad0 = 0;
+		motion_blur.preprocess_push_constant.pad1 = 0;
+		motion_blur.preprocess_push_constant.pad2 = 0;
+
 		motion_blur.blur_push_constant.sample_count = sample_count;
 		// from https://blog.demofox.org/2022/01/01/interleaved-gradient-noise-a-different-kind-of-low-discrepancy-sequence/ (section: Derivation Of IGN And Extensions) for animation of the noise.
 		motion_blur.blur_push_constant.frame = Engine::get_singleton()->get_frames_drawn() % 64;

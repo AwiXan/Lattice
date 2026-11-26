@@ -507,6 +507,14 @@ void light_process_omni(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 	float light_length = length(light_rel_vec);
 	half omni_attenuation = get_omni_attenuation(light_length, omni_lights.data[idx].inv_radius, omni_lights.data[idx].attenuation);
 
+#if !defined(LIGHT_CODE_USED) && !defined(USE_SHADOW_CATCHER) && !defined(USE_SHADOW_TO_OPACITY)
+	if (omni_attenuation <= HALF_FLT_MIN) {
+		return;
+	}
+#endif
+
+	vec3 light_rel_vec_norm = light_rel_vec / max(light_length, 1e-6);
+
 	// Compute size.
 	half size = half(0.0);
 	if (sc_use_light_soft_shadows() && omni_lights.data[idx].size > 0.0) {
@@ -514,6 +522,20 @@ void light_process_omni(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 		size = half(1.0) / sqrt(half(1.0) + t * t);
 		size = max(half(1.0) - size, half(0.0));
 	}
+
+#if !defined(LIGHT_CODE_USED) && !defined(LIGHT_BACKLIGHT_USED) && !defined(LIGHT_TRANSMITTANCE_USED) && !defined(LIGHT_RIM_USED) && !defined(DIFFUSE_LAMBERT_WRAP) && !defined(DIFFUSE_TOON) && !defined(SPECULAR_TOON) && !defined(USE_SHADOW_CATCHER) && !defined(USE_SHADOW_TO_OPACITY)
+	{
+		bool light_faces_surface = (dot(normal, hvec3(light_rel_vec_norm)) + size) > half(-1e-4);
+#ifdef LIGHT_CLEARCOAT_USED
+		if (!light_faces_surface) {
+			light_faces_surface = (dot(vertex_normal, hvec3(light_rel_vec_norm)) + size) > half(-1e-4);
+		}
+#endif
+		if (!light_faces_surface) {
+			return;
+		}
+	}
+#endif
 
 	half shadow = half(1.0);
 #ifndef SHADOWS_DISABLED
@@ -745,7 +767,6 @@ void light_process_omni(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 		}
 	}
 
-	vec3 light_rel_vec_norm = light_rel_vec / light_length;
 #ifdef USE_SHADOW_CATCHER
 	shadow_catcher_add_light(vec3(color), float(omni_attenuation) * max(dot(vec3(normal), vec3(light_rel_vec_norm)), 0.0) * (1.0 / M_PI), float(shadow));
 #endif
@@ -808,8 +829,13 @@ void light_process_spot(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 	// Spot light attenuation.
 	vec3 light_rel_vec = spot_lights.data[idx].position - vertex;
 	float light_length = length(light_rel_vec);
-	hvec3 light_rel_vec_norm = hvec3(light_rel_vec / light_length);
+	hvec3 light_rel_vec_norm = hvec3(light_rel_vec / max(light_length, 1e-6));
 	half spot_attenuation = get_omni_attenuation(light_length, spot_lights.data[idx].inv_radius, spot_lights.data[idx].attenuation);
+#if !defined(LIGHT_CODE_USED) && !defined(USE_SHADOW_CATCHER) && !defined(USE_SHADOW_TO_OPACITY)
+	if (spot_attenuation <= HALF_FLT_MIN) {
+		return;
+	}
+#endif
 	vec3 spot_dir = spot_lights.data[idx].direction;
 	float cone_angle = spot_lights.data[idx].cone_angle;
 	float scos = max(dot(-vec3(light_rel_vec_norm), spot_dir), cone_angle);
@@ -818,6 +844,12 @@ void light_process_spot(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 	float spot_rim = max(1e-4, (1.0 - scos) / (1.0 - cone_angle));
 	spot_attenuation *= half(1.0 - pow(spot_rim, spot_lights.data[idx].cone_attenuation));
 
+#if !defined(LIGHT_CODE_USED) && !defined(USE_SHADOW_CATCHER) && !defined(USE_SHADOW_TO_OPACITY)
+	if (spot_attenuation <= HALF_FLT_MIN) {
+		return;
+	}
+#endif
+
 	// Compute size.
 	half size = half(0.0);
 	if (sc_use_light_soft_shadows() && spot_lights.data[idx].size > 0.0) {
@@ -825,6 +857,20 @@ void light_process_spot(uint idx, vec3 vertex, hvec3 eye_vec, hvec3 normal, vec3
 		size = half(1.0) / sqrt(half(1.0) + t * t);
 		size = max(half(1.0) - size, half(0.0));
 	}
+
+#if !defined(LIGHT_CODE_USED) && !defined(LIGHT_BACKLIGHT_USED) && !defined(LIGHT_TRANSMITTANCE_USED) && !defined(LIGHT_RIM_USED) && !defined(DIFFUSE_LAMBERT_WRAP) && !defined(DIFFUSE_TOON) && !defined(SPECULAR_TOON) && !defined(USE_SHADOW_CATCHER) && !defined(USE_SHADOW_TO_OPACITY)
+	{
+		bool light_faces_surface = (dot(normal, light_rel_vec_norm) + size) > half(-1e-4);
+#ifdef LIGHT_CLEARCOAT_USED
+		if (!light_faces_surface) {
+			light_faces_surface = (dot(vertex_normal, light_rel_vec_norm) + size) > half(-1e-4);
+		}
+#endif
+		if (!light_faces_surface) {
+			return;
+		}
+	}
+#endif
 
 	half shadow = half(1.0);
 #ifndef SHADOWS_DISABLED

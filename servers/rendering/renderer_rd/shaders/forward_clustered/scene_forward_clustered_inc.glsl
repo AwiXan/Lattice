@@ -155,6 +155,22 @@ bool sc_material_feedback() {
 	return ((sc_packed_1() >> 7) & 1U) != 0;
 }
 
+bool sc_cluster_has_omni_light() {
+	return ((sc_packed_1() >> 8) & 1U) != 0;
+}
+
+bool sc_cluster_has_spot_light() {
+	return ((sc_packed_1() >> 9) & 1U) != 0;
+}
+
+bool sc_cluster_has_decal() {
+	return ((sc_packed_1() >> 10) & 1U) != 0;
+}
+
+bool sc_cluster_has_reflection_probe() {
+	return ((sc_packed_1() >> 11) & 1U) != 0;
+}
+
 float sc_luminance_multiplier() {
 	// Not used in clustered renderer but we share some code with the mobile renderer that requires this.
 	return 1.0;

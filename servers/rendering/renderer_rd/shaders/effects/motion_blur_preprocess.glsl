@@ -76,6 +76,11 @@ layout(push_constant, std430) uniform Params {
 	float support_fsr2;
 	float motion_blur_intensity;
 	float framerate_normalization_factor;
+
+	uint flags;
+	uint pad0;
+	uint pad1;
+	uint pad2;
 }
 params;
 
@@ -90,71 +95,75 @@ void main() {
 		return;
 	}
 
-	SceneData scene_data = scene.data;
-
-	SceneData previous_scene_data = scene.prev_data;
-
-	vec2 uvn = vec2(uvi + vec2(0.5) + vec2(0, -0.1)) / render_size;
-
-	// We get the view-space position at the pixel
-	// ---------------------------------------------------
 	float depth = texelFetch(depth_sampler, uvi, 0).x;
-
-	vec4 view_position = scene_data.inv_projection_matrix * vec4(uv_to_ndc(uvn), depth, 1.0);
-
-	view_position.xyz /= view_position.w;
-	// ---------------------------------------------------
-
-	// We derive a current_uv which we can compare against our manually extracted UVs.
-	vec3 current_uv = vec3(uvn, depth);
-
-	mat4 inv_view_matrix = view_mat3x4_to_mat4(scene_data.inv_view_matrix);
-
-	// We take the view position, transform it to a world position, and then back to a view position using the past view matrix, resulting in an estimation of where the pixel
-	// was last frame. This estimation only works for static environment. It breaks for moving objects.
-	// ---------------------------------------------------
-	vec4 world_position = inv_view_matrix * vec4(view_position.xyz, 1.0);
-
-	mat4 prev_view_matrix = view_mat3x4_to_mat4(previous_scene_data.view_matrix);
-
-	vec4 view_past_position = prev_view_matrix * vec4(world_position.xyz, 1.0);
-	// ---------------------------------------------------
-
-	// We extract a UV and depth change
-	// ---------------------------------------------------
-	vec4 view_past_ndc = previous_scene_data.projection_matrix * view_past_position;
-
-	view_past_ndc.xyz /= view_past_ndc.w;
-
-	vec3 past_uv = vec3(ndc_to_uv(view_past_ndc.xy), view_past_ndc.z);
-
-	vec4 view_past_ndc_cache = view_past_ndc;
-
-	vec3 camera_uv_change = past_uv - current_uv;
-	// ---------------------------------------------------
-
-	// We do a similar process, but this time only using the rotation part of the view matrices,
-	// resulting in the part of the UV change that was caused by the rotation between frames.
-	// ---------------------------------------------------
-	world_position = mat4(mat3(inv_view_matrix)) * vec4(view_position.xyz, 1.0);
-
-	view_past_position = mat4(mat3(prev_view_matrix)) * vec4(world_position.xyz, 1.0);
-
-	view_past_ndc = previous_scene_data.projection_matrix * view_past_position;
-
-	view_past_ndc.xyz /= view_past_ndc.w;
-
-	past_uv = vec3(ndc_to_uv(view_past_ndc.xy), view_past_ndc.z);
-
-	vec3 camera_rotation_uv_change = past_uv - current_uv;
-	// ---------------------------------------------------
-
-	// By subtracting the rotation part of the UV change from the total UV change, we can arrive
-	// at the UV change that was cause by the camera's movement.
-	vec3 camera_movement_uv_change = camera_uv_change - camera_rotation_uv_change;
-
-	// Get a velocity sample
 	vec2 sampled_velocity = texelFetch(vector_sampler, uvi, 0).xy;
+
+	bool camera_moved = (params.flags & 1u) != 0u;
+	bool equal_camera_multipliers = (params.flags & 2u) != 0u;
+
+	if (!camera_moved && dot(sampled_velocity * render_size, sampled_velocity * render_size) <= PIXEL_RADIUS_SQUARED) {
+		imageStore(vector_output, uvi, vec4(0.0, 0.0, 0.0, depth));
+		return;
+	}
+
+	vec3 camera_uv_change = vec3(0.0);
+	vec3 camera_rotation_uv_change = vec3(0.0);
+	vec3 camera_movement_uv_change = vec3(0.0);
+	bool view_past_ndc_w_neg = false;
+
+	if (camera_moved) {
+		SceneData scene_data = scene.data;
+		SceneData previous_scene_data = scene.prev_data;
+
+		vec2 uvn = vec2(uvi + vec2(0.5) + vec2(0, -0.1)) / render_size;
+
+		// We get the view-space position at the pixel
+		// ---------------------------------------------------
+		vec4 view_position = scene_data.inv_projection_matrix * vec4(uv_to_ndc(uvn), depth, 1.0);
+		view_position.xyz /= view_position.w;
+		// ---------------------------------------------------
+
+		// We derive a current_uv which we can compare against our manually extracted UVs.
+		vec3 current_uv = vec3(uvn, depth);
+
+		mat4 inv_view_matrix = view_mat3x4_to_mat4(scene_data.inv_view_matrix);
+		mat4 prev_view_matrix = view_mat3x4_to_mat4(previous_scene_data.view_matrix);
+
+		// We take the view position, transform it to a world position, and then back to a view position using the past view matrix, resulting in an estimation of where the pixel
+		// was last frame. This estimation only works for static environment. It breaks for moving objects.
+		// ---------------------------------------------------
+		vec4 world_position = inv_view_matrix * vec4(view_position.xyz, 1.0);
+		vec4 view_past_position = prev_view_matrix * vec4(world_position.xyz, 1.0);
+		// ---------------------------------------------------
+
+		// We extract a UV and depth change
+		// ---------------------------------------------------
+		vec4 view_past_ndc = previous_scene_data.projection_matrix * view_past_position;
+		view_past_ndc_w_neg = view_past_ndc.w < 0.0;
+		view_past_ndc.xyz /= view_past_ndc.w;
+
+		vec3 past_uv = vec3(ndc_to_uv(view_past_ndc.xy), view_past_ndc.z);
+		camera_uv_change = past_uv - current_uv;
+		// ---------------------------------------------------
+
+		if (!equal_camera_multipliers) {
+			// We do a similar process, but this time only using the rotation part of the view matrices,
+			// resulting in the part of the UV change that was caused by the rotation between frames.
+			// ---------------------------------------------------
+			vec4 rot_world_position = mat4(mat3(inv_view_matrix)) * vec4(view_position.xyz, 1.0);
+			vec4 rot_view_past_position = mat4(mat3(prev_view_matrix)) * vec4(rot_world_position.xyz, 1.0);
+			vec4 rot_view_past_ndc = previous_scene_data.projection_matrix * rot_view_past_position;
+			rot_view_past_ndc.xyz /= rot_view_past_ndc.w;
+
+			past_uv = vec3(ndc_to_uv(rot_view_past_ndc.xy), rot_view_past_ndc.z);
+			camera_rotation_uv_change = past_uv - current_uv;
+			// ---------------------------------------------------
+
+			// By subtracting the rotation part of the UV change from the total UV change, we can arrive
+			// at the UV change that was cause by the camera's movement.
+			camera_movement_uv_change = camera_uv_change - camera_rotation_uv_change;
+		}
+	}
 
 	// FSR2 alters the velocity buffer in a very specific way:
 	// 1. Static geometry has its velocity replaced with a vec2(-1).
@@ -182,7 +191,10 @@ void main() {
 	// Now that we have the 3 components that make the original motion vectors isolated, we
 	// can put them back together after tuning them however we like.
 	// We assume that component magnitudes are between 0 and 1. This must be enforced on the editor interface level.
-	vec3 total_velocity = camera_rotation_uv_change * params.velocity_multiplier_camera_rotation + camera_movement_uv_change * params.velocity_multiplier_camera_movement + object_uv_change * params.velocity_multiplier_object;
+	vec3 camera_weighted_change = equal_camera_multipliers
+			? camera_uv_change * params.velocity_multiplier_camera_rotation
+			: (camera_rotation_uv_change * params.velocity_multiplier_camera_rotation + camera_movement_uv_change * params.velocity_multiplier_camera_movement);
+	vec3 total_velocity = camera_weighted_change + object_uv_change * params.velocity_multiplier_object;
 
 	// If depth == 0 (skybox), or the objcet is not static (has some object uv change), clear z velocity.
 	// The z velocity was manually extracted using view matrices and thus can only be safely assumed for static environment.
@@ -239,7 +251,7 @@ void main() {
 	// the w component of the projected vector would be negative, and the velocity vector would be flipped.
 	// This happens with Godot's native motion vectors as well. We can detect this and flip them back, avoiding
 	// crazy artifacts.
-	total_velocity.xy *= thresholds_multiplier * render_size * (view_past_ndc_cache.w < 0 ? -1 : 1) * params.motion_blur_intensity;
+	total_velocity.xy *= thresholds_multiplier * render_size * (view_past_ndc_w_neg ? -1 : 1) * params.motion_blur_intensity;
 
 	// Now we clamp the velocity magnitudes to the tile size. This avoids saturating tiles and
 	// revealing the seams between them. It also tames the velocities in general, otherwise

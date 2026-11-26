@@ -90,8 +90,10 @@ LightStorage::~LightStorage() {
 		directional_shadow.color_transmission = RID();
 	}
 
-	for (const KeyValue<int, ShadowCubemap> &E : shadow_cubemaps) {
-		RD::get_singleton()->free_rid(E.value.cubemap);
+	for (const KeyValue<int, Vector<ShadowCubemap>> &E : shadow_cubemaps) {
+		for (const ShadowCubemap &sc : E.value) {
+			RD::get_singleton()->free_rid(sc.cubemap);
+		}
 	}
 
 	singleton = nullptr;
@@ -3078,8 +3080,9 @@ int LightStorage::get_directional_light_shadow_size(RID p_light_instance) {
 
 /* SHADOW CUBEMAPS */
 
-LightStorage::ShadowCubemap *LightStorage::_get_shadow_cubemap(int p_size) {
-	if (!shadow_cubemaps.has(p_size)) {
+LightStorage::ShadowCubemap *LightStorage::_get_shadow_cubemap(int p_size, uint32_t p_index) {
+	Vector<ShadowCubemap> &pool = shadow_cubemaps[p_size];
+	while (uint32_t(pool.size()) <= p_index) {
 		ShadowCubemap sc;
 		{
 			RD::TextureFormat tf;
@@ -3100,25 +3103,25 @@ LightStorage::ShadowCubemap *LightStorage::_get_shadow_cubemap(int p_size) {
 			sc.side_fb[i] = RD::get_singleton()->framebuffer_create(fbtex);
 		}
 
-		shadow_cubemaps[p_size] = sc;
+		pool.push_back(sc);
 	}
 
-	return &shadow_cubemaps[p_size];
+	return &pool.write[p_index];
 }
 
-RID LightStorage::get_cubemap_side_texture(int p_size, int p_pass) {
+RID LightStorage::get_cubemap_side_texture(int p_size, int p_pass, uint32_t p_index) {
 	ERR_FAIL_INDEX_V(p_pass, 6, RID());
-	return _get_shadow_cubemap(p_size)->side_texture[p_pass];
+	return _get_shadow_cubemap(p_size, p_index)->side_texture[p_pass];
 }
 
-RID LightStorage::get_cubemap(int p_size) {
-	ShadowCubemap *cubemap = _get_shadow_cubemap(p_size);
+RID LightStorage::get_cubemap(int p_size, uint32_t p_index) {
+	ShadowCubemap *cubemap = _get_shadow_cubemap(p_size, p_index);
 
 	return cubemap->cubemap;
 }
 
-RID LightStorage::get_cubemap_fb(int p_size, int p_pass) {
-	ShadowCubemap *cubemap = _get_shadow_cubemap(p_size);
+RID LightStorage::get_cubemap_fb(int p_size, int p_pass, uint32_t p_index) {
+	ShadowCubemap *cubemap = _get_shadow_cubemap(p_size, p_index);
 
 	return cubemap->side_fb[p_pass];
 }

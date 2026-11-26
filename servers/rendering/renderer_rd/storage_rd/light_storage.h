@@ -500,8 +500,8 @@ private:
 		RID side_fb[6];
 	};
 
-	HashMap<int, ShadowCubemap> shadow_cubemaps;
-	ShadowCubemap *_get_shadow_cubemap(int p_size);
+	HashMap<int, Vector<ShadowCubemap>> shadow_cubemaps;
+	ShadowCubemap *_get_shadow_cubemap(int p_size, uint32_t p_index = 0);
 
 	/* PIPELINE HINTS */
 
@@ -1268,10 +1268,10 @@ public:
 
 	/* SHADOW CUBEMAPS */
 
-	RID get_cubemap(int p_size);
-	RID get_cubemap_fb(int p_size, int p_pass);
+	RID get_cubemap(int p_size, uint32_t p_index = 0);
+	RID get_cubemap_fb(int p_size, int p_pass, uint32_t p_index = 0);
 	// One face, as a 2D texture of its own: what a shadow cache is copied from.
-	RID get_cubemap_side_texture(int p_size, int p_pass);
+	RID get_cubemap_side_texture(int p_size, int p_pass, uint32_t p_index = 0);
 	static RD::DataFormat get_cubemap_depth_format();
 	static uint32_t get_cubemap_depth_usage_bits();
 

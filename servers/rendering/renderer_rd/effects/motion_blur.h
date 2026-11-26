@@ -71,6 +71,11 @@ private:
 		float support_fsr2;
 		float motion_blur_intensity;
 		float framerate_normalization_factor;
+
+		uint32_t flags;
+		uint32_t pad0;
+		uint32_t pad1;
+		uint32_t pad2;
 	};
 
 	struct MotionBlurBlurPushConstant {

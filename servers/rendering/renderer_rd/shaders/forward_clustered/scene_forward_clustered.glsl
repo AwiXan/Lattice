@@ -1828,7 +1828,7 @@ void fragment_shader(in SceneData scene_data) {
 	vec3 vertex_ddx = dFdx(vertex);
 	vec3 vertex_ddy = dFdy(vertex);
 
-	{ // process decals
+	if (sc_cluster_has_decal()) { // process decals
 
 		uint cluster_decal_offset = cluster_offset + implementation_data.cluster_type_size * 3;
 
@@ -2413,7 +2413,7 @@ void fragment_shader(in SceneData scene_data) {
 		ao_light_affect = mix(ao_light_affect, max(ao_light_affect, implementation_data.ssao_light_affect), implementation_data.ssao_ao_affect);
 	}
 
-	{ // process reflections
+	if (sc_cluster_has_reflection_probe()) { // process reflections
 
 		vec4 reflection_accum = vec4(0.0, 0.0, 0.0, 0.0);
 		vec4 ambient_accum = vec4(0.0, 0.0, 0.0, 0.0);
@@ -2772,7 +2772,20 @@ void fragment_shader(in SceneData scene_data) {
 
 				float shadow = 1.0;
 
-				if (directional_lights.data[i].shadow_opacity > 0.001) {
+				bool skip_dir_shadow = false;
+#if !defined(USE_VERTEX_LIGHTING) && !defined(LIGHT_CODE_USED) && !defined(LIGHT_BACKLIGHT_USED) && !defined(LIGHT_TRANSMITTANCE_USED) && !defined(LIGHT_RIM_USED) && !defined(DIFFUSE_LAMBERT_WRAP) && !defined(DIFFUSE_TOON) && !defined(SPECULAR_TOON) && !defined(USE_SHADOW_CATCHER) && !defined(USE_SHADOW_TO_OPACITY) && !defined(DEBUG_DRAW_PSSM_SPLITS)
+				{
+					float dir_size_A = sc_use_directional_soft_shadows() ? directional_lights.data[i].size : 0.0;
+					skip_dir_shadow = (dot(normal, directional_lights.data[i].direction) + dir_size_A) <= -1e-4;
+#ifdef LIGHT_CLEARCOAT_USED
+					if (skip_dir_shadow) {
+						skip_dir_shadow = (dot(geo_normal, directional_lights.data[i].direction) + dir_size_A) <= -1e-4;
+					}
+#endif
+				}
+#endif
+
+				if (directional_lights.data[i].shadow_opacity > 0.001 && !skip_dir_shadow) {
 					float depth_z = bool(directional_lights.data[i].flags & DIRECTIONAL_LIGHT_FLAG_CLIPMAP) ? length(vertex) : -vertex.z;
 					vec3 light_dir = directional_lights.data[i].direction;
 					vec3 base_normal_bias = geo_normal * (1.0 - max(0.0, dot(light_dir, -geo_normal)));
@@ -3169,7 +3182,7 @@ void fragment_shader(in SceneData scene_data) {
 	}
 
 #ifndef USE_VERTEX_LIGHTING
-	{ //omni lights
+	if (sc_cluster_has_omni_light()) { //omni lights
 
 		uint cluster_omni_offset = cluster_offset;
 
@@ -3230,7 +3243,7 @@ void fragment_shader(in SceneData scene_data) {
 		}
 	}
 
-	{ //spot lights
+	if (sc_cluster_has_spot_light()) { //spot lights
 
 		uint cluster_spot_offset = cluster_offset + implementation_data.cluster_type_size;
 
