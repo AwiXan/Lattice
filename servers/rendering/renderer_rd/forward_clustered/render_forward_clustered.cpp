@@ -382,6 +382,18 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 	RID prev_vertex_array_rd;
 	RID prev_index_array_rd;
 	RID prev_xforms_uniform_set;
+	RID prev_bound_pipeline_rd;
+
+	void *prev_vertex_lookup_surface = nullptr;
+	uint64_t prev_vertex_lookup_mask = UINT64_MAX;
+	bool prev_vertex_lookup_motion = false;
+	bool prev_vertex_lookup_point_size = false;
+	RID prev_vertex_lookup_array;
+	RD::VertexFormatID prev_vertex_lookup_format = -1;
+
+	void *prev_index_lookup_surface = nullptr;
+	uint32_t prev_index_lookup_lod = UINT32_MAX;
+	RID prev_index_lookup_array;
 
 	SceneShaderForwardClustered::ShaderData *shader = nullptr;
 	SceneShaderForwardClustered::ShaderData *prev_shader = nullptr;
@@ -574,8 +586,17 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 			uint64_t input_mask = shader->get_vertex_input_mask(pipeline_key.version, pipeline_key.color_pass_flags, pipeline_key.ubershader);
 			if (surf->owner->mesh_instance.is_valid()) {
 				mesh_storage->mesh_instance_surface_get_vertex_arrays_and_format(surf->owner->mesh_instance, surf->surface_index, input_mask, pipeline_motion_vectors, emulate_point_size, vertex_array_rd, vertex_format);
+			} else if (mesh_surface == prev_vertex_lookup_surface && input_mask == prev_vertex_lookup_mask && pipeline_motion_vectors == prev_vertex_lookup_motion && emulate_point_size == prev_vertex_lookup_point_size) {
+				vertex_array_rd = prev_vertex_lookup_array;
+				vertex_format = prev_vertex_lookup_format;
 			} else {
 				mesh_storage->mesh_surface_get_vertex_arrays_and_format(mesh_surface, input_mask, pipeline_motion_vectors, emulate_point_size, vertex_array_rd, vertex_format);
+				prev_vertex_lookup_surface = mesh_surface;
+				prev_vertex_lookup_mask = input_mask;
+				prev_vertex_lookup_motion = pipeline_motion_vectors;
+				prev_vertex_lookup_point_size = emulate_point_size;
+				prev_vertex_lookup_array = vertex_array_rd;
+				prev_vertex_lookup_format = vertex_format;
 			}
 
 			pipeline_key.vertex_format_id = vertex_format;
@@ -611,7 +632,14 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 
 		if (pipeline_valid) {
 			if (!emulate_point_size) {
-				index_array_rd = mesh_storage->mesh_surface_get_index_array(mesh_surface, element_info.lod_index);
+				if (mesh_surface == prev_index_lookup_surface && element_info.lod_index == prev_index_lookup_lod) {
+					index_array_rd = prev_index_lookup_array;
+				} else {
+					index_array_rd = mesh_storage->mesh_surface_get_index_array(mesh_surface, element_info.lod_index);
+					prev_index_lookup_surface = mesh_surface;
+					prev_index_lookup_lod = element_info.lod_index;
+					prev_index_lookup_array = index_array_rd;
+				}
 			} else {
 				index_array_rd = RID();
 			}
@@ -628,8 +656,9 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 				prev_index_array_rd = index_array_rd;
 			}
 
-			if (!pipeline_rd.is_null()) {
+			if (pipeline_rd.is_valid() && pipeline_rd != prev_bound_pipeline_rd) {
 				RD::get_singleton()->draw_list_bind_render_pipeline(draw_list, pipeline_rd);
+				prev_bound_pipeline_rd = pipeline_rd;
 			}
 
 			if (xforms_uniform_set.is_valid() && prev_xforms_uniform_set != xforms_uniform_set) {
@@ -953,15 +982,6 @@ void RenderForwardClustered::_fill_instance_data(RenderListType p_render_list, i
 		instance_data.instance_uniforms_ofs = uint32_t(inst->shader_uniforms_offset);
 		instance_data.set_lightmap_uv_scale(inst->lightmap_uv_scale);
 
-		AABB surface_aabb = AABB(Vector3(0.0, 0.0, 0.0), Vector3(1.0, 1.0, 1.0));
-		uint64_t format = RendererRD::MeshStorage::get_singleton()->mesh_surface_get_format(surface->surface);
-		Vector4 uv_scale = Vector4(0.0, 0.0, 0.0, 0.0);
-
-		if (format & RSE::ARRAY_FLAG_COMPRESS_ATTRIBUTES) {
-			surface_aabb = RendererRD::MeshStorage::get_singleton()->mesh_surface_get_aabb(surface->surface);
-			uv_scale = RendererRD::MeshStorage::get_singleton()->mesh_surface_get_uv_scale(surface->surface);
-		}
-
 		uint32_t material_feedback_index = UINT32_MAX;
 #ifdef MODULE_TEXTURE_STREAMING_ENABLED
 		if (surface->material->material_feedback_rid.is_valid()) {
@@ -969,9 +989,9 @@ void RenderForwardClustered::_fill_instance_data(RenderListType p_render_list, i
 		}
 #endif
 
-		instance_data.set_compressed_aabb(surface_aabb);
+		instance_data.set_compressed_aabb(surface->cached_aabb);
 		instance_data.material_feedback_index = material_feedback_index;
-		instance_data.set_uv_scale(uv_scale);
+		instance_data.set_uv_scale(surface->cached_uv_scale);
 
 		scene_state.curr_gpu_ptr[p_render_list][i + p_offset] = instance_data;
 
@@ -5214,7 +5234,15 @@ void RenderForwardClustered::_geometry_instance_add_surface_with_material(Geomet
 	sdcache->sort.uses_projector = ginstance->using_projectors;
 	sdcache->sort.uses_softshadow = ginstance->using_softshadows;
 
-	uint64_t format = RendererRD::MeshStorage::get_singleton()->mesh_surface_get_format(sdcache->surface);
+	uint64_t format = mesh_storage->mesh_surface_get_format(sdcache->surface);
+	sdcache->compressed_attributes = (format & RSE::ARRAY_FLAG_COMPRESS_ATTRIBUTES) != 0;
+	if (sdcache->compressed_attributes) {
+		sdcache->cached_aabb = mesh_storage->mesh_surface_get_aabb(sdcache->surface);
+		sdcache->cached_uv_scale = mesh_storage->mesh_surface_get_uv_scale(sdcache->surface);
+	} else {
+		sdcache->cached_aabb = AABB(Vector3(0.0, 0.0, 0.0), Vector3(1.0, 1.0, 1.0));
+		sdcache->cached_uv_scale = Vector4(0.0, 0.0, 0.0, 0.0);
+	}
 	if (p_material->shader_data->uses_tangent && !p_material->shader_data->writes_tangent && !(format & RSE::ARRAY_FORMAT_TANGENT)) {
 		String shader_path = p_material->shader_data->path.is_empty() ? "" : "(" + p_material->shader_data->path + ")";
 		String mesh_path = mesh_storage->mesh_get_path(p_mesh).is_empty() ? "" : "(" + mesh_storage->mesh_get_path(p_mesh) + ")";

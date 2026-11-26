@@ -568,6 +568,36 @@ void RendererSceneCull::_instance_queue_update(Instance *p_instance, bool p_upda
 	_instance_update_list.add(&p_instance->update_item);
 }
 
+void RendererSceneCull::_shadow_sync_dynamic_caster(Instance *p_instance) const {
+	Scenario *s = p_instance->scenario;
+	if (!s) {
+		p_instance->dynamic_shadow_index = -1;
+		return;
+	}
+	const bool should_track = p_instance->indexer_id.is_valid() && p_instance->visible &&
+			((1 << p_instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) &&
+			p_instance->base_data != nullptr &&
+			static_cast<InstanceGeometryData *>(p_instance->base_data)->can_cast_shadows &&
+			!p_instance->shadow_static &&
+			p_instance->visibility_index == -1;
+	if (should_track) {
+		if (p_instance->dynamic_shadow_index < 0) {
+			p_instance->dynamic_shadow_index = s->dynamic_shadow_casters.size();
+			s->dynamic_shadow_casters.push_back(p_instance);
+		}
+	} else if (p_instance->dynamic_shadow_index >= 0) {
+		int32_t idx = p_instance->dynamic_shadow_index;
+		int32_t last = s->dynamic_shadow_casters.size() - 1;
+		if (idx != last) {
+			Instance *swapped = s->dynamic_shadow_casters[last];
+			s->dynamic_shadow_casters[idx] = swapped;
+			swapped->dynamic_shadow_index = idx;
+		}
+		s->dynamic_shadow_casters.resize(last);
+		p_instance->dynamic_shadow_index = -1;
+	}
+}
+
 void RendererSceneCull::_shadow_static_touch(Instance *p_instance) const {
 	// Anything done to a mesh - moved, shown, hidden, given another mesh or
 	// material - takes it out of the static set, until it has kept still for
@@ -583,6 +613,7 @@ void RendererSceneCull::_shadow_static_touch(Instance *p_instance) const {
 			}
 			p_instance->scenario->shadow_static_generation++;
 		}
+		_shadow_sync_dynamic_caster(p_instance);
 	}
 	if (!directional_shadow_cache_static && !positional_shadow_cache_static) {
 		return;
@@ -628,6 +659,7 @@ void RendererSceneCull::_shadow_static_promote() {
 		instance->shadow_static = true;
 		instance->scenario->instance_data[instance->array_index].flags |= InstanceData::FLAG_SHADOW_STATIC;
 		instance->scenario->shadow_static_generation++;
+		_shadow_sync_dynamic_caster(instance);
 	}
 }
 
@@ -1607,6 +1639,7 @@ void RendererSceneCull::_update_instance_visibility_dependencies(Instance *p_ins
 			}
 		}
 	}
+	_shadow_sync_dynamic_caster(p_instance);
 }
 
 void RendererSceneCull::instance_geometry_set_lightmap(RID p_instance, RID p_lightmap, const Rect2 &p_lightmap_uv_scale, int p_slice_index) {
@@ -2040,6 +2073,7 @@ void RendererSceneCull::_unpair_instance(Instance *p_instance) {
 	}
 
 	p_instance->indexer_id = DynamicBVH::ID();
+	_shadow_sync_dynamic_caster(p_instance);
 
 	//replace this by last
 	int32_t swap_with_index = p_instance->scenario->instance_data.size() - 1;
@@ -2606,6 +2640,71 @@ void RendererSceneCull::_light_instance_setup_directional_shadow(int p_shadow_in
 	}
 }
 
+static _FORCE_INLINE_ void _collect_dynamic_shadow_casters(
+		RendererSceneCull::Scenario *p_scenario,
+		const Plane *p_planes,
+		uint32_t p_visible_layers,
+		uint32_t p_caster_mask,
+		PagedArray<RenderGeometryInstance *> &r_instances,
+		bool &r_animated_material_found) {
+	if (p_scenario->dynamic_shadow_casters.is_empty()) {
+		return;
+	}
+	const RendererSceneCull::FrustumSign frustum(p_planes, 6);
+	for (RendererSceneCull::Instance *instance : p_scenario->dynamic_shadow_casters) {
+		const bool is_inactive_particle = (instance->base_type == RSE::INSTANCE_PARTICLES) && RSG::particles_storage->particles_is_inactive(instance->base);
+		if (!(p_visible_layers & instance->layer_mask & p_caster_mask) || is_inactive_particle) {
+			continue;
+		}
+		if (!p_scenario->instance_aabbs[instance->array_index].in_frustum(frustum)) {
+			continue;
+		}
+		RendererSceneCull::InstanceGeometryData *geom = static_cast<RendererSceneCull::InstanceGeometryData *>(instance->base_data);
+		if (geom->material_is_animated) {
+			r_animated_material_found = true;
+		}
+		if (instance->mesh_instance.is_valid()) {
+			RSG::mesh_storage->mesh_instance_check_for_update(instance->mesh_instance);
+		}
+		r_instances.push_back(geom->geometry_instance);
+	}
+}
+
+static _FORCE_INLINE_ void _collect_culled_positional_shadow_casters(
+		RendererSceneCull::Scenario *p_scenario,
+		const PagedArray<RendererSceneCull::Instance *> &p_cull_result,
+		uint32_t p_visible_layers,
+		uint32_t p_caster_mask,
+		bool p_cache_static,
+		RendererSceneRender::RenderShadowData &r_shadow_data,
+		bool &r_animated_material_found) {
+	for (int j = 0; j < (int)p_cull_result.size(); j++) {
+		RendererSceneCull::Instance *instance = p_cull_result[j];
+		const bool is_inactive_particle = (instance->base_type == RSE::INSTANCE_PARTICLES) && RSG::particles_storage->particles_is_inactive(instance->base);
+		if (!instance->visible || !((1 << instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) || !static_cast<RendererSceneCull::InstanceGeometryData *>(instance->base_data)->can_cast_shadows || !(p_visible_layers & instance->layer_mask & p_caster_mask) || is_inactive_particle) {
+			continue;
+		}
+
+		RendererSceneCull::InstanceGeometryData *geom = static_cast<RendererSceneCull::InstanceGeometryData *>(instance->base_data);
+		if (geom->material_is_animated) {
+			r_animated_material_found = true;
+		}
+		if (instance->mesh_instance.is_valid()) {
+			RSG::mesh_storage->mesh_instance_check_for_update(instance->mesh_instance);
+		}
+
+		if (instance->array_index >= 0 && p_scenario->instance_data[instance->array_index].visibility_index != -1) {
+			continue;
+		}
+
+		if (p_cache_static && instance->shadow_static) {
+			r_shadow_data.static_instances.push_back(geom->geometry_instance);
+		} else {
+			r_shadow_data.instances.push_back(geom->geometry_instance);
+		}
+	}
+}
+
 bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, const Transform3D p_cam_transform, bool p_cam_orthogonal, bool p_cam_vaspect, RID p_shadow_atlas, Scenario *p_scenario, float p_screen_mesh_lod_threshold, uint32_t p_visible_layers) {
 	InstanceLightData *light = static_cast<InstanceLightData *>(p_instance->base_data);
 
@@ -2625,44 +2724,25 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 		} break;
 		case RSE::LIGHT_OMNI: {
 			RSE::LightOmniShadowMode shadow_mode = RSG::light_storage->light_omni_get_shadow_mode(p_instance->base);
+			const uint32_t caster_mask = RSG::light_storage->light_get_shadow_caster_mask(p_instance->base);
 
 			if (shadow_mode == RSE::LIGHT_OMNI_SHADOW_DUAL_PARABOLOID || !RSG::light_storage->light_instances_can_render_shadow_cube()) {
 				if (max_shadows_used + 2 > MAX_UPDATE_SHADOWS) {
 					return true;
 				}
+				const real_t radius = RSG::light_storage->light_get_param(p_instance->base, RSE::LIGHT_PARAM_RANGE);
 				for (int i = 0; i < 2; i++) {
 					//using this one ensures that raster deferred will have it
 					RENDER_TIMESTAMP("Cull OmniLight3D Shadow Paraboloid, Half " + itos(i));
 
-					real_t radius = RSG::light_storage->light_get_param(p_instance->base, RSE::LIGHT_PARAM_RANGE);
-
-					real_t z = i == 0 ? -1 : 1;
-					Vector<Plane> planes;
-					planes.resize(6);
-					planes.write[0] = light_transform.xform(Plane(Vector3(0, 0, z), radius));
-					planes.write[1] = light_transform.xform(Plane(Vector3(1, 0, z).normalized(), radius));
-					planes.write[2] = light_transform.xform(Plane(Vector3(-1, 0, z).normalized(), radius));
-					planes.write[3] = light_transform.xform(Plane(Vector3(0, 1, z).normalized(), radius));
-					planes.write[4] = light_transform.xform(Plane(Vector3(0, -1, z).normalized(), radius));
-					planes.write[5] = light_transform.xform(Plane(Vector3(0, 0, -z), 0));
-
-					instance_shadow_cull_result.clear();
-
-					Vector<Vector3> points = Geometry3D::compute_convex_mesh_points(&planes[0], planes.size());
-
-					struct CullConvex {
-						PagedArray<Instance *> *result;
-						_FORCE_INLINE_ bool operator()(void *p_data) {
-							Instance *p_instance = (Instance *)p_data;
-							result->push_back(p_instance);
-							return false;
-						}
-					};
-
-					CullConvex cull_convex;
-					cull_convex.result = &instance_shadow_cull_result;
-
-					p_scenario->indexers[Scenario::INDEXER_GEOMETRY].convex_query(planes.ptr(), planes.size(), points.ptr(), points.size(), cull_convex);
+					const real_t z = i == 0 ? -1 : 1;
+					Plane planes[6];
+					planes[0] = light_transform.xform(Plane(Vector3(0, 0, z), radius));
+					planes[1] = light_transform.xform(Plane(Vector3(1, 0, z).normalized(), radius));
+					planes[2] = light_transform.xform(Plane(Vector3(-1, 0, z).normalized(), radius));
+					planes[3] = light_transform.xform(Plane(Vector3(0, 1, z).normalized(), radius));
+					planes[4] = light_transform.xform(Plane(Vector3(0, -1, z).normalized(), radius));
+					planes[5] = light_transform.xform(Plane(Vector3(0, 0, -z), 0));
 
 					RendererSceneRender::RenderShadowData &shadow_data = render_shadow_data[max_shadows_used++];
 					shadow_data.cache_static = cache_static_positional;
@@ -2670,40 +2750,32 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 					const bool cache_hit = cache_static_positional && scene_render->shadow_cache_probe_positional(light->instance, p_shadow_atlas, i, p_scenario->shadow_static_generation, Projection(), light_transform, radius, true, i == 1, false);
 					shadow_data.static_cache_state = cache_static_positional ? (cache_hit ? RendererSceneRender::RenderShadowData::STATIC_CACHE_HIT : RendererSceneRender::RenderShadowData::STATIC_CACHE_REBUILD) : RendererSceneRender::RenderShadowData::STATIC_CACHE_DISABLED;
 
-					if (!light->is_shadow_update_full() && !cache_static_positional) {
-						light_culler->cull_regular_light(instance_shadow_cull_result);
-					}
+					if (cache_hit) {
+						_collect_dynamic_shadow_casters(p_scenario, planes, p_visible_layers, caster_mask, shadow_data.instances, animated_material_found);
+					} else {
+						instance_shadow_cull_result.clear();
 
-					for (int j = 0; j < (int)instance_shadow_cull_result.size(); j++) {
-						Instance *instance = instance_shadow_cull_result[j];
-						if (cache_hit && instance->shadow_static) {
-							continue;
-						}
-						const bool is_inactive_particle = (instance->base_type == RSE::INSTANCE_PARTICLES) && RSG::particles_storage->particles_is_inactive(instance->base);
-						if (!instance->visible || !((1 << instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows || !(p_visible_layers & instance->layer_mask & RSG::light_storage->light_get_shadow_caster_mask(p_instance->base)) || is_inactive_particle) {
-							continue;
-						} else {
-							if (static_cast<InstanceGeometryData *>(instance->base_data)->material_is_animated) {
-								animated_material_found = true;
+						Vector<Vector3> points = Geometry3D::compute_convex_mesh_points(planes, 6);
+
+						struct CullConvex {
+							PagedArray<Instance *> *result;
+							_FORCE_INLINE_ bool operator()(void *p_data) {
+								Instance *p_instance = (Instance *)p_data;
+								result->push_back(p_instance);
+								return false;
 							}
+						};
 
-							if (instance->mesh_instance.is_valid()) {
-								RSG::mesh_storage->mesh_instance_check_for_update(instance->mesh_instance);
-							}
+						CullConvex cull_convex;
+						cull_convex.result = &instance_shadow_cull_result;
+
+						p_scenario->indexers[Scenario::INDEXER_GEOMETRY].convex_query(planes, 6, points.ptr(), points.size(), cull_convex);
+
+						if (!light->is_shadow_update_full() && !cache_static_positional) {
+							light_culler->cull_regular_light(instance_shadow_cull_result);
 						}
 
-						if (instance->array_index >= 0) {
-							int32_t vis_idx = p_scenario->instance_data[instance->array_index].visibility_index;
-							if (vis_idx != -1) {
-								continue;
-							}
-						}
-
-						if (cache_static_positional && instance->shadow_static) {
-							shadow_data.static_instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
-						} else {
-							shadow_data.instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
-						}
+						_collect_culled_positional_shadow_casters(p_scenario, instance_shadow_cull_result, p_visible_layers, caster_mask, cache_static_positional, shadow_data, animated_material_found);
 					}
 
 					RSG::mesh_storage->update_mesh_instances();
@@ -2748,25 +2820,10 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 
 					Transform3D xform = light_transform * Transform3D().looking_at(view_normals[i], view_up[i]);
 
-					Vector<Plane> planes = fm.get_projection_planes(xform);
-
-					instance_shadow_cull_result.clear();
-
-					Vector<Vector3> points = Geometry3D::compute_convex_mesh_points(&planes[0], planes.size());
-
-					struct CullConvex {
-						PagedArray<Instance *> *result;
-						_FORCE_INLINE_ bool operator()(void *p_data) {
-							Instance *p_instance = (Instance *)p_data;
-							result->push_back(p_instance);
-							return false;
-						}
-					};
-
-					CullConvex cull_convex;
-					cull_convex.result = &instance_shadow_cull_result;
-
-					p_scenario->indexers[Scenario::INDEXER_GEOMETRY].convex_query(planes.ptr(), planes.size(), points.ptr(), points.size(), cull_convex);
+					Plane planes[6];
+					for (int p = 0; p < 6; p++) {
+						planes[p] = xform.xform(fm[p]);
+					}
 
 					RendererSceneRender::RenderShadowData &shadow_data = render_shadow_data[max_shadows_used++];
 					shadow_data.cache_static = cache_static_positional;
@@ -2774,39 +2831,41 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 					const bool cache_hit = cache_static_positional && scene_render->shadow_cache_probe_positional(light->instance, p_shadow_atlas, i, p_scenario->shadow_static_generation, cm, xform, radius, false, false, false);
 					shadow_data.static_cache_state = cache_static_positional ? (cache_hit ? RendererSceneRender::RenderShadowData::STATIC_CACHE_HIT : RendererSceneRender::RenderShadowData::STATIC_CACHE_REBUILD) : RendererSceneRender::RenderShadowData::STATIC_CACHE_DISABLED;
 
-					if (!light->is_shadow_update_full() && !cache_static_positional) {
-						light_culler->cull_regular_light(instance_shadow_cull_result);
-					}
+					if (cache_hit) {
+						_collect_dynamic_shadow_casters(p_scenario, planes, p_visible_layers, caster_mask, shadow_data.instances, animated_material_found);
+					} else {
+						instance_shadow_cull_result.clear();
 
-					for (int j = 0; j < (int)instance_shadow_cull_result.size(); j++) {
-						Instance *instance = instance_shadow_cull_result[j];
-						if (cache_hit && instance->shadow_static) {
-							continue;
-						}
-						const bool is_inactive_particle = (instance->base_type == RSE::INSTANCE_PARTICLES) && RSG::particles_storage->particles_is_inactive(instance->base);
-						if (!instance->visible || !((1 << instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows || !(p_visible_layers & instance->layer_mask & RSG::light_storage->light_get_shadow_caster_mask(p_instance->base)) || is_inactive_particle) {
-							continue;
-						} else {
-							if (static_cast<InstanceGeometryData *>(instance->base_data)->material_is_animated) {
-								animated_material_found = true;
+						const Vector3 points[8] = {
+							xform.xform(Vector3(-z_near, -z_near, -z_near)),
+							xform.xform(Vector3(+z_near, -z_near, -z_near)),
+							xform.xform(Vector3(-z_near, +z_near, -z_near)),
+							xform.xform(Vector3(+z_near, +z_near, -z_near)),
+							xform.xform(Vector3(-radius, -radius, -radius)),
+							xform.xform(Vector3(+radius, -radius, -radius)),
+							xform.xform(Vector3(-radius, +radius, -radius)),
+							xform.xform(Vector3(+radius, +radius, -radius)),
+						};
+
+						struct CullConvex {
+							PagedArray<Instance *> *result;
+							_FORCE_INLINE_ bool operator()(void *p_data) {
+								Instance *p_instance = (Instance *)p_data;
+								result->push_back(p_instance);
+								return false;
 							}
-							if (instance->mesh_instance.is_valid()) {
-								RSG::mesh_storage->mesh_instance_check_for_update(instance->mesh_instance);
-							}
+						};
+
+						CullConvex cull_convex;
+						cull_convex.result = &instance_shadow_cull_result;
+
+						p_scenario->indexers[Scenario::INDEXER_GEOMETRY].convex_query(planes, 6, points, 8, cull_convex);
+
+						if (!light->is_shadow_update_full() && !cache_static_positional) {
+							light_culler->cull_regular_light(instance_shadow_cull_result);
 						}
 
-						if (instance->array_index >= 0) {
-							int32_t vis_idx = p_scenario->instance_data[instance->array_index].visibility_index;
-							if (vis_idx != -1) {
-								continue;
-							}
-						}
-
-						if (cache_static_positional && instance->shadow_static) {
-							shadow_data.static_instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
-						} else {
-							shadow_data.instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
-						}
+						_collect_culled_positional_shadow_casters(p_scenario, instance_shadow_cull_result, p_visible_layers, caster_mask, cache_static_positional, shadow_data, animated_material_found);
 					}
 
 					RSG::mesh_storage->update_mesh_instances();
@@ -2831,31 +2890,17 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 			real_t radius = RSG::light_storage->light_get_param(p_instance->base, RSE::LIGHT_PARAM_RANGE);
 			real_t angle = RSG::light_storage->light_get_param(p_instance->base, RSE::LIGHT_PARAM_SPOT_ANGLE);
 			real_t z_near = MIN(0.025f, radius);
+			const uint32_t caster_mask = RSG::light_storage->light_get_shadow_caster_mask(p_instance->base);
 
 			Projection cm;
 			Frustum fm;
 			cm.set_perspective(angle * 2.0, 1.0, z_near, radius);
 			fm.set_perspective(angle * 2.0, 1.0, z_near, radius);
 
-			Vector<Plane> planes = fm.get_projection_planes(light_transform);
-
-			instance_shadow_cull_result.clear();
-
-			Vector<Vector3> points = Geometry3D::compute_convex_mesh_points(&planes[0], planes.size());
-
-			struct CullConvex {
-				PagedArray<Instance *> *result;
-				_FORCE_INLINE_ bool operator()(void *p_data) {
-					Instance *p_instance = (Instance *)p_data;
-					result->push_back(p_instance);
-					return false;
-				}
-			};
-
-			CullConvex cull_convex;
-			cull_convex.result = &instance_shadow_cull_result;
-
-			p_scenario->indexers[Scenario::INDEXER_GEOMETRY].convex_query(planes.ptr(), planes.size(), points.ptr(), points.size(), cull_convex);
+			Plane planes[6];
+			for (int p = 0; p < 6; p++) {
+				planes[p] = light_transform.xform(fm[p]);
+			}
 
 			RendererSceneRender::RenderShadowData &shadow_data = render_shadow_data[max_shadows_used++];
 			shadow_data.cache_static = cache_static_positional;
@@ -2863,40 +2908,48 @@ bool RendererSceneCull::_light_instance_update_shadow(Instance *p_instance, cons
 			const bool cache_hit = cache_static_positional && scene_render->shadow_cache_probe_positional(light->instance, p_shadow_atlas, 0, p_scenario->shadow_static_generation, cm, light_transform, radius, false, false, false);
 			shadow_data.static_cache_state = cache_static_positional ? (cache_hit ? RendererSceneRender::RenderShadowData::STATIC_CACHE_HIT : RendererSceneRender::RenderShadowData::STATIC_CACHE_REBUILD) : RendererSceneRender::RenderShadowData::STATIC_CACHE_DISABLED;
 
-			if (!light->is_shadow_update_full() && !cache_static_positional) {
-				light_culler->cull_regular_light(instance_shadow_cull_result);
-			}
+			if (cache_hit) {
+				_collect_dynamic_shadow_casters(p_scenario, planes, p_visible_layers, caster_mask, shadow_data.instances, animated_material_found);
+			} else {
+				instance_shadow_cull_result.clear();
 
-			for (int j = 0; j < (int)instance_shadow_cull_result.size(); j++) {
-				Instance *instance = instance_shadow_cull_result[j];
-				if (cache_hit && instance->shadow_static) {
-					continue;
-				}
-				const bool is_inactive_particle = (instance->base_type == RSE::INSTANCE_PARTICLES) && RSG::particles_storage->particles_is_inactive(instance->base);
-				if (!instance->visible || !((1 << instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) || !static_cast<InstanceGeometryData *>(instance->base_data)->can_cast_shadows || !(p_visible_layers & instance->layer_mask & RSG::light_storage->light_get_shadow_caster_mask(p_instance->base)) || is_inactive_particle) {
-					continue;
+				struct CullConvex {
+					PagedArray<Instance *> *result;
+					_FORCE_INLINE_ bool operator()(void *p_data) {
+						Instance *p_instance = (Instance *)p_data;
+						result->push_back(p_instance);
+						return false;
+					}
+				};
+
+				CullConvex cull_convex;
+				cull_convex.result = &instance_shadow_cull_result;
+
+				if (angle < (real_t)89.9) {
+					const real_t tan_half = Math::tan(Math::deg_to_rad(angle));
+					const real_t hn = z_near * tan_half;
+					const real_t hf = radius * tan_half;
+					const Vector3 points[8] = {
+						light_transform.xform(Vector3(-hn, -hn, -z_near)),
+						light_transform.xform(Vector3(+hn, -hn, -z_near)),
+						light_transform.xform(Vector3(-hn, +hn, -z_near)),
+						light_transform.xform(Vector3(+hn, +hn, -z_near)),
+						light_transform.xform(Vector3(-hf, -hf, -radius)),
+						light_transform.xform(Vector3(+hf, -hf, -radius)),
+						light_transform.xform(Vector3(-hf, +hf, -radius)),
+						light_transform.xform(Vector3(+hf, +hf, -radius)),
+					};
+					p_scenario->indexers[Scenario::INDEXER_GEOMETRY].convex_query(planes, 6, points, 8, cull_convex);
 				} else {
-					if (static_cast<InstanceGeometryData *>(instance->base_data)->material_is_animated) {
-						animated_material_found = true;
-					}
-
-					if (instance->mesh_instance.is_valid()) {
-						RSG::mesh_storage->mesh_instance_check_for_update(instance->mesh_instance);
-					}
+					Vector<Vector3> points = Geometry3D::compute_convex_mesh_points(planes, 6);
+					p_scenario->indexers[Scenario::INDEXER_GEOMETRY].convex_query(planes, 6, points.ptr(), points.size(), cull_convex);
 				}
 
-				if (instance->array_index >= 0) {
-					int32_t vis_idx = p_scenario->instance_data[instance->array_index].visibility_index;
-					if (vis_idx != -1) {
-						continue;
-					}
+				if (!light->is_shadow_update_full() && !cache_static_positional) {
+					light_culler->cull_regular_light(instance_shadow_cull_result);
 				}
 
-				if (cache_static_positional && instance->shadow_static) {
-					shadow_data.static_instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
-				} else {
-					shadow_data.instances.push_back(static_cast<InstanceGeometryData *>(instance->base_data)->geometry_instance);
-				}
+				_collect_culled_positional_shadow_casters(p_scenario, instance_shadow_cull_result, p_visible_layers, caster_mask, cache_static_positional, shadow_data, animated_material_found);
 			}
 
 			RSG::mesh_storage->update_mesh_instances();
@@ -4840,6 +4893,8 @@ void RendererSceneCull::_update_dirty_instance(Instance *p_instance) const {
 	p_instance->teleported = false;
 	p_instance->update_aabb = false;
 	p_instance->update_dependencies = false;
+
+	_shadow_sync_dynamic_caster(p_instance);
 }
 
 void RendererSceneCull::update_dirty_instances() const {
@@ -4888,6 +4943,7 @@ bool RendererSceneCull::free(RID p_rid) {
 		scenario->instance_aabbs.reset();
 		scenario->instance_data.reset();
 		scenario->instance_visibility.reset();
+		scenario->dynamic_shadow_casters.reset();
 
 		RSG::light_storage->shadow_atlas_free(scenario->reflection_probe_shadow_atlas);
 		RSG::light_storage->reflection_atlas_free(scenario->reflection_atlas);

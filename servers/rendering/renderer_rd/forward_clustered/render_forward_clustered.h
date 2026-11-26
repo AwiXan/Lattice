@@ -596,7 +596,11 @@ private:
 		uint32_t flags = 0;
 		uint32_t surface_index = 0;
 		bool uses_lightmap_specular = false;
+		bool compressed_attributes = false;
 		uint32_t color_pass_inclusion_mask = 0;
+
+		AABB cached_aabb = AABB(Vector3(0.0, 0.0, 0.0), Vector3(1.0, 1.0, 1.0));
+		Vector4 cached_uv_scale = Vector4(0.0, 0.0, 0.0, 0.0);
 
 		void *surface = nullptr;
 		RID material_uniform_set;
@@ -764,14 +768,100 @@ private:
 			}
 		};
 
+		static void _sort_by_key_radix(GeometryInstanceSurfaceDataCache **p_elements, uint32_t p_size) {
+			if (p_size < 64) {
+				SortArray<GeometryInstanceSurfaceDataCache *, SortByKey> sorter;
+				sorter.sort(p_elements, p_size);
+				return;
+			}
+
+			struct RadixEntry {
+				uint64_t key1;
+				uint64_t key2;
+				GeometryInstanceSurfaceDataCache *ptr;
+			};
+
+			thread_local LocalVector<RadixEntry> buf_a;
+			thread_local LocalVector<RadixEntry> buf_b;
+			buf_a.resize(p_size);
+			buf_b.resize(p_size);
+
+			uint32_t hist[16][256];
+			memset(hist, 0, sizeof(hist));
+
+			RadixEntry *src = buf_a.ptr();
+			RadixEntry *dst = buf_b.ptr();
+
+			for (uint32_t i = 0; i < p_size; i++) {
+				GeometryInstanceSurfaceDataCache *el = p_elements[i];
+				const uint64_t k1 = el->sort.sort_key1;
+				const uint64_t k2 = el->sort.sort_key2;
+				src[i].key1 = k1;
+				src[i].key2 = k2;
+				src[i].ptr = el;
+
+				hist[0][(k1 >> 0) & 0xFF]++;
+				hist[1][(k1 >> 8) & 0xFF]++;
+				hist[2][(k1 >> 16) & 0xFF]++;
+				hist[3][(k1 >> 24) & 0xFF]++;
+				hist[4][(k1 >> 32) & 0xFF]++;
+				hist[5][(k1 >> 40) & 0xFF]++;
+				hist[6][(k1 >> 48) & 0xFF]++;
+				hist[7][(k1 >> 56) & 0xFF]++;
+				hist[8][(k2 >> 0) & 0xFF]++;
+				hist[9][(k2 >> 8) & 0xFF]++;
+				hist[10][(k2 >> 16) & 0xFF]++;
+				hist[11][(k2 >> 24) & 0xFF]++;
+				hist[12][(k2 >> 32) & 0xFF]++;
+				hist[13][(k2 >> 40) & 0xFF]++;
+				hist[14][(k2 >> 48) & 0xFF]++;
+				hist[15][(k2 >> 56) & 0xFF]++;
+			}
+
+			for (uint32_t pass = 0; pass < 16; pass++) {
+				uint32_t *h = hist[pass];
+				const uint32_t shift = (pass & 7) * 8;
+				const uint64_t first_key = (pass < 8) ? src[0].key1 : src[0].key2;
+				const uint32_t first_bucket = (first_key >> shift) & 0xFF;
+				if (h[first_bucket] == p_size) {
+					continue;
+				}
+
+				uint32_t sum = 0;
+				for (uint32_t b = 0; b < 256; b++) {
+					uint32_t c = h[b];
+					h[b] = sum;
+					sum += c;
+				}
+
+				if (pass < 8) {
+					for (uint32_t i = 0; i < p_size; i++) {
+						uint32_t bucket = (src[i].key1 >> shift) & 0xFF;
+						dst[h[bucket]++] = src[i];
+					}
+				} else {
+					for (uint32_t i = 0; i < p_size; i++) {
+						uint32_t bucket = (src[i].key2 >> shift) & 0xFF;
+						dst[h[bucket]++] = src[i];
+					}
+				}
+
+				RadixEntry *tmp = src;
+				src = dst;
+				dst = tmp;
+			}
+
+			for (uint32_t i = 0; i < p_size; i++) {
+				p_elements[i] = src[i].ptr;
+			}
+		}
+
 		void sort_by_key() {
-			SortArray<GeometryInstanceSurfaceDataCache *, SortByKey> sorter;
-			sorter.sort(elements.ptr(), elements.size());
+			_sort_by_key_radix(elements.ptr(), elements.size());
 		}
 
 		void sort_by_key_range(uint32_t p_from, uint32_t p_size) {
-			SortArray<GeometryInstanceSurfaceDataCache *, SortByKey> sorter;
-			sorter.sort(elements.ptr() + p_from, p_size);
+			_sort_by_key_radix(elements.ptr() + p_from, p_size);
 		}
 
 		struct SortByDepth {

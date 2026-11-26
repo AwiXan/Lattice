@@ -174,6 +174,15 @@ opts.Add(
         ["v2", "v3"],
     )
 )
+opts.Add(
+    EnumVariable(
+        "fp_math",
+        "Floating-point math model (strict for exact IEEE/cross-platform determinism, precise for FMA+SIMD, fast for max throughput)",
+        "strict",
+        ["strict", "precise", "fast"],
+        ignorecase=2,
+    )
+)
 opts.Add(BoolVariable("dev_build", "Developer build with dev-only debugging code (DEV_ENABLED)", False))
 opts.Add(
     EnumVariable(

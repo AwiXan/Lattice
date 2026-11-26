@@ -270,6 +270,39 @@ public:
 			_update_simd_planes();
 #endif
 		}
+		_ALWAYS_INLINE_ FrustumSign(const Plane *p_planes, uint32_t p_count) {
+			plane_count = MIN(p_count, 8u);
+#if defined(SIMD_FRUSTUM_CULLING_ENABLED)
+			for (uint32_t i = 0; i < 8; i++) {
+				if (i < plane_count) {
+					plane_nx[i] = p_planes[i].normal.x;
+					plane_ny[i] = p_planes[i].normal.y;
+					plane_nz[i] = p_planes[i].normal.z;
+					plane_d[i] = p_planes[i].d;
+					abs_nx[i] = Math::abs(p_planes[i].normal.x);
+					abs_ny[i] = Math::abs(p_planes[i].normal.y);
+					abs_nz[i] = Math::abs(p_planes[i].normal.z);
+				} else {
+					plane_nx[i] = 0.0f;
+					plane_ny[i] = 0.0f;
+					plane_nz[i] = 0.0f;
+					plane_d[i] = 1e20f;
+					abs_nx[i] = 0.0f;
+					abs_ny[i] = 0.0f;
+					abs_nz[i] = 0.0f;
+				}
+			}
+#else
+			planes.resize(plane_count);
+			plane_signs.resize(plane_count);
+			for (uint32_t i = 0; i < plane_count; i++) {
+				planes.write[i] = p_planes[i];
+				plane_signs.write[i] = PlaneSign(p_planes[i]);
+			}
+			planes_ptr = planes.ptrw();
+			plane_signs_ptr = plane_signs.ptr();
+#endif
+		}
 	};
 
 	struct InstanceBounds {
@@ -531,6 +564,7 @@ public:
 		PagedArray<InstanceBounds> instance_aabbs;
 		PagedArray<InstanceData> instance_data;
 		VisibilityArray instance_visibility;
+		LocalVector<Instance *> dynamic_shadow_casters;
 
 		// Changes whenever a caster joins or leaves the static set, so that
 		// directional shadow caches drawn from the old set are redrawn.
@@ -670,6 +704,7 @@ public:
 		bool shadow_static = false;
 		uint64_t shadow_static_due = 0;
 		SelfList<Instance> shadow_static_item;
+		int32_t dynamic_shadow_index = -1;
 
 		InstanceBaseData *base_data = nullptr;
 
@@ -1251,6 +1286,7 @@ public:
 	void _shadow_static_touch(Instance *p_instance) const;
 	bool _shadow_static_eligible(const Instance *p_instance) const;
 	void _shadow_static_promote();
+	void _shadow_sync_dynamic_caster(Instance *p_instance) const;
 
 	virtual RID instance_allocate();
 	virtual void instance_initialize(RID p_rid);

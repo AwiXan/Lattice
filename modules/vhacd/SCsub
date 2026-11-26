@@ -30,6 +30,11 @@ thirdparty_sources = [thirdparty_dir + file for file in thirdparty_sources]
 env_vhacd.Prepend(CPPPATH=[thirdparty_dir + "inc"])
 
 env_thirdparty = env_vhacd.Clone()
+# MSVC 14.5 triggers an internal compiler error (C1001 in vhacdVector.inl) with /arch:AVX2.
+if env.msvc and env["arch"] == "x86_64" and env["x86_64_level"] == "v3":
+    flags = list(env_thirdparty["CCFLAGS"])
+    if "/arch:AVX2" in flags:
+        env_thirdparty["CCFLAGS"] = [f for f in flags if f != "/arch:AVX2"] + ["/d2archSSE42"]
 env_thirdparty.disable_warnings()
 env_thirdparty.add_source_files(thirdparty_obj, thirdparty_sources)
 env.modules_sources += thirdparty_obj

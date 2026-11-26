@@ -413,7 +413,12 @@ def configure_msvc(env: "SConsEnvironment"):
     if env["arch"] == "x86_32":
         env["x86_libtheora_opt_vc"] = True
 
-    env.Append(CCFLAGS=["/fp:strict"])
+    fp_flags = {
+        "strict": "/fp:strict",
+        "precise": "/fp:precise",
+        "fast": "/fp:fast",
+    }
+    env.Append(CCFLAGS=[fp_flags[env["fp_math"]]])
 
     env.AppendUnique(CCFLAGS=["/Gd", "/GR", "/nologo"])
     env.AppendUnique(CCFLAGS=["/utf-8"])  # Force to use Unicode encoding.
@@ -755,7 +760,12 @@ def configure_mingw(env: "SConsEnvironment"):
     if env["arch"] == "x86_32":
         env["x86_libtheora_opt_gcc"] = True
 
-    env.Append(CCFLAGS=["-ffp-contract=off"])
+    if env["fp_math"] == "fast":
+        env.Append(CCFLAGS=["-ffast-math"])
+    elif env["fp_math"] == "precise":
+        env.Append(CCFLAGS=["-ffp-contract=fast"])
+    else:
+        env.Append(CCFLAGS=["-ffp-contract=off"])
 
     if env["use_llvm"]:
         env["CC"] = get_detected(env, "clang")
