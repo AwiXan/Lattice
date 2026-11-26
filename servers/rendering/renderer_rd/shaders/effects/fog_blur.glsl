@@ -89,7 +89,7 @@ float compute_fog_lod(float p_fog_amount, float p_max_lod_cap) {
 	return min(p_fog_amount * params.intensity * params.max_blur_lod, p_max_lod_cap);
 }
 
-vec3 sample_depth_aware_vogel_blur(vec2 p_uv, float p_lod, float p_raw_depth, float p_view_distance, vec3 p_center_color, float p_max_lod_cap, int p_sample_count, float p_mip_lod) {
+vec3 sample_depth_aware_vogel_blur(vec2 p_uv, float p_lod, float p_raw_depth, float p_view_distance, vec3 p_center_color, float p_max_lod_cap, int p_sample_count) {
 	float radius = 0.5 * (exp2(p_lod) - 1.0);
 	if (radius < 0.25) {
 		return p_center_color;
@@ -97,10 +97,15 @@ vec3 sample_depth_aware_vogel_blur(vec2 p_uv, float p_lod, float p_raw_depth, fl
 
 	const float GOLDEN_ANGLE = 2.39996323;
 	vec2 pixel_size = 1.0 / vec2(textureSize(screen_sampler, 0));
-	// Anchor accumulation with the center sample so occluded edges stay clean without dividing by zero.
-	vec3 color = p_center_color;
-	float total_weight = 1.0;
 	float inv_samples = 1.0 / float(p_sample_count);
+	// Match mip footprint to inter-tap spacing so thin edges blur smoothly without discrete copies.
+	float base_mip = clamp(log2(max(1.0, radius * sqrt(inv_samples))), 0.0, min(max(0.0, p_lod - 1.0), 3.0));
+
+	// Only bridge sub-1.5px radii with the unblurred center pixel; larger radii use 0% mip-0 center
+	// so sharp geometry never ghosts on top of the blur, while occluded edges normalize cleanly.
+	float center_weight = smoothstep(1.5, 0.25, radius);
+	vec3 color = p_center_color * center_weight;
+	float total_weight = center_weight;
 
 	for (int i = 0; i < p_sample_count; i++) {
 		float r_norm = sqrt((float(i) + 0.5) * inv_samples);
@@ -110,7 +115,7 @@ vec3 sample_depth_aware_vogel_blur(vec2 p_uv, float p_lod, float p_raw_depth, fl
 
 		float sample_raw_depth = textureLod(depth_sampler, sample_uv, 0.0).r;
 		float occ = 1.0;
-		float tap_mip = p_mip_lod;
+		float tap_mip = base_mip;
 
 		// Reverse-Z: larger raw depth is closer to the camera (in front of p_raw_depth).
 		if (sample_raw_depth > p_raw_depth) {
@@ -135,6 +140,10 @@ vec3 sample_depth_aware_vogel_blur(vec2 p_uv, float p_lod, float p_raw_depth, fl
 		total_weight += weight;
 	}
 
+	if (total_weight <= 0.001) {
+		return p_center_color;
+	}
+
 	return color / total_weight;
 }
 
@@ -157,11 +166,9 @@ void main() {
 	vec3 blurred;
 	if (lod <= 0.05) {
 		blurred = original.rgb;
-	} else if (params.gaussian_filter_enabled != 0) {
-		blurred = sample_depth_aware_vogel_blur(uv, lod, raw_depth, view_distance, original.rgb, max_lod_cap, 16, 0.0);
 	} else {
-		float mip_lod = clamp(lod - 2.0, 0.0, 2.0);
-		blurred = sample_depth_aware_vogel_blur(uv, lod, raw_depth, view_distance, original.rgb, max_lod_cap, 8, mip_lod);
+		int sample_count = params.gaussian_filter_enabled != 0 ? 16 : 12;
+		blurred = sample_depth_aware_vogel_blur(uv, lod, raw_depth, view_distance, original.rgb, max_lod_cap, sample_count);
 	}
 
 	imageStore(output_image, pixel, vec4(blurred, original.a));
