@@ -30,6 +30,7 @@
 
 #include "servers/rendering/renderer_rd/effects/fog_blur.h"
 
+#include "servers/rendering/renderer_rd/framebuffer_cache_rd.h"
 #include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
 
 RendererRD::FogBlur::FogBlur() {
@@ -63,7 +64,7 @@ RendererRD::FogBlur::~FogBlur() {
 	RD::get_singleton()->free_rid(fog_blur.nearest_sampler);
 }
 
-void RendererRD::FogBlur::fog_blur_compute(Ref<RenderSceneBuffersRD> p_render_buffers, RenderSceneDataRD *p_scene_data, StringName p_source_texture, float p_intensity, float p_max_blur_lod, bool p_gaussian_filter_enabled, bool p_depth_fog, bool p_volumetric_fog_enabled, RID p_volumetric_fog_texture, float p_volumetric_fog_inv_length, float p_volumetric_fog_detail_spread, CopyEffects *p_copy_effects) {
+void RendererRD::FogBlur::fog_blur_compute(Ref<RenderSceneBuffersRD> p_render_buffers, RenderSceneDataRD *p_scene_data, StringName p_source_texture, float p_intensity, float p_max_blur_lod, bool p_gaussian_filter_enabled, bool p_depth_fog, bool p_volumetric_fog_enabled, RID p_volumetric_fog_texture, float p_volumetric_fog_inv_length, float p_volumetric_fog_detail_spread, CopyEffects *p_copy_effects, bool p_can_use_storage) {
 	ERR_FAIL_COND(p_render_buffers.is_null());
 	ERR_FAIL_NULL(p_scene_data);
 	ERR_FAIL_NULL(p_copy_effects);
@@ -94,6 +95,9 @@ void RendererRD::FogBlur::fog_blur_compute(Ref<RenderSceneBuffersRD> p_render_bu
 		RID depth_texture = p_render_buffers->get_depth_texture(view);
 		RID output_texture = p_render_buffers->get_texture_slice(RB_SCOPE_FOG_BLUR, RB_TEX_FOG_BLUR_OUTPUT, view, 0);
 		RID base_texture = p_render_buffers->get_internal_texture(view);
+		if (source_texture.is_null() || depth_texture.is_null() || output_texture.is_null() || base_texture.is_null()) {
+			continue;
+		}
 
 		RD::Uniform source_uniform(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 0, Vector<RID>{ fog_blur.linear_sampler, source_texture });
 		RD::Uniform depth_uniform(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 1, Vector<RID>{ fog_blur.nearest_sampler, depth_texture });
@@ -102,9 +106,12 @@ void RendererRD::FogBlur::fog_blur_compute(Ref<RenderSceneBuffersRD> p_render_bu
 		RD::Uniform volumetric_fog_uniform(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 4, Vector<RID>{ fog_blur.linear_sampler, p_volumetric_fog_texture });
 
 		RID shader = fog_blur.shader.version_get_shader(fog_blur.shader_version, 0);
+		RID uniform_set = UniformSetCacheRD::get_singleton()->get_cache(shader, 0, source_uniform, depth_uniform, scene_data_uniform_set, output_uniform, volumetric_fog_uniform);
+		ERR_CONTINUE(uniform_set.is_null());
+
 		RD::ComputeListID compute_list = rd->compute_list_begin();
 		rd->compute_list_bind_compute_pipeline(compute_list, fog_blur.pipeline.get_rid());
-		rd->compute_list_bind_uniform_set(compute_list, UniformSetCacheRD::get_singleton()->get_cache(shader, 0, source_uniform, depth_uniform, scene_data_uniform_set, output_uniform, volumetric_fog_uniform), 0);
+		rd->compute_list_bind_uniform_set(compute_list, uniform_set, 0);
 
 		FogBlurPushConstant push_constant;
 		push_constant.max_lod = max_lod;
@@ -120,7 +127,14 @@ void RendererRD::FogBlur::fog_blur_compute(Ref<RenderSceneBuffersRD> p_render_bu
 		rd->compute_list_dispatch_threads(compute_list, size.x, size.y, 1);
 		rd->compute_list_end();
 
-		p_copy_effects->copy_to_rect(output_texture, base_texture, Rect2i(Point2i(), size));
+		if (p_can_use_storage) {
+			p_copy_effects->copy_to_rect(output_texture, base_texture, Rect2i(Point2i(), size));
+		} else {
+			// Mobile render targets lack STORAGE_BIT, so copy back through a raster pass.
+			RID base_fb = FramebufferCacheRD::get_singleton()->get_cache(base_texture);
+			ERR_CONTINUE(base_fb.is_null());
+			p_copy_effects->copy_to_fb_rect(output_texture, base_fb, Rect2i(Point2i(), size));
+		}
 	}
 	rd->draw_command_end_label();
 }

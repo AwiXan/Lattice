@@ -24,8 +24,8 @@ layout(push_constant, std140) uniform Pos {
 
 	float reference_multiplier;
 	float output_max_value;
-	uint pad1;
-	uint pad2;
+	bool force_opaque;
+	uint pad;
 }
 data;
 
@@ -70,8 +70,8 @@ layout(push_constant, std140) uniform Pos {
 
 	float reference_multiplier;
 	float output_max_value;
-	uint pad1;
-	uint pad2;
+	bool force_opaque;
+	uint pad;
 }
 data;
 
@@ -187,5 +187,9 @@ void main() {
 				color.rgb += screen_space_dither(gl_FragCoord.xy);
 			}
 		}
+	}
+
+	if (data.force_opaque) {
+		color.a = 1.0;
 	}
 }

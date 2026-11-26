@@ -431,11 +431,18 @@ void RendererSceneRenderRD::_render_buffers_fog_blur(const RenderDataRD *p_rende
 
 	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
 	ERR_FAIL_COND(rb.is_null());
+	if (!rb->has_internal_texture() || !rb->has_depth_texture()) {
+		return;
+	}
+
+	Size2i internal_size = rb->get_internal_size();
+	if (internal_size.x <= 0 || internal_size.y <= 0) {
+		return;
+	}
 
 	_render_buffers_ensure_screen_texture(p_render_data);
 	_render_buffers_copy_screen_texture(p_render_data, true);
 
-	Size2i internal_size = rb->get_internal_size();
 	bool screen_copy_uses_blur_texture = !rb->has_upscaled_texture() || internal_size == rb->get_target_size();
 	StringName source_texture = screen_copy_uses_blur_texture ? RB_TEX_BLUR_0 : RB_TEX_BACK_COLOR;
 	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
@@ -465,7 +472,8 @@ void RendererSceneRenderRD::_render_buffers_fog_blur(const RenderDataRD *p_rende
 			volumetric_fog_texture,
 			volumetric_fog_inv_length,
 			volumetric_fog_detail_spread,
-			copy_effects);
+			copy_effects,
+			_render_buffers_can_be_storage());
 }
 
 void RendererSceneRenderRD::_render_buffers_ensure_depth_texture(const RenderDataRD *p_render_data) {

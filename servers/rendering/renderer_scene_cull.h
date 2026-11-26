@@ -167,9 +167,9 @@ public:
 	struct FrustumSign {
 		Vector<Plane> planes;
 		Vector<PlaneSign> plane_signs;
-		const Plane *planes_ptr;
-		const PlaneSign *plane_signs_ptr;
-		uint32_t plane_count;
+		const Plane *planes_ptr = nullptr;
+		const PlaneSign *plane_signs_ptr = nullptr;
+		uint32_t plane_count = 0;
 
 #if defined(SIMD_FRUSTUM_CULLING_ENABLED)
 		alignas(16) float plane_nx[8] = { 0 };

@@ -112,6 +112,7 @@ void RendererCompositorRD::blit_render_targets_to_screen(DisplayServerEnums::Win
 		blit.push_constant.target_color_space = color_space;
 		blit.push_constant.reference_multiplier = reference_multiplier;
 		blit.push_constant.output_max_value = output_max_value;
+		blit.push_constant.force_opaque = !texture_storage->render_target_get_transparent(p_render_targets[i].render_target);
 
 		RD::get_singleton()->draw_list_set_push_constant(draw_list, &blit.push_constant, sizeof(BlitPushConstant));
 		RD::get_singleton()->draw_list_draw(draw_list, true);
@@ -298,6 +299,7 @@ void RendererCompositorRD::set_boot_image_with_stretch(const Ref<Image> &p_image
 	blit.push_constant.target_color_space = color_space;
 	blit.push_constant.reference_multiplier = reference_multiplier;
 	blit.push_constant.output_max_value = output_max_value;
+	blit.push_constant.force_opaque = false;
 
 	RD::get_singleton()->draw_list_set_push_constant(draw_list, &blit.push_constant, sizeof(BlitPushConstant));
 	RD::get_singleton()->draw_list_draw(draw_list, true);

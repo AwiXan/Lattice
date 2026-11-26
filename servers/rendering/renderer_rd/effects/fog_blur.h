@@ -66,7 +66,7 @@ public:
 	FogBlur();
 	~FogBlur();
 
-	void fog_blur_compute(Ref<RenderSceneBuffersRD> p_render_buffers, RenderSceneDataRD *p_scene_data, StringName p_source_texture, float p_intensity, float p_max_blur_lod, bool p_gaussian_filter_enabled, bool p_depth_fog, bool p_volumetric_fog_enabled, RID p_volumetric_fog_texture, float p_volumetric_fog_inv_length, float p_volumetric_fog_detail_spread, CopyEffects *p_copy_effects);
+	void fog_blur_compute(Ref<RenderSceneBuffersRD> p_render_buffers, RenderSceneDataRD *p_scene_data, StringName p_source_texture, float p_intensity, float p_max_blur_lod, bool p_gaussian_filter_enabled, bool p_depth_fog, bool p_volumetric_fog_enabled, RID p_volumetric_fog_texture, float p_volumetric_fog_inv_length, float p_volumetric_fog_detail_spread, CopyEffects *p_copy_effects, bool p_can_use_storage = true);
 };
 
 } //namespace RendererRD

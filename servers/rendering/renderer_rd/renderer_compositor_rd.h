@@ -89,7 +89,8 @@ protected:
 
 		float reference_multiplier; // 4 - 84
 		float output_max_value; // 4 - 88
-		uint32_t pad[2]; // 8 - 96 (padding to reach 16-byte boundary)
+		uint32_t force_opaque; // 4 - 92
+		uint32_t pad; // 4 - 96 (padding to reach 16-byte boundary)
 	};
 
 	struct BlitPipelines {
