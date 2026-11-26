@@ -482,6 +482,8 @@ def configure_msvc(env: "SConsEnvironment"):
 
     if env.debug_features:
         LIBS += ["psapi", "dbghelp"]
+    elif env.get("use_mimalloc"):
+        LIBS += ["psapi"]
 
     if env["accesskit"]:
         if os.path.exists(env["accesskit_sdk_path"]):

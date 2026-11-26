@@ -79,6 +79,15 @@ if env["builtin_clipper2"]:
 
     env_thirdparty.add_source_files(thirdparty_obj, thirdparty_clipper_sources)
 
+# mimalloc allocator
+if env.get("use_mimalloc"):
+    thirdparty_mimalloc_dir = "#thirdparty/mimalloc/"
+    env_mimalloc = env_thirdparty.Clone()
+    env_mimalloc.Prepend(CPPPATH=[thirdparty_mimalloc_dir + "include", thirdparty_mimalloc_dir + "src"])
+    env_mimalloc.add_source_files(thirdparty_obj, [thirdparty_mimalloc_dir + "src/static.c"])
+    env.Prepend(CPPPATH=[thirdparty_mimalloc_dir + "include"])
+    env.Append(CPPDEFINES=["USE_MIMALLOC"])
+
 # Zlib library, can be unbundled
 if env["builtin_zlib"]:
     thirdparty_zlib_dir = "#thirdparty/zlib/"

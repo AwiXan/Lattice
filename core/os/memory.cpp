@@ -39,6 +39,19 @@
 
 #include <cstdlib>
 
+#ifdef USE_MIMALLOC
+#include <mimalloc.h>
+#define godot_malloc(p_size) mi_malloc(p_size)
+#define godot_calloc(p_count, p_size) mi_calloc(p_count, p_size)
+#define godot_realloc(p_ptr, p_size) mi_realloc(p_ptr, p_size)
+#define godot_free(p_ptr) mi_free(p_ptr)
+#else
+#define godot_malloc(p_size) malloc(p_size)
+#define godot_calloc(p_count, p_size) calloc(p_count, p_size)
+#define godot_realloc(p_ptr, p_size) realloc(p_ptr, p_size)
+#define godot_free(p_ptr) free(p_ptr)
+#endif
+
 #ifdef DEBUG_ENABLED
 static SafeNumeric<uint64_t> _current_mem_usage;
 static SafeNumeric<uint64_t> _max_mem_usage;
@@ -55,6 +68,12 @@ void *operator new(size_t p_size, void *(*p_allocfunc)(size_t p_size)) {
 void *Memory::alloc_aligned_static(size_t p_bytes, size_t p_alignment) {
 	DEV_ASSERT(Math::is_power_of_2(p_alignment));
 
+#ifdef USE_MIMALLOC
+	void *p = mi_malloc_aligned(p_bytes, p_alignment);
+	ERR_FAIL_NULL_V(p, nullptr);
+	GodotProfileAlloc(p, p_bytes);
+	return p;
+#else
 	void *p1, *p2;
 	if ((p1 = (void *)malloc(p_bytes + p_alignment - 1 + sizeof(uint32_t))) == nullptr) {
 		return nullptr;
@@ -64,6 +83,7 @@ void *Memory::alloc_aligned_static(size_t p_bytes, size_t p_alignment) {
 	p2 = (void *)(((uintptr_t)p1 + sizeof(uint32_t) + p_alignment - 1) & ~((p_alignment)-1));
 	*((uint32_t *)p2 - 1) = (uint32_t)((uintptr_t)p2 - (uintptr_t)p1);
 	return p2;
+#endif
 }
 
 void *Memory::realloc_aligned_static(void *p_memory, size_t p_bytes, size_t p_prev_bytes, size_t p_alignment) {
@@ -71,19 +91,38 @@ void *Memory::realloc_aligned_static(void *p_memory, size_t p_bytes, size_t p_pr
 		return alloc_aligned_static(p_bytes, p_alignment);
 	}
 
+#ifdef USE_MIMALLOC
+	DEV_ASSERT(Math::is_power_of_2(p_alignment));
+	if (p_bytes == 0) {
+		free_aligned_static(p_memory);
+		return nullptr;
+	}
+	GodotProfileFree(p_memory);
+	void *ret = mi_realloc_aligned(p_memory, p_bytes, p_alignment);
+	ERR_FAIL_NULL_V(ret, nullptr);
+	GodotProfileAlloc(ret, p_bytes);
+	return ret;
+#else
 	void *ret = alloc_aligned_static(p_bytes, p_alignment);
 	if (ret) {
 		memcpy(ret, p_memory, p_prev_bytes);
 	}
 	free_aligned_static(p_memory);
 	return ret;
+#endif
 }
 
 void Memory::free_aligned_static(void *p_memory) {
+#ifdef USE_MIMALLOC
+	ERR_FAIL_NULL(p_memory);
+	GodotProfileFree(p_memory);
+	mi_free(p_memory);
+#else
 	uint32_t offset = *((uint32_t *)p_memory - 1);
 	void *p = (void *)((uint8_t *)p_memory - offset);
 	GodotProfileFree(p);
 	free(p);
+#endif
 }
 
 template <bool p_ensure_zero>
@@ -96,9 +135,9 @@ void *Memory::alloc_static(size_t p_bytes, bool p_pad_align) {
 
 	void *mem;
 	if constexpr (p_ensure_zero) {
-		mem = calloc(1, p_bytes + (prepad ? DATA_OFFSET : 0));
+		mem = godot_calloc(1, p_bytes + (prepad ? DATA_OFFSET : 0));
 	} else {
-		mem = malloc(p_bytes + (prepad ? DATA_OFFSET : 0));
+		mem = godot_malloc(p_bytes + (prepad ? DATA_OFFSET : 0));
 	}
 
 	ERR_FAIL_NULL_V(mem, nullptr);
@@ -151,13 +190,13 @@ void *Memory::realloc_static(void *p_memory, size_t p_bytes, bool p_pad_align) {
 
 		if (p_bytes == 0) {
 			GodotProfileFree(mem);
-			free(mem);
+			godot_free(mem);
 			return nullptr;
 		} else {
 			*s = p_bytes;
 
 			GodotProfileFree(mem);
-			mem = (uint8_t *)realloc(mem, p_bytes + DATA_OFFSET);
+			mem = (uint8_t *)godot_realloc(mem, p_bytes + DATA_OFFSET);
 			ERR_FAIL_NULL_V(mem, nullptr);
 			GodotProfileAlloc(mem, p_bytes + DATA_OFFSET);
 
@@ -169,7 +208,7 @@ void *Memory::realloc_static(void *p_memory, size_t p_bytes, bool p_pad_align) {
 		}
 	} else {
 		GodotProfileFree(mem);
-		mem = (uint8_t *)realloc(mem, p_bytes);
+		mem = (uint8_t *)godot_realloc(mem, p_bytes);
 
 		ERR_FAIL_COND_V(mem == nullptr && p_bytes > 0, nullptr);
 		GodotProfileAlloc(mem, p_bytes);
@@ -198,10 +237,10 @@ void Memory::free_static(void *p_ptr, bool p_pad_align) {
 #endif
 
 		GodotProfileFree(mem);
-		free(mem);
+		godot_free(mem);
 	} else {
 		GodotProfileFree(mem);
-		free(mem);
+		godot_free(mem);
 	}
 }
 
